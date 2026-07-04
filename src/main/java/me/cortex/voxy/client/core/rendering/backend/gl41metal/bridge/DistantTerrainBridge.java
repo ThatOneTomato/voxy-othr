@@ -196,68 +196,12 @@ public final class DistantTerrainBridge implements AutoCloseable {
   // position comes from rev3d (camera-relative, the same space GL46 feeds getFragDistance).
   // Shared verbatim by VANILLA_PATCH and VANILLA_WATER_PATCH (separate programs, so each patch
   // embeds its own copy). The Iris paths never include this: shader packs fog their own scene.
-  private static final String GLSL_VANILLA_FOG =
-      """
-      uniform vec4 uFogParams;
-      uniform vec4 uFogColor;
-      uniform int uFogShape;
-
-      float voxyFogDistance(int shape, vec3 pos) {
-        if (shape == 1) {
-          return max(length(pos.xz), abs(pos.y));
-        }
-        return length(pos);
-      }
-
-      vec3 voxyApplyFog(vec3 color, vec2 targetPixel, float voxyDepth) {
-        if (uFogParams.z <= 0.0) {
-          return color;
-        }
-        vec3 pos = rev3d(vec3(targetPixel / max(uTargetSize, vec2(1.0)), voxyDepth));
-        float fogLerp = smoothstep(uFogParams.x, uFogParams.y, voxyFogDistance(uFogShape, pos));
-        if (uFogParams.w > 0.0) {
-          fogLerp = (exp(uFogParams.w * fogLerp) - 1.0) / (exp(uFogParams.w) - 1.0);
-        }
-        return mix(color, uFogColor.rgb, clamp(fogLerp * uFogParams.z, 0.0, 1.0));
-      }
-      """;
-
+  // (The fog block is embedded verbatim inside vanilla_patch.glsl / vanilla_water_patch.glsl.)
   // GL46 quads.frag non-patched lighting expressed as a built-in voxy_emitFragment: sample the MC
   // lightmap with the baked light UV, fold in the conditional tint, then apply the directional face
   // shade. uLightmapTex and voxyQuadFlags are provided by the shared header below.
   private static final String VANILLA_PATCH =
-      """
-      layout(location = 0) out vec4 voxyVanillaColor;
-      """
-          + GLSL_VANILLA_FOG
-          + """
-
-      float voxyVanillaFaceTint(bool shaded, uint face) {
-        if (!shaded) {
-          return 1.0;
-        }
-        if ((face >> 1u) == 1u) {
-          return 0.8;
-        }
-        if ((face >> 1u) == 2u) {
-          return 0.6;
-        }
-        if (face == 1u) {
-          return 1.0;
-        }
-        return 0.5;
-      }
-
-      void voxy_emitFragment(VoxyFragmentParameters parameters) {
-        vec4 light = texture(uLightmapTex, parameters.lightMap);
-        vec4 color = parameters.sampledColour * parameters.tinting * light;
-        bool shaded = ((voxyQuadFlags >> 6u) & 1u) != 0u;
-        color.rgb *= voxyVanillaFaceTint(shaded, uint(parameters.face));
-        color.rgb =
-            voxyApplyFog(color.rgb, voxy_OverrideFragCoord.xy, voxy_OverrideFragCoord.z);
-        voxyVanillaColor = vec4(color.rgb, 1.0);
-      }
-      """;
+      BridgeGlsl.load("vanilla_patch.glsl");
 
   // Fragment texture units. Metal packs distant terrain into 3 shared textures (see
   // quad_raster.metal QuadFragmentOut), so the reconstruction samplers occupy units 0-2. That
@@ -1426,191 +1370,13 @@ public final class DistantTerrainBridge implements AutoCloseable {
 
   // gbuffer reconstruction shared by every bridge program. No near-mask, no lightmap, no debug.
   private static final String GLSL_GBUFFER_DECODE =
-      """
-      #version 410 core
-
-      // Distant gbuffer: Metal packs everything into 3 shared RGBA32F textures (see
-      // quad_raster.metal QuadFragmentOut for the authoritative bit layout). Keeping the
-      // reconstruction at 3 samplers is what lets the Iris colour program also bind the shader
-      // pack's samplers (up to 12) within Apple GL4.1's usable 15 fragment-texture-unit budget
-      // (the driver SIGSEGVs at exactly 16). Each channel below is unpacked in sampleVoxyGbuffer;
-      // the bit layout MUST stay in lockstep with the Metal QuadFragmentOut packing.
-      uniform sampler2DRect uGbuffer0Tex;  // .xy atlas uv, .zw quad tile
-      uniform sampler2DRect uGbuffer1Tex;  // .x depth, .y modelId, .z customId&0xFFFFFF, .w customId>>24
-      uniform sampler2DRect uGbuffer2Tex;  // .x albedo, .y lightMap, .z tint, .w face/flags/coverage (all packed)
-      uniform vec2 uSharedSize;
-      uniform vec2 uTargetSize;
-      uniform mat4 uInvVoxyMvp;
-      uniform mat4 uVanillaMvp;
-
-      // Quad flags decoded in main(); patches may read it for the directional shade bit.
-      uint voxyQuadFlags = 0u;
-
-      struct VoxyFragmentParameters {
-        vec4 sampledColour;
-        vec2 tile;
-        vec2 uv;
-        // GL46 quads.frag declares face as uint, but Apple's strict GLSL 410 compiler rejects the
-        // int/uint mixes shader packs write against it (e.g. Complementary's `parameters.face & 1`),
-        // which GL46's lenient implicit conversions accept. The value is the 0-5 face index, so the
-        // bit ops are identical; declare it int for GL41 shader-pack compatibility.
-        int face;
-        uint modelId;
-        vec2 lightMap;
-        vec4 tinting;
-        uint customId;
-      };
-
-      // Recovers an exact non-negative integer that Metal stored as a float *value* in an RGBA32F
-      // channel. NEAREST sampling returns the texel bit-exact, so truncation recovers the integer.
-      // Do NOT add 0.5 here: the tint field reaches 2^24-1 and +0.5 would round past the f32
-      // exact-integer range. See quad_raster.metal's losslessness rules.
-      uint decodePackedUint(float value) {
-        return uint(max(value, 0.0));
-      }
-
-      // One decoded gbuffer texel. coverage and depth gate the discard; the rest feeds
-      // VoxyFragmentParameters. tint/colour alpha is opaque (1.0) here (see quad_raster.metal).
-      struct VoxyGbufferTexel {
-        float coverage;
-        vec4 colour;
-        vec2 uv;
-        vec2 tile;
-        float depth;
-        vec2 lightMap;
-        vec4 tint;
-        uint modelId;
-        uint customId;
-        uint face;
-        uint flags;
-        float ao;
-      };
-
-      // Unpacks one RGB triple stored as (r<<16)|(g<<8)|b into a normalised vec3 (each 0..255/255).
-      vec3 unpackRgb8(uint packed) {
-        return vec3(float((packed >> 16u) & 255u), float((packed >> 8u) & 255u), float(packed & 255u))
-            / 255.0;
-      }
-
-      VoxyGbufferTexel sampleVoxyGbuffer(vec2 sharedPixel) {
-        vec4 g0 = texture(uGbuffer0Tex, sharedPixel);
-        vec4 g1 = texture(uGbuffer1Tex, sharedPixel);
-        vec4 g2 = texture(uGbuffer2Tex, sharedPixel);
-        VoxyGbufferTexel t;
-        // gbuffer0: atlas uv + quad tile (both plain floats, no packing).
-        t.uv = g0.xy;
-        t.tile = g0.zw;
-        // gbuffer1: depth + ids. customId is split lo 24 bits / hi 8 bits to keep each < 2^24.
-        t.depth = clamp(g1.x, 0.0, 1.0);
-        t.modelId = decodePackedUint(g1.y);
-        t.customId = decodePackedUint(g1.z) | (decodePackedUint(g1.w) << 24u);
-        // gbuffer2: four packed integer channels (see quad_raster.metal). albedo/tint are 8-bit
-        // rgb; lightMap is two 12-bit coords; the last channel folds ao/face/flags/coverage.
-        t.colour = vec4(unpackRgb8(decodePackedUint(g2.x)), 1.0);
-        uint lightPacked = decodePackedUint(g2.y);
-        t.lightMap = vec2(float((lightPacked >> 12u) & 4095u), float(lightPacked & 4095u)) / 4095.0;
-        t.tint = vec4(unpackRgb8(decodePackedUint(g2.z)), 1.0);
-        uint faceFlagsCoverage = decodePackedUint(g2.w);
-        t.coverage = float(faceFlagsCoverage & 1u);
-        t.flags = (faceFlagsCoverage >> 1u) & 255u;
-        t.face = (faceFlagsCoverage >> 9u) & 7u;
-        // Bits 12-19: SSAO factor from the Metal ssao.metal pass. 0 = no AO data (pass skipped
-        // or pre-SSAO pixel) -> neutral 1.0. Folded straight into the albedo: near terrain
-        // carries vanilla's per-vertex AO in its vertex colour, which flows into shader-pack
-        // gbuffers the same way, so both the built-in VANILLA_PATCH and a pack's patched
-        // voxy_emitFragment see AO-darkened sampledColour without any patch-side changes
-        // (GL46's compute pass equivalently multiplies the lit colour post-opaque).
-        uint aoPacked = (faceFlagsCoverage >> 12u) & 255u;
-        t.ao = aoPacked == 0u ? 1.0 : float(aoPacked) / 255.0;
-        t.colour.rgb *= t.ao;
-        return t;
-      }
-
-      vec3 rev3d(vec3 clip) {
-        vec4 view = uInvVoxyMvp * vec4(clip * 2.0 - 1.0, 1.0);
-        return view.xyz / view.w;
-      }
-
-      float projectDepth(vec3 pos) {
-        vec4 view = uVanillaMvp * vec4(pos, 1.0);
-        float depth = view.z / view.w;
-        depth = min(1.0 - 2.0 / 16777215.0, depth);
-        depth = depth * 0.5 + 0.5;
-        depth = gl_DepthRange.diff * depth + gl_DepthRange.near;
-        return clamp(depth, 0.0, 1.0);
-      }
-
-      vec2 sharedPixelForTarget(vec2 targetPixel) {
-        vec2 shared = targetPixel * (uSharedSize / max(uTargetSize, vec2(1.0)));
-        return vec2(shared.x, uSharedSize.y - shared.y);
-      }
-
-      // gl_FragCoord.z override for the full-screen-quad bridge.
-      //
-      // GL46 voxy renders the distant LOD as real per-triangle geometry, so a shader pack's
-      // voxy_emitFragment naturally sees gl_FragCoord.z = the per-pixel rasterizer depth of the
-      // distant triangle, expressed in the active program's projection (vxProj). The gl41metal
-      // bridge composites the Metal-produced distant gbuffer through a single full-screen quad,
-      // whose rasterizer-interpolated z is constant across every pixel (the quad's vertex depth),
-      // so any pack doing the standard
-      //     vec3 screenPos = vec3(gl_FragCoord.xy / vec2(viewWidth, viewHeight), gl_FragCoord.z);
-      //     vec3 viewPos = ScreenToView(screenPos);
-      // would collapse the whole distant scene to one view-space point. The fix is to redirect
-      // every pack-side gl_FragCoord read to a per-pixel override (g.depth as written by Metal,
-      // packed into voxy_OverrideFragCoord by main() before calling voxy_emitFragment): the
-      // patched pack rebinds gbufferProjection/Inverse to vxProj/vxProjInv (Voxy's extended
-      // projection), so its ScreenToView inverts in *Voxy* NDC, not vanilla NDC.
-      //
-      // We do the substitution in Java text (see buildFragmentShader's gl_FragCoord rewrite),
-      // not via #define, because Apple's GL4.1 driver preprocessor silently ignores attempts to
-      // redefine the built-in gl_FragCoord identifier - the GLSL spec only forbids redefining
-      // pre-defined macros, but Apple's compiler treats the built-in variable name the same way,
-      // leaving the pack reading the full-screen quad's constant rasterizer z. Renaming the
-      // identifier at the patch-source level bypasses the issue entirely while keeping the
-      // bridge's own main() free to read the real built-in gl_FragCoord.
-      //
-      // Note: gl_FragDepth is written by main() AFTER voxy_emitFragment. The vanilla path keeps the
-      // vanilla-remapped outputDepth (GL depth buffer stays vanilla NDC for the MC hardware depth
-      // test); the strict Iris path instead writes Voxy NDC (g.depth) into its private depth-stencil
-      // so the shader pack samples Voxy-NDC depth as vxDepthTex* (see GLSL_COLOR_MAIN_NO_MASK). Only
-      // the pack-visible gl_FragCoord is in Voxy NDC in both shapes.
-      vec4 voxy_OverrideFragCoord;
-      """;
+      BridgeGlsl.load("gbuffer_decode.glsl");
 
   // Near-depth occlusion mask. Used by the vanilla single pass and the debug visualisations, but
   // NOT by the strict Iris colour pass (which resolves occlusion via the hardware depth test
   // against the private near-seeded depth attachment instead of sampling uSourceDepthTex).
   private static final String GLSL_NEAR_MASK =
-      """
-
-      uniform sampler2D uSourceDepthTex;
-      uniform vec2 uSourceDepthSize;
-      uniform int uReverseDepth;
-      uniform int uUseManualDepthMask;
-
-      bool isHiddenByNearDepth(vec2 targetPixel, float voxyDepth) {
-        if (uUseManualDepthMask == 0) {
-          return false;
-        }
-        vec2 sourcePixel = targetPixel * (uSourceDepthSize / max(uTargetSize, vec2(1.0)));
-        ivec2 texel = ivec2(clamp(floor(sourcePixel), vec2(0.0), uSourceDepthSize - vec2(1.0)));
-        float nearDepth = texelFetch(uSourceDepthTex, texel, 0).r;
-        const float DEPTH_EPSILON = 0.00001;
-        // Near depth only hides Voxy when Voxy is not meaningfully closer. The epsilon keeps
-        // boundary LOD depth noise from fighting vanilla geometry without turning the depth
-        // texture into a coarse coverage mask.
-        if (uReverseDepth != 0) {
-          if (nearDepth <= 0.000001) {
-            return false;
-          }
-          return voxyDepth <= nearDepth + DEPTH_EPSILON;
-        }
-        if (nearDepth >= 0.999999) {
-          return false;
-        }
-        return voxyDepth >= nearDepth - DEPTH_EPSILON;
-      }
-      """;
+      BridgeGlsl.load("near_mask.glsl");
 
   // Loaded-volume clip (P1), in-shader form for the vanilla/debug colour programs. Discards distant
   // fragments that lie INSIDE the Sodium near-scene volume (nearer than its far boundary, captured
@@ -1624,27 +1390,7 @@ public final class DistantTerrainBridge implements AutoCloseable {
   // rides the stencil-mask pass (GLSL_BOUND_MASK) so the budgeted colour program gains no sampler.
   // uBoundEnabled==0 (no sections loaded) disables the clip so a stale boundary is never sampled.
   private static final String GLSL_BOUND_CLIP =
-      """
-
-      uniform sampler2D uBoundDepthTex;
-      uniform vec2 uBoundSize;
-      uniform int uBoundEnabled;
-
-      // voxyDepth is the distant fragment's Voxy-NDC depth (g.depth) - the SAME space the bound was
-      // rasterized in (drawMvp), so no reprojection is needed, exactly like voxy-fabric quads.frag
-      // comparing gl_FragCoord.z against depthBoundingBuffer. Voxy NDC is non-reverse (0 near .. 1
-      // far): a fragment INSIDE the loaded volume is NEARER than its far boundary, i.e. smaller.
-      bool isInsideLoadedBound(vec2 targetPixel, float voxyDepth) {
-        if (uBoundEnabled == 0) {
-          return false;
-        }
-        vec2 boundPixel = targetPixel * (uBoundSize / max(uTargetSize, vec2(1.0)));
-        ivec2 texel = ivec2(clamp(floor(boundPixel), vec2(0.0), uBoundSize - vec2(1.0)));
-        float bound = texelFetch(uBoundDepthTex, texel, 0).r;
-        const float BOUND_EPSILON = 0.00001;
-        return voxyDepth <= bound - BOUND_EPSILON;
-      }
-      """;
+      BridgeGlsl.load("bound_clip.glsl");
 
   // Near-scene coverage stencil mask (strict Iris path). A standalone fragment program that samples
   // the Iris near (noHand/opaque) depth and DISCARDS sky pixels so they keep stencil 0, while
@@ -1655,26 +1401,7 @@ public final class DistantTerrainBridge implements AutoCloseable {
   // separate 1-sampler program on purpose: it must not add a texture unit to the 15-unit colour
   // program (Apple GL4.1 SIGSEGVs at 16; Complementary already uses 12 pack + 3 gbuffer samplers).
   private static final String GLSL_STENCIL_MASK =
-      """
-      #version 410 core
-
-      uniform sampler2D uNearDepth;
-      uniform vec2 uNearSize;
-      uniform vec2 uTargetSize;
-      uniform int uReverseDepth;
-
-      void main() {
-        vec2 sourcePixel = gl_FragCoord.xy * (uNearSize / max(uTargetSize, vec2(1.0)));
-        ivec2 texel = ivec2(clamp(floor(sourcePixel), vec2(0.0), uNearSize - vec2(1.0)));
-        float nearDepth = texelFetch(uNearDepth, texel, 0).r;
-        bool sky = (uReverseDepth != 0) ? (nearDepth <= 0.000001) : (nearDepth >= 0.999999);
-        if (sky) {
-          // No near geometry here: keep stencil 0 so the distant colour pass may draw.
-          discard;
-        }
-        // Near geometry present: fall through so the GL_REPLACE stencil op writes 1 (blocks Voxy).
-      }
-      """;
+      BridgeGlsl.load("stencil_mask.frag");
 
   // Behind-layers blend shader: subtracts the front surface's premultiplied contribution from
   // tgbufferAccum and outputs the remainder as premultiplied colour. Blended with ONE,
@@ -1683,82 +1410,7 @@ public final class DistantTerrainBridge implements AutoCloseable {
   // single-layer translucent surfaces (the dominant ocean case), behind_alpha == 0 and the shader
   // discards, making this a no-op.
   private static final String GLSL_BEHIND_LAYERS_BLEND =
-      """
-      #version 410 core
-
-      uniform sampler2DRect uTgbuffer0Tex;
-      uniform sampler2DRect uTgbuffer1Tex;
-      uniform sampler2DRect uTgbufferAccumTex;
-      uniform sampler2D uLightmapTex;
-      uniform vec2 uSharedSize;
-      uniform vec2 uTargetSize;
-
-      layout(location = 0) out vec4 behindColour;
-
-      uint decodePackedUint(float f) {
-        return uint(f + 0.5);
-      }
-
-      vec3 unpackRgb8(uint packed) {
-        return vec3(
-            float((packed >> 16u) & 0xFFu) / 255.0,
-            float((packed >> 8u) & 0xFFu) / 255.0,
-            float(packed & 0xFFu) / 255.0);
-      }
-
-      vec2 sharedPixelForTarget(vec2 targetPixel) {
-        vec2 shared = targetPixel * (uSharedSize / max(uTargetSize, vec2(1.0)));
-        return vec2(shared.x, uSharedSize.y - shared.y);
-      }
-
-      float faceTint(uint face) {
-        if ((face >> 1u) == 1u) return 0.8;
-        if ((face >> 1u) == 2u) return 0.6;
-        if (face == 1u) return 1.0;
-        return 0.5;
-      }
-
-      void main() {
-        vec2 sp = sharedPixelForTarget(gl_FragCoord.xy);
-        vec4 accum = texture(uTgbufferAccumTex, sp);
-        if (accum.a <= 0.0) discard;
-
-        vec4 t0 = texture(uTgbuffer0Tex, sp);
-        vec4 t1 = texture(uTgbuffer1Tex, sp);
-
-        float frontAlpha = t1.y;
-        float bA = max(accum.a - frontAlpha, 0.0);
-        if (bA <= 0.001) discard;
-
-        float depth = t1.x;
-        if (depth <= 0.0 || depth >= 1.0) discard;
-        gl_FragDepth = depth;
-
-        // Decode lightmap UV from tgbuffer0.y (Metal already applied the 15/16 + 0.5/16 transform).
-        uint lightPacked = decodePackedUint(t0.y);
-        vec2 lightUv = vec2(float((lightPacked >> 12u) & 4095u), float(lightPacked & 4095u)) / 4095.0;
-        vec3 light = texture(uLightmapTex, lightUv).rgb;
-
-        // Metal bakes per-fragment face shade into tgbufferAccum, so the front subtraction must
-        // also include the front surface's face shade. The remainder (bRgb) then already has
-        // correct per-layer face shade; we only multiply by lightmap (approximated from front).
-        uint faceFlagsCoverage = decodePackedUint(t0.w);
-        uint face = faceFlagsCoverage >> 9u;
-        uint flags = (faceFlagsCoverage >> 1u) & 255u;
-        bool isShaded = ((flags >> 6u) & 1u) != 0u;
-        float frontFaceShade = isShaded ? faceTint(face) : 1.0;
-
-        vec3 frontAlbedo = unpackRgb8(decodePackedUint(t0.x));
-        vec3 frontTint = unpackRgb8(decodePackedUint(t0.z));
-        vec3 frontPremul = frontAlbedo * frontTint * frontFaceShade * frontAlpha;
-        // accum.rgb is an order-independent SUM of premultiplied flat colours (Metal blends the
-        // accum target additively because within-section draw order is arbitrary). Subtracting the
-        // front layer leaves sum(behind flats); attenuating once by (1 - frontAlpha) is exact for
-        // two layers in any order and mildly overestimates the deepest layers beyond that.
-        vec3 bRgb = max(accum.rgb - frontPremul, vec3(0.0));
-        behindColour = vec4(bRgb * light * (1.0 - frontAlpha), bA);
-      }
-      """;
+      BridgeGlsl.load("behind_layers_blend.frag");
 
   // Translucent depth-write shader: reads tgbuffer1.x (the distant translucent front-surface NDC
   // depth) and writes gl_FragDepth. Used after the translucent colour pass to merge the distant
@@ -1767,24 +1419,7 @@ public final class DistantTerrainBridge implements AutoCloseable {
   // no translucent coverage (depth == 0 or 1). The caller configures GL_LEQUAL + stencil == 0 so
   // closer opaque terrain and near-scene coverage are preserved.
   private static final String GLSL_TRANSLUCENT_DEPTH_WRITE =
-      """
-      #version 410 core
-
-      uniform sampler2DRect uTgbuffer1Tex;
-      uniform vec2 uSharedSize;
-      uniform vec2 uTargetSize;
-
-      vec2 sharedPixelForTarget(vec2 targetPixel) {
-        vec2 shared = targetPixel * (uSharedSize / max(uTargetSize, vec2(1.0)));
-        return vec2(shared.x, uSharedSize.y - shared.y);
-      }
-
-      void main() {
-        float depth = texture(uTgbuffer1Tex, sharedPixelForTarget(gl_FragCoord.xy)).x;
-        if (depth <= 0.0 || depth >= 1.0) discard;
-        gl_FragDepth = depth;
-      }
-      """;
+      BridgeGlsl.load("translucent_depth_write.frag");
 
   // Loaded-volume clip (P1), stencil-mask form for the strict Iris path. A standalone fragment
   // program (NOT the budgeted colour program) that reconstructs each distant fragment's depth from
@@ -1797,50 +1432,11 @@ public final class DistantTerrainBridge implements AutoCloseable {
   // mask, both fed the same shared bound texture - no new vanilla/Iris fork, no colour-program
   // sampler. Its own samplers (distant depth + bound) live on units 0/1 of THIS program only.
   private static final String GLSL_BOUND_MASK =
-      """
-      #version 410 core
-
-      uniform sampler2DRect uDistantDepthTex;
-      uniform sampler2D uBoundDepthTex;
-      uniform vec2 uBoundSize;
-      uniform vec2 uSharedSize;
-      uniform vec2 uTargetSize;
-
-      vec2 sharedPixelForTarget(vec2 targetPixel) {
-        vec2 shared = targetPixel * (uSharedSize / max(uTargetSize, vec2(1.0)));
-        return vec2(shared.x, uSharedSize.y - shared.y);
-      }
-
-      void main() {
-        vec2 targetPixel = gl_FragCoord.xy;
-        // The distant carrier's .x is the fragment's Voxy-NDC depth (g.depth), the SAME space the
-        // bound was rasterized in, so the compare is direct - no reprojection (matches the vanilla
-        // in-shader arm and voxy-fabric quads.frag).
-        float gd = clamp(texture(uDistantDepthTex, sharedPixelForTarget(targetPixel)).x, 0.0, 1.0);
-        if (gd <= 0.0 || gd >= 1.0) {
-          // No distant coverage here: leave the (near-mask) stencil untouched.
-          discard;
-        }
-        vec2 boundPixel = targetPixel * (uBoundSize / max(uTargetSize, vec2(1.0)));
-        ivec2 texel = ivec2(clamp(floor(boundPixel), vec2(0.0), uBoundSize - vec2(1.0)));
-        float bound = texelFetch(uBoundDepthTex, texel, 0).r;
-        const float BOUND_EPSILON = 0.00001;
-        // Voxy NDC is non-reverse: inside the loaded volume == nearer than the boundary == smaller.
-        if (gd > bound - BOUND_EPSILON) {
-          // Distant fragment is beyond the loaded volume: keep the stencil as the near mask left it.
-          discard;
-        }
-        // Inside the loaded volume: fall through so GL_REPLACE writes stencil := 1 (blocks distant).
-      }
-      """;
+      BridgeGlsl.load("bound_mask.frag");
 
   // MC lightmap, used by the vanilla built-in patch only.
   private static final String GLSL_LIGHTMAP =
-      """
-
-      uniform sampler2D uLightmapTex;
-      uniform sampler2D lightSampler;
-      """;
+      BridgeGlsl.load("lightmap.glsl");
 
   // Shared opaque colour main() for BOTH targets. voxy_OverrideFragCoord substitutes for
   // gl_FragCoord in patched pack code (see the Java-level rewrite in buildFragmentShader; the
@@ -1871,25 +1467,7 @@ public final class DistantTerrainBridge implements AutoCloseable {
                 + "        }\n"
             : "";
     String fragDepth = includeNearMask ? "outputDepth" : "g.depth";
-    return """
-
-      void main() {
-        vec2 targetPixel = gl_FragCoord.xy;
-        vec2 sharedPixel = sharedPixelForTarget(targetPixel);
-        VoxyGbufferTexel g = sampleVoxyGbuffer(sharedPixel);
-        if (g.coverage <= 0.0 || g.depth <= 0.0 || g.depth >= 1.0) {
-          discard;
-        }
-__VOXY_OPAQUE_MASK__        voxyQuadFlags = g.flags;
-        voxy_OverrideFragCoord = vec4(gl_FragCoord.xy, g.depth, gl_FragCoord.w);
-        // parameters.tile/uv keep the GL46 split: tile = quad tile (uvTile.zw), uv = atlas uv.
-        VoxyFragmentParameters parameters =
-            VoxyFragmentParameters(
-                g.colour, g.tile, g.uv, int(g.face), g.modelId, g.lightMap, g.tint, g.customId);
-        voxy_emitFragment(parameters);
-        gl_FragDepth = __VOXY_OPAQUE_FRAGDEPTH__;
-      }
-      """
+    return BridgeGlsl.load("opaque_color_main.glsl")
         .replace("__VOXY_OPAQUE_MASK__", maskBlock)
         .replace("__VOXY_OPAQUE_FRAGDEPTH__", fragDepth);
   }
@@ -1920,97 +1498,7 @@ __VOXY_OPAQUE_MASK__        voxyQuadFlags = g.flags;
   // albedo instead), so they are reported as 0; the gbuffers_water patch shades from sampledColour
   // (the resolved water albedo), lightMap, tint and alpha.
   private static final String GLSL_TGBUFFER_DECODE =
-      """
-      #version 410 core
-
-      uniform sampler2DRect uTgbuffer0Tex;  // .x albedoPacked .y lightPacked .z tintPacked .w face/flags/coverage
-      uniform sampler2DRect uTgbuffer1Tex;  // .x ndc depth .y alpha .z customId&0xFFFFFF .w customId>>24
-      uniform vec2 uSharedSize;
-      uniform vec2 uTargetSize;
-      uniform mat4 uInvVoxyMvp;
-      uniform mat4 uVanillaMvp;
-
-      uint voxyQuadFlags = 0u;
-
-      struct VoxyFragmentParameters {
-        vec4 sampledColour;
-        vec2 tile;
-        vec2 uv;
-        int face;
-        uint modelId;
-        vec2 lightMap;
-        vec4 tinting;
-        uint customId;
-      };
-
-      uint decodePackedUint(float value) {
-        return uint(max(value, 0.0));
-      }
-
-      vec3 unpackRgb8(uint packed) {
-        return vec3(float((packed >> 16u) & 255u), float((packed >> 8u) & 255u), float(packed & 255u))
-            / 255.0;
-      }
-
-      struct VoxyTranslucentTexel {
-        float coverage;
-        vec4 colour;
-        vec2 uv;
-        vec2 tile;
-        float depth;
-        float alpha;
-        vec2 lightMap;
-        vec4 tint;
-        uint modelId;
-        uint customId;
-        uint face;
-        uint flags;
-      };
-
-      VoxyTranslucentTexel sampleVoxyTranslucent(vec2 sharedPixel) {
-        vec4 t0 = texture(uTgbuffer0Tex, sharedPixel);
-        vec4 t1 = texture(uTgbuffer1Tex, sharedPixel);
-        VoxyTranslucentTexel t;
-        t.colour = vec4(unpackRgb8(decodePackedUint(t0.x)), 1.0);
-        uint lightPacked = decodePackedUint(t0.y);
-        t.lightMap = vec2(float((lightPacked >> 12u) & 4095u), float(lightPacked & 4095u)) / 4095.0;
-        t.tint = vec4(unpackRgb8(decodePackedUint(t0.z)), 1.0);
-        uint faceFlagsCoverage = decodePackedUint(t0.w);
-        t.coverage = float(faceFlagsCoverage & 1u);
-        t.flags = (faceFlagsCoverage >> 1u) & 255u;
-        t.face = faceFlagsCoverage >> 9u;
-        t.depth = clamp(t1.x, 0.0, 1.0);
-        t.alpha = clamp(t1.y, 0.0, 1.0);
-        t.customId = decodePackedUint(t1.z) | (decodePackedUint(t1.w) << 24u);
-        // Not stored for translucents (the opaque ABI carries these; the translucent ABI stores the
-        // resolved albedo instead). Report 0 so a pack patch that touches them stays well-defined.
-        t.uv = vec2(0.0);
-        t.tile = vec2(0.0);
-        t.modelId = 0u;
-        return t;
-      }
-
-      vec3 rev3d(vec3 clip) {
-        vec4 view = uInvVoxyMvp * vec4(clip * 2.0 - 1.0, 1.0);
-        return view.xyz / view.w;
-      }
-
-      float projectDepth(vec3 pos) {
-        vec4 view = uVanillaMvp * vec4(pos, 1.0);
-        float depth = view.z / view.w;
-        depth = min(1.0 - 2.0 / 16777215.0, depth);
-        depth = depth * 0.5 + 0.5;
-        depth = gl_DepthRange.diff * depth + gl_DepthRange.near;
-        return clamp(depth, 0.0, 1.0);
-      }
-
-      vec2 sharedPixelForTarget(vec2 targetPixel) {
-        vec2 shared = targetPixel * (uSharedSize / max(uTargetSize, vec2(1.0)));
-        return vec2(shared.x, uSharedSize.y - shared.y);
-      }
-
-      vec4 voxy_OverrideFragCoord;
-      """;
+      BridgeGlsl.load("tgbuffer_decode.glsl");
 
   // Built-in (no shader pack) distant water shade, expressed as a voxy_emitFragment patch so
   // vanilla
@@ -2020,67 +1508,7 @@ __VOXY_OPAQUE_MASK__        voxyQuadFlags = g.flags;
   // directional face shade, keeping the real water alpha for blending. Declares its own colour
   // output and reads voxyQuadFlags (the shared main sets it before calling voxy_emitFragment).
   private static final String VANILLA_WATER_PATCH =
-      """
-
-      layout(location = 0) out vec4 voxyWaterColor;
-      uniform sampler2DRect uTgbufferAccumTex;
-      """
-          + GLSL_VANILLA_FOG
-          + """
-
-      float voxyWaterFaceTint(bool shaded, uint face) {
-        if (!shaded) {
-          return 1.0;
-        }
-        if ((face >> 1u) == 1u) {
-          return 0.8;
-        }
-        if ((face >> 1u) == 2u) {
-          return 0.6;
-        }
-        if (face == 1u) {
-          return 1.0;
-        }
-        return 0.5;
-      }
-
-      void voxy_emitFragment(VoxyFragmentParameters parameters) {
-        vec4 light = texture(uLightmapTex, parameters.lightMap);
-        vec4 frontColor = vec4(parameters.sampledColour.rgb, 1.0) * parameters.tinting * light;
-        bool shaded = ((voxyQuadFlags >> 6u) & 1u) != 0u;
-        float frontFaceShade = voxyWaterFaceTint(shaded, uint(parameters.face));
-        frontColor.rgb *= frontFaceShade;
-        float frontAlpha = parameters.sampledColour.a;
-
-        vec2 sp = sharedPixelForTarget(gl_FragCoord.xy);
-        vec4 accum = texture(uTgbufferAccumTex, sp);
-        float bA = max(accum.a - frontAlpha, 0.0);
-
-        if (bA <= 0.001) {
-          vec3 foggedFront =
-              voxyApplyFog(frontColor.rgb, voxy_OverrideFragCoord.xy, voxy_OverrideFragCoord.z);
-          voxyWaterColor = vec4(foggedFront, frontAlpha);
-          return;
-        }
-
-        vec3 frontPremul = parameters.sampledColour.rgb * parameters.tinting.rgb * frontFaceShade * frontAlpha;
-        // accum.rgb is an order-independent SUM of premultiplied flat colours (Metal blends the
-        // accum target additively because within-section draw order is arbitrary). Subtracting the
-        // front layer leaves sum(behind flats); attenuating once by (1 - frontAlpha) is exact for
-        // two layers in any order and mildly overestimates the deepest layers beyond that.
-        vec3 bRgb = max(accum.rgb - frontPremul, vec3(0.0));
-        vec3 behindLit = bRgb * light.rgb * (1.0 - frontAlpha);
-
-        float combinedAlpha = frontAlpha + bA;
-        vec3 combinedPremul = frontColor.rgb * frontAlpha + behindLit;
-        vec3 combined =
-            voxyApplyFog(
-                combinedPremul / max(combinedAlpha, 0.001),
-                voxy_OverrideFragCoord.xy,
-                voxy_OverrideFragCoord.z);
-        voxyWaterColor = vec4(combined, combinedAlpha);
-      }
-      """;
+      BridgeGlsl.load("vanilla_water_patch.glsl");
 
   // Shared translucent colour main() for BOTH vanilla and strict Iris: reconstruct the front
   // translucent surface (resolved back-to-front by Metal into tgbuffer0/1) and feed it to
@@ -2112,24 +1540,7 @@ __VOXY_OPAQUE_MASK__        voxyQuadFlags = g.flags;
             ? "        gl_FragDepth ="
                 + " projectDepth(rev3d(vec3(targetPixel / max(uTargetSize, vec2(1.0)), g.depth)));\n"
             : "";
-    return """
-
-      void main() {
-        vec2 targetPixel = gl_FragCoord.xy;
-        vec2 sharedPixel = sharedPixelForTarget(targetPixel);
-        VoxyTranslucentTexel g = sampleVoxyTranslucent(sharedPixel);
-        if (g.coverage <= 0.0 || g.depth <= 0.0 || g.depth >= 1.0 || g.alpha <= 0.0) {
-          discard;
-        }
-__VOXY_TRANSLUCENT_BOUND__        voxyQuadFlags = g.flags;
-        voxy_OverrideFragCoord = vec4(gl_FragCoord.xy, g.depth, gl_FragCoord.w);
-        VoxyFragmentParameters parameters =
-            VoxyFragmentParameters(
-                vec4(g.colour.rgb, g.alpha), g.tile, g.uv, int(g.face), g.modelId, g.lightMap,
-                g.tint, g.customId);
-        voxy_emitFragment(parameters);
-__VOXY_TRANSLUCENT_TAIL__      }
-      """
+    return BridgeGlsl.load("translucent_color_main.glsl")
         .replace("__VOXY_TRANSLUCENT_BOUND__", boundDiscard)
         .replace("__VOXY_TRANSLUCENT_TAIL__", tail);
   }
