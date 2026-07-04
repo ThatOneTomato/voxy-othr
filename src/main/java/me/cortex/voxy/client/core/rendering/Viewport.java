@@ -9,7 +9,6 @@ import org.joml.*;
 import java.lang.reflect.Field;
 
 public abstract class Viewport <A extends Viewport<A>> {
-    //public final HiZBuffer2 hiZBuffer = new HiZBuffer2();
     public final HiZBuffer hiZBuffer = new HiZBuffer();
     public final DepthFramebuffer depthBoundingBuffer = new DepthFramebuffer();
 
