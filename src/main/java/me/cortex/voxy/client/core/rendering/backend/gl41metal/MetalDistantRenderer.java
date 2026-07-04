@@ -10,16 +10,6 @@ import org.joml.Matrix4fc;
 import org.lwjgl.system.MemoryUtil;
 
 final class MetalDistantRenderer {
-  private final int completionDelayMs;
-
-  MetalDistantRenderer(int completionDelayMs) {
-    this.completionDelayMs = completionDelayMs;
-  }
-
-  int completionDelayMs() {
-    return this.completionDelayMs;
-  }
-
   void submitSynthetic(SharedDistantGbuffer gbuffer, int slot, long frameId) {
     Gl41MetalNative.submitSynthetic(gbuffer.nativeHandle(), slot, frameId);
   }
@@ -31,8 +21,7 @@ final class MetalDistantRenderer {
       RenderFrameContext context,
       Matrix4fc traversalMvp,
       Matrix4fc drawMvp,
-      Matrix4fc projection,
-      boolean debugDumpWorklist) {
+      Matrix4fc projection) {
     // Layout: [0..15] traversalMvp, [16..31] drawMvp, [32..79] SSAO matrices
     // (proj, invProj, modelView - see SsaoUniformHost in gl41metal_abi.h).
     MemoryBuffer matrices = new MemoryBuffer(80L * Float.BYTES);
@@ -63,8 +52,7 @@ final class MetalDistantRenderer {
           context.viewportWidth(),
           context.viewportHeight(),
           ssaoMatricesAddress,
-          ssaoSteps,
-          debugDumpWorklist);
+          ssaoSteps);
     } finally {
       matrices.free();
     }
@@ -123,66 +111,12 @@ final class MetalDistantRenderer {
     Matrix4fc base = context.matrices().projection();
     Matrix4fc modelView = context.matrices().modelView();
     Matrix4f projection = computeProjectionMat(base);
-    maybeLogMatrices(projection, modelView);
     Matrix4f traversalMvp = new Matrix4f(projection).mul(modelView);
     Matrix4f drawMvp = new Matrix4f(traversalMvp);
     translateByNegativeCameraSubSection(context, drawMvp);
     Matrix4f vanillaDrawMvp = new Matrix4f(base).mul(modelView);
     translateByNegativeCameraSubSection(context, vanillaDrawMvp);
     return new FrameMatrices(projection, traversalMvp, drawMvp, vanillaDrawMvp);
-  }
-
-  private static final boolean DEBUG_MATRICES =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.debugMatrices", "false"));
-  private static int debugMatricesFrame = 0;
-
-  // One-shot/throttled diagnostic: the Iris distant TAA reprojection reconstructs view-space
-  // distance with vxProjInv (projection ALONE), while the stored depth was produced by
-  // drawMvp = projection * modelView * translate(-subSection). The translate is a pure
-  // translation, so if the reconstructed distance is uniformly compressed the only remaining
-  // source is a non-unit scale (or unexpected translation) baked into the captured modelView.
-  // Logs the projection depth row plus the modelView upper-3x3 column norms (1.0 == pure
-  // rotation) and translation column so we can tell modelView-scale from a Metal-side point bug.
-  private static void maybeLogMatrices(Matrix4fc projection, Matrix4fc modelView) {
-    if (!DEBUG_MATRICES) {
-      return;
-    }
-    if ((debugMatricesFrame++ % 120) != 0) {
-      return;
-    }
-    double c0 =
-        Math.sqrt(
-            modelView.m00() * modelView.m00()
-                + modelView.m01() * modelView.m01()
-                + modelView.m02() * modelView.m02());
-    double c1 =
-        Math.sqrt(
-            modelView.m10() * modelView.m10()
-                + modelView.m11() * modelView.m11()
-                + modelView.m12() * modelView.m12());
-    double c2 =
-        Math.sqrt(
-            modelView.m20() * modelView.m20()
-                + modelView.m21() * modelView.m21()
-                + modelView.m22() * modelView.m22());
-    // Probe: a point 1000 blocks straight ahead in view space (-Z) -> NDC depth via projection.
-    org.joml.Vector4f probe = new org.joml.Vector4f(0.0f, 0.0f, -1000.0f, 1.0f);
-    projection.transform(probe);
-    float ndcZ = probe.z / probe.w;
-    me.cortex.voxy.common.Logger.info(
-        String.format(
-            "VOXYMTX proj.m22=%.6f proj.m32=%.4f | mv colNorm=[%.5f %.5f %.5f]"
-                + " mv.trans=[%.3f %.3f %.3f] | view(-1000) ndcZ=%.6f (=%.4f in [0,1])",
-            projection.m22(),
-            projection.m32(),
-            c0,
-            c1,
-            c2,
-            modelView.m30(),
-            modelView.m31(),
-            modelView.m32(),
-            ndcZ,
-            (ndcZ + 1.0f) * 0.5f));
   }
 
   private static void translateByNegativeCameraSubSection(

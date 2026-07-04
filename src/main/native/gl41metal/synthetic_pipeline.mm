@@ -79,9 +79,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_subm
     NativeContext* capturedContext = context;
     int capturedSlot = slotIndex;
     [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> buffer) {
-      if (capturedContext->completionDelayMs > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(capturedContext->completionDelayMs));
-      }
       {
         std::lock_guard<std::mutex> lock(capturedContext->mutex);
         if (buffer.status == MTLCommandBufferStatusError && buffer.error != nil) {

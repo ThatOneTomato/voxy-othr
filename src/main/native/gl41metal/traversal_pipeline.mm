@@ -79,8 +79,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_subm
     jint viewportWidth,
     jint viewportHeight,
     jlong ssaoMatricesAddress,
-    jint ssaoSteps,
-    jboolean debugDumpWorklist) {
+    jint ssaoSteps) {
   @autoreleasepool {
     NativeContext* context = requireContext(env, handle);
     if (context == nullptr) {
@@ -456,11 +455,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_subm
     NativeContext* capturedContext = context;
     int capturedSlot = slotIndex;
     FrameResources* capturedFrame = frame;
-    bool capturedDebugDump = debugDumpWorklist == JNI_TRUE;
     [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> buffer) {
-      if (capturedContext->completionDelayMs > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(capturedContext->completionDelayMs));
-      }
       {
         std::lock_guard<std::mutex> lock(capturedContext->mutex);
         if (buffer.status == MTLCommandBufferStatusCompleted) {
@@ -501,18 +496,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_subm
               std::min<uint64_t>(completedTerrain->topNodeCount, UINT32_MAX));
           completedTerrain->lastTraversal[5] = requestCount;
           completedTerrain->lastTraversal[6] = worklistCounter[0];
-          if (capturedDebugDump) {
-            NSLog(
-                @"GL41Metal traversal: top=%u visited=%u worklist=%u queued=%u requests=%u traversalQuads=%u drawQuads=%u drawTriangles=%u",
-                completedTerrain->lastTraversal[4],
-                completedTerrain->lastTraversal[0],
-                completedTerrain->lastTraversal[6],
-                completedTerrain->lastTraversal[7],
-                completedTerrain->lastTraversal[5],
-                completedTerrain->lastTraversal[3],
-                completedTerrain->lastRaster[1],
-                completedTerrain->lastRaster[2]);
-          }
         }
         Slot& completedSlot = capturedContext->slots[capturedSlot];
         if (completedSlot.state == SlotState::MetalSubmitted) {

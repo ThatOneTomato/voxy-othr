@@ -152,13 +152,6 @@ import org.lwjgl.system.MemoryUtil;
  * the Iris path generalizes, not a parallel duplicate.
  */
 final class GlDistantTerrainBridge implements AutoCloseable {
-  private static final int DEBUG_NONE = 0;
-  private static final int DEBUG_COLOR = 1;
-  private static final int DEBUG_CUSTOM_ID = 2;
-  private static final int DEBUG_DEPTH = 3;
-  private static final int DEBUG_COVERAGE = 4;
-  private static final int DEBUG_LIT_COLOR = 5;
-
   // Word-boundary regex used by buildFragmentShader() to rewrite gl_FragCoord ->
   // voxy_OverrideFragCoord
   // in patched pack source. Apple's GL4.1 GLSL preprocessor silently refuses to redefine the
@@ -167,51 +160,12 @@ final class GlDistantTerrainBridge implements AutoCloseable {
   // the assembled fragment shader to the driver. See GLSL_GBUFFER_DECODE's voxy_OverrideFragCoord
   // declaration and the buildFragmentShader() comment for the full failure mode.
   private static final Pattern REWRITE_GL_FRAG_COORD = Pattern.compile("\\bgl_FragCoord\\b");
-  // Visualises the raw gbuffer lightMap (block, sky, 0). Used to triage "distant turns black in
-  // pack mode but shows in litColor" against the hypothesis that Metal is writing sky=0 to the
-  // gbuffer for distant LODs (in which case Complementary's lmCoord.y=0 path correctly outputs
-  // black even though the MC vanilla lightmap texture in litColor mode still returns a dim
-  // ambient at UV (0.03125, 0.03125)).
-  private static final int DEBUG_LIGHTMAP = 6;
-  private static final int DEBUG_MODE = parseDebugMode();
-  // Strict-Iris diagnostic: keep the full strict pipeline (private depth-stencil coverage,
-  // colortex0
-  // write, Voxy-NDC depth, deferred1 LOD branch) but overwrite the pack's voxy_emitFragment lit
-  // colour with the raw gbuffer albedo*tint right before output. Enable with
-  // -Dvoxy.gl41metal.debugStrictAlbedo=true. This isolates "does the strict pipeline deliver colour
-  // to the deferred LOD branch at all" from "is the pack's lighting maths producing black": if the
-  // distant shows flat albedo with this flag but is black without it, the pack lighting is the
-  // culprit; if it stays black, the strict colour never reaches deferred1's LOD branch.
-  private static final boolean DEBUG_STRICT_ALBEDO =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.debugStrictAlbedo", "false"));
-  // Which gbuffer field the DEBUG_STRICT_ALBEDO override writes into gbufferData0, so all three
-  // "why is the strict distant colour black" hypotheses can be triaged in a single build by setting
-  // -Dvoxy.gl41metal.debugStrictAlbedoSource=albedoTint|albedo|tint|white:
-  //   albedoTint (default) -> g.colour.rgb * g.tint.rgb (raw unlit surface colour)
-  //   albedo               -> g.colour.rgb only (isolate the baked block albedo)
-  //   tint                 -> g.tint.rgb only (isolate the biome/vertex tint)
-  //   white                -> vec3(0.75) constant (isolate the deferred1 LOD branch: if even a
-  //                           constant comes out black, ssao^4/fog/lodShadow is the darkener, not
-  //                           the gbuffer)
-  private static final String DEBUG_STRICT_ALBEDO_EXPR = parseDebugStrictAlbedoExpr();
   private static final boolean USE_MANUAL_DEPTH_MASK =
       Boolean.parseBoolean(System.getProperty("voxy.gl41metal.manualDepthMask", "true"));
-  // Diagnostic for the distant translucent (water) path. When enabled, the vanilla water pass draws
-  // a full-screen probe with depth test + blend off: GREEN (opaque) wherever the Metal translucent
-  // gbuffer has a covered fragment (water/glass present), and a faint RED wash everywhere else
-  // (proving the composite pass itself ran). No green anywhere -> no translucent data reached the
-  // tgbuffer (traversal/raster issue); green only where water is -> data is fine and the failure is
-  // shading/depth/blend. Enable with -Dvoxy.gl41metal.debugTranslucent=true.
-  private static final boolean DEBUG_TRANSLUCENT =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.debugTranslucent", "false"));
   // Diagnostic: dump generated bridge fragment shaders to run/bridge_*.frag and log their size +
   // sampler count. Enable with -Dvoxy.gl41metal.dumpShaders=true.
   private static final boolean DUMP_SHADERS =
       Boolean.parseBoolean(System.getProperty("voxy.gl41metal.dumpShaders", "false"));
-  // Diagnostic: override the captured env-fog range (fogEnd = value, fogStart = value/4) so the
-  // distant fog is visible regardless of the configured section render distance.
-  private static final float DEBUG_FOG_END =
-      Float.parseFloat(System.getProperty("voxy.gl41metal.debugFogEnd", "0"));
   // The Iris colour pass embeds a shader pack's whole fragment patch, which Apple's GL4.1 GLSL
   // linker cannot compile as-is -- it SIGSEGVs in glpLLVMGetFunctionGlobalVariableUse while
   // analysing the synthesized global-init routine for the pack's file-scope initializer chain
@@ -547,9 +501,9 @@ final class GlDistantTerrainBridge implements AutoCloseable {
       return false;
     }
     // The strict Iris path (own FBO, shader-pack patch) renders in a single pass into a Voxy-owned
-    // private depth attachment, exactly like voxy-fabric's IrisVoxyRenderPipeline. Vanilla and the
-    // debug visualisations stay single pass too; only the program shape differs (see programFor).
-    boolean irisStrict = job.ownFramebuffer() && DEBUG_MODE == DEBUG_NONE;
+    // private depth attachment, exactly like voxy-fabric's IrisVoxyRenderPipeline. Vanilla stays
+    // single pass too; only the program shape differs (see programFor).
+    boolean irisStrict = job.ownFramebuffer();
 
     StateSnapshot state = StateSnapshot.capture();
     try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -729,16 +683,9 @@ final class GlDistantTerrainBridge implements AutoCloseable {
       boolean colorWrite = job.colorWriteEnabled();
       glColorMask(colorWrite, colorWrite, colorWrite, colorWrite);
       glDisable(GL_STENCIL_TEST);
-      if (DEBUG_TRANSLUCENT) {
-        // Probe: always draw (no occlusion) so we can tell whether the pass ran and where the Metal
-        // translucent gbuffer has coverage.
-        glDisable(GL_DEPTH_TEST);
-        glDepthMask(false);
-      } else {
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(reverseDepth ? GL_GEQUAL : GL_LEQUAL);
-        glDepthMask(false);
-      }
+      glEnable(GL_DEPTH_TEST);
+      glDepthFunc(reverseDepth ? GL_GEQUAL : GL_LEQUAL);
+      glDepthMask(false);
       glEnable(GL_BLEND);
       org.lwjgl.opengl.GL14C.glBlendFuncSeparate(
           org.lwjgl.opengl.GL11C.GL_SRC_ALPHA,
@@ -1001,23 +948,13 @@ final class GlDistantTerrainBridge implements AutoCloseable {
       boolean reverseDepth,
       boolean strict) {
     if (!strict) {
-      // Default (vanilla / debug) specialization: one colour pass straight into the target
-      // framebuffer with a hardware depth test against the real scene depth, plus the optional
-      // in-shader near-depth mask. Vanilla draws into the MC main framebuffer (so it writes MC
-      // depth for later passes); debug visualisations draw into the Iris targets using the Iris
-      // main
-      // depth. This is the forced divergence from the strict branch below: the MC framebuffer has a
-      // real, hardware-testable depth attachment and must keep MC depth, whereas the strict Iris
-      // targets have no stencil-testable shared depth and must emit voxy-only private depth.
-      if (job.ownFramebuffer()) {
-        if (!this.bindTargetFramebuffer(stack, job, job.depthTextureId(), false)) {
-          return false;
-        }
-      } else {
-        // Vanilla draws into the source framebuffer (MC main target) using its existing colour
-        // attachment 0 and depth attachment, so we must not retarget draw buffers here.
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, job.sourceFramebuffer());
-      }
+      // Vanilla specialization: one colour pass straight into the source framebuffer (MC main
+      // target) with a hardware depth test against the real scene depth, plus the optional
+      // in-shader near-depth mask. It writes MC depth for later passes. This is the forced
+      // divergence from the strict branch below: the MC framebuffer has a real, hardware-testable
+      // depth attachment and must keep MC depth, whereas the strict Iris targets have no
+      // stencil-testable shared depth and must emit voxy-only private depth.
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, job.sourceFramebuffer());
 
       glViewport(0, 0, job.outputWidth(), job.outputHeight());
       boolean colorWrite = job.colorWriteEnabled();
@@ -1037,25 +974,18 @@ final class GlDistantTerrainBridge implements AutoCloseable {
       if (colorProgram.lightSamplerUniform() >= 0) {
         glUniform1i(colorProgram.lightSamplerUniform(), LIGHTMAP_TEXTURE_UNIT);
       }
-      // Only the vanilla program (VANILLA_PATCH) declares the fog uniforms; the debug shapes
-      // compile them out (location -1) and the helper no-ops.
       setVanillaFogUniforms(
           colorProgram.fogParamsUniform(),
           colorProgram.fogColorUniform(),
           colorProgram.fogShapeUniform());
-      if (DEBUG_MODE != DEBUG_NONE) {
-        glUniform1i(colorProgram.debugModeUniform(), DEBUG_MODE);
-      }
 
       this.bindGbufferTextures(slot);
       if (useManualDepthMask) {
         this.bind2DTexture(SOURCE_DEPTH_TEXTURE_UNIT, sourceDepthTexture);
       }
-      // The MC lightmap is bound for the vanilla patch (direct sample) and debug litColor mode.
+      // The MC lightmap is bound for the vanilla patch (direct sample).
       LightMapHelper.bind(LIGHTMAP_TEXTURE_UNIT);
-      if (DEBUG_MODE == DEBUG_NONE) {
-        this.bindShaderPackResources(job);
-      }
+      this.bindShaderPackResources(job);
 
       glBindVertexArray(this.fullscreenVao);
       glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -1133,52 +1063,11 @@ final class GlDistantTerrainBridge implements AutoCloseable {
     glBindVertexArray(this.fullscreenVao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
-    maybeReadbackCenterDepth(stack, job);
-
     // StateSnapshot.restore() does not track stencil state, so leave it disabled with a default
     // mask for the rest of the host frame.
     glDisable(GL_STENCIL_TEST);
     glStencilMask(0xFF);
     return true;
-  }
-
-  private static final boolean DEBUG_DEPTH_READBACK =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.debugDepthReadback", "false"));
-  private static int debugDepthReadbackFrame = 0;
-
-  // Ground-truth diagnostic for the "distant LOD depth is too small" question. Reads the actual
-  // value
-  // the shader pack samples as vxDepthTexOpaque (this.framebuffer's private depth) at the screen
-  // CENTRE (the crosshair), and reconstructs the camera distance with the SAME projection the
-  // VOXYMTX log proved correct (near=16, far=48000, GL [0,1] depth, 0=near). depth -> ndc=2d-1 ->
-  // z_view = m32 / (ndc + m22). If a far crosshair target reports only tens of blocks, the depth
-  // WRITE is genuinely compressed in Metal; if it reports the true distance, the GLSL band probe
-  // was
-  // misreading and depth is fine.
-  private void maybeReadbackCenterDepth(MemoryStack stack, DistantBridgeJob job) {
-    if (!DEBUG_DEPTH_READBACK) {
-      return;
-    }
-    if ((debugDepthReadbackFrame++ % 60) != 0) {
-      return;
-    }
-    int cx = job.outputWidth() / 2;
-    int cy = job.outputHeight() / 2;
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, this.framebuffer);
-    FloatBuffer depthBuf = stack.mallocFloat(1);
-    glReadPixels(cx, cy, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, depthBuf);
-    float d = depthBuf.get(0);
-    float near = 16.0f;
-    float far = 16.0f * 3000.0f;
-    float m22 = (far + near) / (near - far);
-    float m32 = (2.0f * far * near) / (near - far);
-    float ndc = d * 2.0f - 1.0f;
-    float denom = ndc + m22;
-    float zView = Math.abs(denom) < 1.0e-9f ? Float.POSITIVE_INFINITY : (m32 / denom);
-    Logger.info(
-        String.format(
-            "VOXYDEPTH centre depth=%.6f -> ndc=%.6f -> camDist=%.1f blocks (near=16 far=48000)",
-            d, ndc, Math.abs(zView)));
   }
 
   /**
@@ -1252,12 +1141,6 @@ final class GlDistantTerrainBridge implements AutoCloseable {
     var vrs = IGetVoxyRenderSystem.getNullable();
     float fogStart = vrs != null ? vrs.getCapturedFogStart() : RenderSystem.getShaderFogStart();
     float fogEnd = vrs != null ? vrs.getCapturedFogEnd() : RenderSystem.getShaderFogEnd();
-    // DIAGNOSTIC: force a short fog range to make the distant env fog obvious, verifying the
-    // whole capture -> uniform -> shader chain. -Dvoxy.gl41metal.debugFogEnd=<blocks>.
-    if (DEBUG_FOG_END > 0.0f) {
-      fogStart = DEBUG_FOG_END * 0.25f;
-      fogEnd = DEBUG_FOG_END;
-    }
     float[] fogColor = vrs != null ? vrs.getCapturedFogColor() : RenderSystem.getShaderFogColor();
     if (VoxyConfig.CONFIG.renderVoxyFog && Math.abs(fogEnd - fogStart) > 1) {
       glUniform4f(
@@ -1316,7 +1199,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
   }
 
   private BridgeProgram programFor(DistantBridgeJob job) {
-    int shaderKey = job.shaderKey() * 31 + DEBUG_MODE;
+    int shaderKey = job.shaderKey();
     if (this.program != null && this.program.shaderKey() == shaderKey) {
       return this.program;
     }
@@ -1327,14 +1210,13 @@ final class GlDistantTerrainBridge implements AutoCloseable {
       this.program.shader().free();
       this.program = null;
     }
-    // The strict Iris path (own framebuffer, no debug) omits the near-mask + lightmap blocks so the
+    // The strict Iris path (own framebuffer) omits the near-mask + lightmap blocks so the
     // colour program stays at 3 base samplers; occlusion is done by the hardware depth test in
-    // runOpaquePass. Vanilla and debug keep the inline near mask.
-    boolean usesNearMask = !(job.ownFramebuffer() && DEBUG_MODE == DEBUG_NONE);
+    // runOpaquePass. Vanilla keeps the inline near mask.
+    boolean usesNearMask = !job.ownFramebuffer();
     try {
       String fragmentSource =
-          this.buildFragmentShader(
-              DEBUG_MODE, job.shaderHeader(), job.fragmentPatch(), usesNearMask);
+          this.buildFragmentShader(job.shaderHeader(), job.fragmentPatch(), usesNearMask);
       BridgeProgram bridgeProgram =
           this.compileBridgeProgram(shaderKey, usesNearMask, fragmentSource);
       if (bridgeProgram == null) {
@@ -1410,7 +1292,6 @@ final class GlDistantTerrainBridge implements AutoCloseable {
             glGetUniformLocation(shader.id(), "uSourceDepthSize"),
             glGetUniformLocation(shader.id(), "uReverseDepth"),
             glGetUniformLocation(shader.id(), "uUseManualDepthMask"),
-            glGetUniformLocation(shader.id(), "uDebugMode"),
             glGetUniformLocation(shader.id(), "uInvVoxyMvp"),
             glGetUniformLocation(shader.id(), "uVanillaMvp"),
             glGetUniformLocation(shader.id(), "uFogParams"),
@@ -1513,9 +1394,6 @@ final class GlDistantTerrainBridge implements AutoCloseable {
    */
   private String buildTranslucentFragmentShader(
       String shaderHeader, String patchSource, boolean vanilla) {
-    if (vanilla && DEBUG_TRANSLUCENT) {
-      return GLSL_TGBUFFER_DECODE + GLSL_LIGHTMAP + GLSL_VANILLA_TRANSLUCENT_DEBUG_MAIN;
-    }
     StringBuilder shader = new StringBuilder(GLSL_TGBUFFER_DECODE);
     if (vanilla) {
       shader.append(GLSL_BOUND_CLIP).append(GLSL_LIGHTMAP).append(VANILLA_WATER_PATCH);
@@ -1954,79 +1832,12 @@ final class GlDistantTerrainBridge implements AutoCloseable {
       }
       """;
 
-  // MC lightmap, used by the vanilla built-in patch and the litColor debug mode only.
+  // MC lightmap, used by the vanilla built-in patch only.
   private static final String GLSL_LIGHTMAP =
       """
 
       uniform sampler2D uLightmapTex;
       uniform sampler2D lightSampler;
-      """;
-
-  // Debug visualisation main(). Appended after GBUFFER_DECODE + NEAR_MASK + LIGHTMAP.
-  private static final String GLSL_DEBUG_MAIN =
-      """
-
-      layout(location = 0) out vec4 fragColor;
-
-      uniform int uDebugMode;
-
-      float hashUnit(uint value) {
-        value ^= value >> 16u;
-        value *= 0x7feb352du;
-        value ^= value >> 15u;
-        value *= 0x846ca68bu;
-        value ^= value >> 16u;
-        return float(value & 255u) / 255.0;
-      }
-
-      float directionalTint(bool shaded, uint face) {
-        if (!shaded) {
-          return 1.0;
-        }
-        if ((face >> 1u) == 1u) {
-          return 0.8;
-        }
-        if ((face >> 1u) == 2u) {
-          return 0.6;
-        }
-        if (face == 1u) {
-          return 1.0;
-        }
-        return 0.5;
-      }
-
-      void main() {
-        vec2 targetPixel = gl_FragCoord.xy;
-        vec2 sharedPixel = sharedPixelForTarget(targetPixel);
-        VoxyGbufferTexel g = sampleVoxyGbuffer(sharedPixel);
-        bool shaded = ((g.flags >> 6u) & 1u) != 0u;
-        float outputDepth = projectDepth(rev3d(vec3(targetPixel / max(uTargetSize, vec2(1.0)), g.depth)));
-        if (g.coverage <= 0.0 || g.depth <= 0.0 || g.depth >= 1.0 || isHiddenByNearDepth(targetPixel, outputDepth)) {
-          discard;
-        }
-        if (uDebugMode == 1) {
-          fragColor = vec4(g.colour.rgb, 1.0);
-        } else if (uDebugMode == 5) {
-          vec4 light = texture(uLightmapTex, g.lightMap);
-          vec4 litColor = g.colour * g.tint * light;
-          litColor.rgb *= directionalTint(shaded, g.face);
-          fragColor = vec4(litColor.rgb, 1.0);
-        } else if (uDebugMode == 2) {
-          fragColor = vec4(hashUnit(g.customId), hashUnit(g.customId * 1664525u + 1013904223u), hashUnit(g.customId * 22695477u + 1u), 1.0);
-        } else if (uDebugMode == 3) {
-          fragColor = vec4(vec3(g.depth), 1.0);
-        } else if (uDebugMode == 6) {
-          // R = block light (lightMap.x), G = sky light (lightMap.y). Remap from gbuffer encoding
-          // range [0.03125, 0.96875] -> [0, 1] so "fully lit sky" shows as pure green and unlit
-          // distant terrain shows as black-or-near-black. Confirms whether the gbuffer carries
-          // valid sky-light data for the distant LOD.
-          vec2 lm = clamp((g.lightMap - 0.03125) / 0.9375, vec2(0.0), vec2(1.0));
-          fragColor = vec4(lm.x, lm.y, 0.0, 1.0);
-        } else {
-          fragColor = vec4(vec3(g.coverage), 1.0);
-        }
-        gl_FragDepth = outputDepth;
-      }
       """;
 
   // Shared opaque colour main() for BOTH targets. voxy_OverrideFragCoord substitutes for
@@ -2081,49 +1892,11 @@ __VOXY_OPAQUE_MASK__        voxyQuadFlags = g.flags;
         .replace("__VOXY_OPAQUE_FRAGDEPTH__", fragDepth);
   }
 
-  // Strict-Iris colour main with the DEBUG_STRICT_ALBEDO override. Identical to
-  // GLSL_COLOR_MAIN_NO_MASK except it overwrites the pack's lit gbufferData0 with the raw gbuffer
-  // albedo*tint after voxy_emitFragment. Referencing gbufferData0 here is safe because the strict
-  // path always embeds a pack patch that declares `layout(location = 0) out vec4 gbufferData0;`
-  // (see Complementary voxy_opaque.glsl); this is a diagnostic shape, not a production path.
-  private static final String GLSL_COLOR_MAIN_NO_MASK_DEBUG_ALBEDO =
-      """
-
-      // DIAGNOSTIC helper for the "worldy" probe: world-space Y from private Voxy-NDC depth.
-      float voxyDebugWorldY(float depth) {
-        vec2 ndcXY = gl_FragCoord.xy / vec2(viewWidth, viewHeight) * 2.0 - 1.0;
-        vec4 clip = vec4(ndcXY, depth * 2.0 - 1.0, 1.0);
-        vec4 view = vxProjInv * clip;
-        view /= view.w;
-        vec3 playerPos = mat3(vxModelViewInv) * view.xyz + vxModelViewInv[3].xyz;
-        return playerPos.y + cameraPosition.y;
-      }
-
-      void main() {
-        vec2 targetPixel = gl_FragCoord.xy;
-        vec2 sharedPixel = sharedPixelForTarget(targetPixel);
-        VoxyGbufferTexel g = sampleVoxyGbuffer(sharedPixel);
-        if (g.coverage <= 0.0 || g.depth <= 0.0 || g.depth >= 1.0) {
-          discard;
-        }
-        voxyQuadFlags = g.flags;
-        voxy_OverrideFragCoord = vec4(gl_FragCoord.xy, g.depth, gl_FragCoord.w);
-        VoxyFragmentParameters parameters =
-            VoxyFragmentParameters(
-                g.colour, g.tile, g.uv, int(g.face), g.modelId, g.lightMap, g.tint, g.customId);
-        voxy_emitFragment(parameters);
-        // DIAGNOSTIC: replace the pack's lit colour with the selected gbuffer source (see
-        // DEBUG_STRICT_ALBEDO / DEBUG_STRICT_ALBEDO_EXPR).
-        gbufferData0 = vec4(__VOXY_DEBUG_ALBEDO_EXPR__, 1.0);
-        gl_FragDepth = g.depth;
-      }
-      """;
-
   /**
    * Builds the bridge fragment shader.
    *
    * @param includeNearMask when true the near-depth mask + lightmap blocks are inlined (vanilla
-   *     single pass and debug). When false (strict Iris single pass) they are omitted so only
+   *     single pass). When false (strict Iris single pass) they are omitted so only
    *     gbuffer0-2 stay active and the shader pack's samplers fit; occlusion is instead enforced by
    *     the hardware depth test against the Voxy private depth attachment that {@link
    *     #runOpaquePass} pre-seeds with the Iris near depth.
@@ -2359,41 +2132,11 @@ __VOXY_TRANSLUCENT_TAIL__      }
         .replace("__VOXY_TRANSLUCENT_TAIL__", tail);
   }
 
-  // Diagnostic vanilla water main (see DEBUG_TRANSLUCENT). Green where a translucent fragment is
-  // present, faint red wash elsewhere; no depth/discard so it always draws.
-  private static final String GLSL_VANILLA_TRANSLUCENT_DEBUG_MAIN =
-      """
-
-      layout(location = 0) out vec4 voxyWaterColor;
-
-      void main() {
-        vec2 targetPixel = gl_FragCoord.xy;
-        vec2 sharedPixel = sharedPixelForTarget(targetPixel);
-        VoxyTranslucentTexel g = sampleVoxyTranslucent(sharedPixel);
-        // Keep uLightmapTex / uInvVoxyMvp / uVanillaMvp live so the vanilla program passes
-        // hasRequiredUniforms() (they get stripped to location -1 otherwise). Scaled to ~0 so the
-        // probe colours below are unaffected.
-        float keep =
-            (texture(uLightmapTex, g.lightMap).r +
-             projectDepth(rev3d(vec3(targetPixel / max(uTargetSize, vec2(1.0)), g.depth)))) * 1e-9;
-        if (g.coverage > 0.0) {
-          voxyWaterColor = vec4(0.0, 1.0, keep, 1.0);
-        } else {
-          voxyWaterColor = vec4(1.0, 0.0, keep, 0.25);
-        }
-        gl_FragDepth = 0.0;
-      }
-      """;
-
   private String buildFragmentShader(
-      int debugMode, String shaderHeader, String patchSource, boolean includeNearMask) {
+      String shaderHeader, String patchSource, boolean includeNearMask) {
     StringBuilder shader = new StringBuilder(gbufferDecode());
     if (includeNearMask) {
       shader.append(GLSL_NEAR_MASK).append(GLSL_LIGHTMAP);
-    }
-    if (debugMode != DEBUG_NONE) {
-      // Debug always runs vanilla-style (includeNearMask=true), so the mask/lightmap blocks exist.
-      return shader.append(GLSL_DEBUG_MAIN).toString();
     }
     // Rewrite gl_FragCoord -> voxy_OverrideFragCoord in patched pack source only. main() (below)
     // keeps the real built-in gl_FragCoord. See GLSL_GBUFFER_DECODE's voxy_OverrideFragCoord
@@ -2403,15 +2146,7 @@ __VOXY_TRANSLUCENT_TAIL__      }
     String rewrittenPatch =
         REWRITE_GL_FRAG_COORD.matcher(patchSource).replaceAll("voxy_OverrideFragCoord");
     shader.append("\n").append(shaderHeader).append("\n").append(rewrittenPatch).append("\n");
-    if (includeNearMask) {
-      shader.append(opaqueColorMain(true));
-    } else {
-      shader.append(
-          DEBUG_STRICT_ALBEDO
-              ? GLSL_COLOR_MAIN_NO_MASK_DEBUG_ALBEDO.replace(
-                  "__VOXY_DEBUG_ALBEDO_EXPR__", DEBUG_STRICT_ALBEDO_EXPR)
-              : opaqueColorMain(false));
-    }
+    shader.append(opaqueColorMain(includeNearMask));
     String composed = shader.toString();
     if (!includeNearMask) {
       // See the class-level Apple GL4.1 transform comment: hoisting is the root-cause fix for the
@@ -3380,105 +3115,6 @@ __VOXY_TRANSLUCENT_TAIL__      }
     glDeleteFramebuffers(this.framebuffer);
   }
 
-  private static String parseDebugStrictAlbedoExpr() {
-    String src = System.getProperty("voxy.gl41metal.debugStrictAlbedoSource", "albedoTint").trim();
-    return switch (src) {
-      case "albedo" -> "g.colour.rgb";
-      case "tint" -> "g.tint.rgb";
-      case "white" -> "vec3(0.75)";
-        // Lighting-input probes: visualise exactly what the pack's voxy_emitFragment receives in
-        // the
-        // STRICT path (bridgeDebugMode=lightMap runs the vanilla path, which can sample a different
-        // slot/timing). rawsky/rawblock are the gbuffer lightmap channels; skycoord/blockcoord are
-        // the
-        // MC lightmap coords the pack derives (lmCoord = (lightMap-0.03125)*1.06667). simplelit is
-        // a
-        // minimal skylight-only shade to confirm our gbuffer can produce a lit image at all.
-      case "rawsky" -> "vec3(g.lightMap.y)";
-      case "rawblock" -> "vec3(g.lightMap.x)";
-      case "skycoord" -> "vec3(clamp((g.lightMap.y - 0.03125) * 1.06667, 0.0, 1.0))";
-        // Sky-light gate probe: reproduces DoLighting's skyLightShadowMult = lightmap.y^8
-        // (mainLighting.glsl: lightmapY2 = lightmap.y^2; skyLightShadowMult =
-        // pow2(pow2(lightmapY2))).
-        // This is the exact term that multiplies BOTH the directional sun and the screenspace LOD
-        // shadow on distant terrain, so the "above a world-Y it suddenly goes very bright" symptom
-        // is
-        // this curve turning the LOD skylight (lightmap.y) into a near-binary step. If this probe's
-        // hard edge lands exactly on the brightness threshold, the cause is the LOD skylight value
-        // (baked light in the Metal gbuffer) under the pack's ^8 curve - NOT lightColor or the sun
-        // basis (already proven correct). Compare against rawsky: a smooth rawsky here means the
-        // step
-        // is the inherent ^8 curve (matches voxy-fabric); a hard step already in rawsky means our
-        // baked LOD skylight is quantized/wrong.
-      case "skygate" -> "vec3(pow(clamp((g.lightMap.y - 0.03125) * 1.06667, 0.0, 1.0), 8.0))";
-      case "blockcoord" -> "vec3(clamp((g.lightMap.x - 0.03125) * 1.06667, 0.0, 0.9333))";
-      case "simplelit" -> "g.colour.rgb * g.tint.rgb * clamp(g.lightMap.y, 0.15, 1.0)";
-        // Pack lighting-global probes: simplelit proved our gbuffer can be lit, so a single global
-        // multiplier in the pack's DoLighting must be ~0. These read the pack's own computed
-        // globals
-        // (in scope because main() is appended after the pack patch + its lightAndAmbientColors
-        // include)
-        // to find which one collapses. ambient/lightcolor are the scene light colours; darkness
-        // reads
-        // (1-darknessLightFactor) so a garbage non-zero potion factor shows up as black. If any
-        // identifier does not exist for a given pack the strict program fails to compile (moire
-        // fallback), meaning that probe is unavailable for that pack.
-      case "ambient" -> "ambientColor";
-      case "lightcolor" -> "lightColor";
-      case "darkness" -> "vec3(1.0 - darknessLightFactor)";
-        // Sun-basis probes: voxy_opaque.glsl derives the ENTIRE sun basis from gbufferModelView (=
-        // vxModelView). sunvec/sdotu/upvec are file-scope globals (constant across the frame), so a
-        // correct frame shows a FLAT colour; a per-pixel-varying or obviously-wrong colour means
-        // vxModelView's rotation does not match MC's gbufferModelView convention. sunlit is the raw
-        // directional sun term dot(normal, lightVec): the lit (white) side of the terrain must face
-        // the visible on-screen sun; if it is lit from the wrong direction the matrix/normal basis
-        // is
-        // wrong, which would corrupt every sunlight-dependent effect at once.
-      case "sunvec" -> "sunVec * 0.5 + 0.5";
-      case "sdotu" -> "vec3(clamp(SdotU * 0.5 + 0.5, 0.0, 1.0))";
-      case "upvec" -> "upVec * 0.5 + 0.5";
-      case "normal" -> "normalize(normal) * 0.5 + 0.5";
-      case "sunlit" -> "vec3(clamp(dot(normalize(normal), normalize(lightVec)), 0.0, 1.0))";
-        // World-height probe: reconstructs the fragment's world-space Y from the private Voxy-NDC
-        // depth via vxProjInv/vxModelViewInv (the same path voxy_emitFragment uses for playerPos),
-        // then bands it every 16 blocks. Confirms whether the "above a Y threshold it goes very
-        // bright" symptom lines up with a real height boundary (lightmap/skylight) or with a
-        // reconstruction discontinuity. cameraPosition makes the bands absolute, not
-        // camera-relative.
-        // Uses the GLSL helper voxyDebugWorldY() injected just above main() so this stays readable.
-      case "worldy" -> "vec3(fract(voxyDebugWorldY(g.depth) / 16.0))";
-        // Screenspace LOD-shadow probe: reads colortex18 (written by deferred1's GetLODShadows for
-        // VOXY) at the current pixel. This is the buffer DoLighting reprojects into shadowMult
-        // (mainLighting.glsl VOXY_PATCH branch): colortex18 = lodShadow + OSIEBCA, so lit terrain
-        // reads ~1 (white) and shadowed reads ~OSIEBCA (~black). The ambient/lightColor probes
-        // proved
-        // the scene light colours are fine, so if the distant is lit here (white) the bug is
-        // elsewhere
-        // in DoLighting; if it is ~black here, deferred1's depth-march is wrongly shadowing the
-        // whole
-        // sunlit distant (the prime "dark distant under a normal sky" suspect). We sample at the
-        // raw
-        // pixel (no reprojection) which matches DoLighting for a still camera. colortex18 is in
-        // scope
-        // because the pack includes declare `uniform sampler2D colortex18` ahead of this main().
-      case "ssshadow" -> "vec3(texelFetch(colortex18, ivec2(gl_FragCoord.xy), 0).r)";
-      default -> "g.colour.rgb * g.tint.rgb";
-    };
-  }
-
-  private static int parseDebugMode() {
-    String mode = System.getProperty("voxy.gl41metal.bridgeDebugMode", "none").trim();
-    return switch (mode) {
-      case "color" -> DEBUG_COLOR;
-      case "litColor" -> DEBUG_LIT_COLOR;
-      case "customId" -> DEBUG_CUSTOM_ID;
-      case "depth" -> DEBUG_DEPTH;
-      case "coverage" -> DEBUG_COVERAGE;
-      case "lightMap" -> DEBUG_LIGHTMAP;
-      default -> DEBUG_NONE;
-    };
-  }
-
   private record BridgeProgram(
       int shaderKey,
       Shader shader,
@@ -3494,7 +3130,6 @@ __VOXY_TRANSLUCENT_TAIL__      }
       int sourceDepthSizeUniform,
       int reverseDepthUniform,
       int useManualDepthMaskUniform,
-      int debugModeUniform,
       int invVoxyMvpUniform,
       int vanillaMvpUniform,
       int fogParamsUniform,
@@ -3502,8 +3137,8 @@ __VOXY_TRANSLUCENT_TAIL__      }
       int fogShapeUniform) {
     boolean hasRequiredUniforms() {
       // The strict Iris colour pass (usesNearMask=false) deliberately omits uSourceDepthTex and the
-      // near-mask uniforms so it stays at 3 base samplers; only require them for the masking shapes
-      // (vanilla single pass and the debug visualisations).
+      // near-mask uniforms so it stays at 3 base samplers; only require them for the vanilla
+      // single pass.
       //
       // uInvVoxyMvp/uVanillaMvp likewise feed projectDepth()/rev3d(), which ONLY the masking shapes
       // call to remap g.depth into vanilla NDC for gl_FragDepth. The strict Iris pass writes
@@ -3527,10 +3162,8 @@ __VOXY_TRANSLUCENT_TAIL__      }
           && this.gbuffer1TexUniform >= 0
           && this.gbuffer2TexUniform >= 0
           && nearMaskOk
-          && (DEBUG_MODE != DEBUG_LIT_COLOR || this.lightmapTexUniform >= 0)
           && this.sharedSizeUniform >= 0
-          && this.targetSizeUniform >= 0
-          && (DEBUG_MODE == DEBUG_NONE || this.debugModeUniform >= 0);
+          && this.targetSizeUniform >= 0;
     }
   }
 

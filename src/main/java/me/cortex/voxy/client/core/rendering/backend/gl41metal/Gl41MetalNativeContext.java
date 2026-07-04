@@ -9,8 +9,8 @@ final class Gl41MetalNativeContext implements AutoCloseable {
   private final String deviceName;
   private boolean closed;
 
-  Gl41MetalNativeContext(int slotCount, int width, int height, int completionDelayMs) {
-    this.handle = Gl41MetalNative.createContext(slotCount, width, height, completionDelayMs);
+  Gl41MetalNativeContext(int slotCount, int width, int height) {
+    this.handle = Gl41MetalNative.createContext(slotCount, width, height);
     this.slotCount = slotCount;
     this.width = width;
     this.height = height;

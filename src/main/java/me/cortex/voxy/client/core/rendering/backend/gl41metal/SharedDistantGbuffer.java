@@ -9,10 +9,8 @@ final class SharedDistantGbuffer implements AutoCloseable {
     this.slots = slots;
   }
 
-  static SharedDistantGbuffer create(
-      int slotCount, int width, int height, MetalDistantRenderer renderer) {
-    Gl41MetalNativeContext context =
-        new Gl41MetalNativeContext(slotCount, width, height, renderer.completionDelayMs());
+  static SharedDistantGbuffer create(int slotCount, int width, int height) {
+    Gl41MetalNativeContext context = new Gl41MetalNativeContext(slotCount, width, height);
     return new SharedDistantGbuffer(context, buildSlots(context));
   }
 

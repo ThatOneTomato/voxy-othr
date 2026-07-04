@@ -87,15 +87,13 @@ final class Gl41MetalNative {
 
   static native String getUnsupportedReason();
 
-  static native long createContext(
-      int slotCount, int width, int height, int completionDelayMs, String shaderLibraryPath);
+  static native long createContext(int slotCount, int width, int height, String shaderLibraryPath);
 
-  static long createContext(int slotCount, int width, int height, int completionDelayMs) {
+  static long createContext(int slotCount, int width, int height) {
     if (SHADER_LIBRARY_PATH == null) {
       throw new IllegalStateException("GL41Metal shader library was not loaded");
     }
-    return createContext(
-        slotCount, width, height, completionDelayMs, SHADER_LIBRARY_PATH.toString());
+    return createContext(slotCount, width, height, SHADER_LIBRARY_PATH.toString());
   }
 
   static native void destroyContext(long handle);
@@ -151,8 +149,7 @@ final class Gl41MetalNative {
       int viewportWidth,
       int viewportHeight,
       long ssaoMatricesAddress,
-      int ssaoSteps,
-      boolean debugDumpWorklist);
+      int ssaoSteps);
 
   static native int waitCurrent(long handle, int currentSlot, int timeoutMs);
 

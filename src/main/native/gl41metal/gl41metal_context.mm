@@ -112,7 +112,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_crea
     jint slotCount,
     jint width,
     jint height,
-    jint completionDelayMs,
     jstring shaderLibraryPath) {
   @autoreleasepool {
     if (slotCount < 2) {
@@ -146,7 +145,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_crea
     context->deviceName = [[context->device name] UTF8String];
     context->width = width;
     context->height = height;
-    context->completionDelayMs = completionDelayMs;
     context->slots.resize(static_cast<size_t>(slotCount));
 
     for (Slot& slot : context->slots) {

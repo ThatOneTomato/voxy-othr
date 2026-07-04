@@ -15,11 +15,6 @@ import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
 
 public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
-  private static final boolean DEBUG_DUMP_WORKLIST =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.debugDumpWorklist", "false"));
-  private static final boolean IRIS_APPROXIMATE_FALLBACK =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.irisApproxFallback", "false"));
-
   private final BackendContext context;
   private final Gl41MetalConfig config;
   private final MetalDistantRenderer metalRenderer;
@@ -57,7 +52,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   public Gl41MetalRenderBackend(BackendContext context) {
     this.context = context;
     this.config = Gl41MetalConfig.fromSystemProperties();
-    this.metalRenderer = new MetalDistantRenderer(this.config.debugCompletionDelayMs());
+    this.metalRenderer = new MetalDistantRenderer();
     this.slotScheduler = new Gl41MetalSlotScheduler(this.config.waitTimeoutMs());
     this.bridge = new GlDistantTerrainBridge();
     this.terrainResources = new Gl41MetalTerrainResources(context);
@@ -171,8 +166,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           context,
           frameMatrices.traversalMvp(),
           frameMatrices.drawMvp(),
-          frameMatrices.projection(),
-          DEBUG_DUMP_WORKLIST);
+          frameMatrices.projection());
       this.slotScheduler.recordSubmitted();
     } else {
       this.slotScheduler.recordNoFreeSlot();
@@ -268,11 +262,8 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
             this.heldTranslucentFrame = gl41MetalFrame;
             this.heldTranslucentContext = renderContext;
             held = true;
-            return;
           }
-          if (rendered || !IRIS_APPROXIMATE_FALLBACK) {
-            return;
-          }
+          return;
         } else {
           this.profiler.recordBridgeOpaque(tBridge);
           if (!bridgePayload.unavailableReason().isEmpty()
@@ -284,10 +275,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
                 "Voxy GL41Metal Iris strict bridge unavailable: "
                     + bridgePayload.unavailableReason());
           }
-          if (!IRIS_APPROXIMATE_FALLBACK) {
-            return;
-          }
-          tBridge = this.profiler.begin();
+          return;
         }
       }
 
@@ -455,7 +443,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       return;
     }
     this.gbuffer =
-        SharedDistantGbuffer.create(this.config.slotCount(), width, height, this.metalRenderer);
+        SharedDistantGbuffer.create(this.config.slotCount(), width, height);
     this.slotScheduler.reset();
     Logger.info("Voxy GL41Metal shared gbuffer initialized: " + this.gbuffer.description());
   }

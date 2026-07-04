@@ -21,7 +21,6 @@
 #include <mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "gl41metal_abi.h"
@@ -176,7 +175,6 @@ struct NativeContext {
   std::string deviceName;
   int width = 0;
   int height = 0;
-  int completionDelayMs = 0;
   GLenum textureTarget = GL_TEXTURE_RECTANGLE;
   std::vector<Slot> slots;
   std::mutex mutex;
