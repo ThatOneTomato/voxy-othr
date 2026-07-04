@@ -192,8 +192,8 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
         return switch (stage) {
             // Iris beginLevelRendering setup point: always (re)creates the frame, matching the
             // pre-abstraction CAPTURED_VIEWPORT_PARAMETERS.apply() behaviour.
-            case LEGACY_VIEWPORT_SETUP -> this.setupFrame(context.frameContext());
-            case LEGACY_OPAQUE -> {
+            case VIEWPORT_SETUP -> this.setupFrame(context.frameContext());
+            case OPAQUE -> {
                 if (IrisUtil.irisShadowActive()) {
                     // During the Iris shadow pass the pre-abstraction getViewport() returned null,
                     // so nothing was rendered.

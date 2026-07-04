@@ -80,7 +80,7 @@ public abstract class MixinDefaultChunkRenderer extends ShaderChunkRenderer {
                     IrisUtil.IRIS_INSTALLED,
                     shaderPackActive);
             frame = renderer.runFrameStage(
-                    RenderStage.LEGACY_OPAQUE,
+                    RenderStage.OPAQUE,
                     frame,
                     matrices,
                     camera.x,

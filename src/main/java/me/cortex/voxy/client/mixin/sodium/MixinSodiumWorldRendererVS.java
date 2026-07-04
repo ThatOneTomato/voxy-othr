@@ -38,7 +38,7 @@ public class MixinSodiumWorldRendererVS {
             if (renderer != null) {
                 boolean shaderPackActive = IrisUtil.irisShaderPackEnabled();
                 var frame = renderer.runFrameStage(
-                        RenderStage.LEGACY_OPAQUE,
+                        RenderStage.OPAQUE,
                         RenderFrameStageState.currentFrame(),
                         matrices,
                         x,

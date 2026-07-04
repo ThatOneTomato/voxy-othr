@@ -77,7 +77,7 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
     // reconstructs from (Complementary's taa.glsl / deferred1.glsl reproject the CURRENT-frame
     // vxDepth* with the GLOBAL vx* matrices). RETURN left the global vx* one frame behind the depth,
     // an error that grows with camera velocity (distant terrain darkens/ghosts under translation).
-    // The gl46 backend ignores this stage (its setup runs at LEGACY_VIEWPORT_SETUP below).
+    // The gl46 backend ignores this stage (its setup runs at VIEWPORT_SETUP below).
     @Inject(method = "beginLevelRendering", at = @At("HEAD"), remap = false)
     private void voxy$injectFrameBegin(CallbackInfo ci) {
         var parameters = IrisUtil.getCapturedOrFallbackViewportParameters();
@@ -98,7 +98,7 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
             if (renderer != null) {
                 RenderFrameStageState.store(
                         IrisUtil.CAPTURED_VIEWPORT_PARAMETERS.runStage(
-                                renderer, RenderStage.LEGACY_VIEWPORT_SETUP, RenderFrameStageState.currentFrame()));
+                                renderer, RenderStage.VIEWPORT_SETUP, RenderFrameStageState.currentFrame()));
             }
         }
     }

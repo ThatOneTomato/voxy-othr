@@ -8,18 +8,11 @@ public interface VoxyRenderBackend extends AutoCloseable {
 
     boolean rendersLodTerrain();
 
-    default RenderFrame runFrameStage(
-            RenderStage stage, RenderStageContext context, RenderFrame frame) {
-        if (stage != RenderStage.LEGACY_OPAQUE) {
-            return frame;
-        }
-        RenderFrame renderFrame = frame;
-        if (renderFrame == null) {
-            renderFrame = this.setupFrame(context.frameContext());
-        }
-        this.renderOpaque(renderFrame);
-        return renderFrame;
-    }
+    /**
+     * Advance this backend through a host frame stage. Backends ignore stages they do not
+     * participate in by returning {@code frame} unchanged.
+     */
+    RenderFrame runFrameStage(RenderStage stage, RenderStageContext context, RenderFrame frame);
 
     RenderFrame setupFrame(RenderFrameContext context);
 

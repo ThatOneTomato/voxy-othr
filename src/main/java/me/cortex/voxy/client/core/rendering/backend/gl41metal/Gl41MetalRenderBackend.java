@@ -82,7 +82,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       case FRAME_BEGIN -> this.submitMetalFrame(context.frameContext());
       // gl46-only setup point inside Iris beginLevelRendering; gl41metal already submitted its
       // frame at FRAME_BEGIN so this is a pass-through.
-      case LEGACY_VIEWPORT_SETUP -> frame;
+      case VIEWPORT_SETUP -> frame;
       case SODIUM_SOLID_SYNC, SODIUM_CUTOUT_SYNC -> {
         if (context.shaderPackActive() || frame != null) {
           yield frame;
@@ -108,7 +108,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
         }
         yield frame;
       }
-      case LEGACY_OPAQUE -> {
+      case OPAQUE -> {
         if (context.shaderPackActive()) {
           yield frame;
         }
