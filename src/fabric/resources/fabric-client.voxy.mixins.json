@@ -1,13 +1,14 @@
 {
   "required": true,
-  "package": "me.cortex.voxy.commonImpl.mixin",
+  "package": "me.cortex.voxy.client.mixin",
   "compatibilityLevel": "JAVA_17",
+  "client": [
+    "flashback.MixinFlashbackMeta",
+    "flashback.MixinFlashbackRecorder"
+  ],
   "injectors": {
     "defaultRequire": 1
   },
-  "mixins": [
-    "minecraft.MixinWorld"
-  ],
   "overwrites": {
     "requireAnnotations": true
   }
