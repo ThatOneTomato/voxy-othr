@@ -327,6 +327,11 @@ tasks.register('makeExcludedRocksDB', Zip) {
 
     exclude {
         def file = it.name
+        // Keep the Apple-silicon macOS native: this fork's gl41metal backend targets arm64 Macs,
+        // and RocksDB's NativeLibraryLoader hard-fails when its platform jnilib is missing.
+        if (file.contains("osx-arm64")) {
+            return false
+        }
         if (file.endsWith(".jnilib")) {
             return true
         }
