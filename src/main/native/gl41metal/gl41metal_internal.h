@@ -2,6 +2,7 @@
 
 #include <jni.h>
 
+#import <CoreVideo/CoreVideo.h>
 #import <Foundation/Foundation.h>
 #import <IOSurface/IOSurface.h>
 #import <Metal/Metal.h>
@@ -9,7 +10,6 @@
 #import <OpenGL/CGLIOSurface.h>
 #import <OpenGL/gl3.h>
 #import <OpenGL/glext.h>
-#import <CoreVideo/CoreVideo.h>
 
 #include <algorithm>
 #include <chrono>
@@ -44,9 +44,12 @@ struct FormatSpec {
 extern const FormatSpec GBUFFER0_FORMAT;  // RGBA32F: atlas uv.xy + quad tile.zw
 extern const FormatSpec GBUFFER1_FORMAT;  // RGBA32F: depth + modelId + customId(lo/hi)
 extern const FormatSpec GBUFFER2_FORMAT;  // RGBA32F: packed albedo/light/tint + face/flags/coverage
-extern const FormatSpec TGBUFFER0_FORMAT;  // RGBA32F: front translucent albedo/light/tint + face/flags/cov
-extern const FormatSpec TGBUFFER1_FORMAT;  // RGBA32F: front translucent depth/alpha + customId(lo/hi)
-extern const FormatSpec TGBUFFER_ACCUM_FORMAT;  // RGBA32F: back->front over-blended flat rgb + alpha
+extern const FormatSpec
+    TGBUFFER0_FORMAT;  // RGBA32F: front translucent albedo/light/tint + face/flags/cov
+extern const FormatSpec
+    TGBUFFER1_FORMAT;  // RGBA32F: front translucent depth/alpha + customId(lo/hi)
+extern const FormatSpec
+    TGBUFFER_ACCUM_FORMAT;  // RGBA32F: back->front over-blended flat rgb + alpha
 
 enum class SlotState {
   Free,
@@ -187,14 +190,12 @@ struct NativeContext {
 
 void throwJava(JNIEnv* env, const std::string& message);
 NativeContext* requireContext(JNIEnv* env, jlong handle);
-id<MTLComputePipelineState> createComputePipeline(
-    JNIEnv* env,
-    NativeContext* context,
-    NSString* functionName,
-    const char* label);
+id<MTLComputePipelineState> createComputePipeline(JNIEnv* env, NativeContext* context,
+                                                  NSString* functionName, const char* label);
 
 bool createSlotTextures(Slot* slot, NativeContext* context, std::string* error);
-bool createSlotFrameResources(Slot* slot, NativeContext* context, TerrainResources* terrain, std::string* error);
+bool createSlotFrameResources(Slot* slot, NativeContext* context, TerrainResources* terrain,
+                              std::string* error);
 void clearSlotFrameResources(FrameResources* frame, TerrainResources* terrain);
 void resetSubmittedSlot(NativeContext* context, int slotIndex);
 void clearTerrainCounters(TerrainResources* terrain);

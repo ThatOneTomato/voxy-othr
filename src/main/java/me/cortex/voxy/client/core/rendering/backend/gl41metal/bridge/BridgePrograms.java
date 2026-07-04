@@ -69,8 +69,7 @@ final class BridgePrograms {
   // GL46 quads.frag non-patched lighting expressed as a built-in voxy_emitFragment: sample the MC
   // lightmap with the baked light UV, fold in the conditional tint, then apply the directional face
   // shade. uLightmapTex and voxyQuadFlags are provided by the shared header below.
-  static final String VANILLA_PATCH =
-      BridgeGlsl.load("vanilla_patch.glsl");
+  static final String VANILLA_PATCH = BridgeGlsl.load("vanilla_patch.glsl");
 
   private BridgeProgram program;
   private int failedShaderKey = Integer.MIN_VALUE;
@@ -309,14 +308,12 @@ final class BridgePrograms {
   // Voxy NDC (g.depth) into its private depth-stencil for the shader pack to sample as vxDepthTex*.
 
   // gbuffer reconstruction shared by every bridge program. No near-mask, no lightmap, no debug.
-  private static final String GLSL_GBUFFER_DECODE =
-      BridgeGlsl.load("gbuffer_decode.glsl");
+  private static final String GLSL_GBUFFER_DECODE = BridgeGlsl.load("gbuffer_decode.glsl");
 
   // Near-depth occlusion mask. Used by the vanilla single pass and the debug visualisations, but
   // NOT by the strict Iris colour pass (which resolves occlusion via the hardware depth test
   // against the private near-seeded depth attachment instead of sampling uSourceDepthTex).
-  private static final String GLSL_NEAR_MASK =
-      BridgeGlsl.load("near_mask.glsl");
+  private static final String GLSL_NEAR_MASK = BridgeGlsl.load("near_mask.glsl");
 
   // Loaded-volume clip (P1), in-shader form for the vanilla/debug colour programs. Discards distant
   // fragments that lie INSIDE the Sodium near-scene volume (nearer than its far boundary, captured
@@ -329,8 +326,7 @@ final class BridgePrograms {
   // have spare texture units. The strict Iris colour program never sees it - its identical clip
   // rides the stencil-mask pass (GLSL_BOUND_MASK) so the budgeted colour program gains no sampler.
   // uBoundEnabled==0 (no sections loaded) disables the clip so a stale boundary is never sampled.
-  private static final String GLSL_BOUND_CLIP =
-      BridgeGlsl.load("bound_clip.glsl");
+  private static final String GLSL_BOUND_CLIP = BridgeGlsl.load("bound_clip.glsl");
 
   // Near-scene coverage stencil mask (strict Iris path). A standalone fragment program that samples
   // the Iris near (noHand/opaque) depth and DISCARDS sky pixels so they keep stencil 0, while
@@ -340,8 +336,7 @@ final class BridgePrograms {
   // GLSL_NEAR_MASK's reverse-Z handling (vanilla far plane: 1.0 forward / 0.0 reverse). This is a
   // separate 1-sampler program on purpose: it must not add a texture unit to the 15-unit colour
   // program (Apple GL4.1 SIGSEGVs at 16; Complementary already uses 12 pack + 3 gbuffer samplers).
-  private static final String GLSL_STENCIL_MASK =
-      BridgeGlsl.load("stencil_mask.frag");
+  private static final String GLSL_STENCIL_MASK = BridgeGlsl.load("stencil_mask.frag");
 
   // Behind-layers blend shader: subtracts the front surface's premultiplied contribution from
   // tgbufferAccum and outputs the remainder as premultiplied colour. Blended with ONE,
@@ -371,12 +366,10 @@ final class BridgePrograms {
   // forced occlusion divergence in action: vanilla clips in-shader, Iris clips via this stencil
   // mask, both fed the same shared bound texture - no new vanilla/Iris fork, no colour-program
   // sampler. Its own samplers (distant depth + bound) live on units 0/1 of THIS program only.
-  private static final String GLSL_BOUND_MASK =
-      BridgeGlsl.load("bound_mask.frag");
+  private static final String GLSL_BOUND_MASK = BridgeGlsl.load("bound_mask.frag");
 
   // MC lightmap, used by the vanilla built-in patch only.
-  private static final String GLSL_LIGHTMAP =
-      BridgeGlsl.load("lightmap.glsl");
+  private static final String GLSL_LIGHTMAP = BridgeGlsl.load("lightmap.glsl");
 
   // Shared opaque colour main() for BOTH targets. voxy_OverrideFragCoord substitutes for
   // gl_FragCoord in patched pack code (see the Java-level rewrite in buildFragmentShader; the
@@ -416,10 +409,10 @@ final class BridgePrograms {
    * Builds the bridge fragment shader.
    *
    * @param includeNearMask when true the near-depth mask + lightmap blocks are inlined (vanilla
-   *     single pass). When false (strict Iris single pass) they are omitted so only
-   *     gbuffer0-2 stay active and the shader pack's samplers fit; occlusion is instead enforced by
-   *     the hardware depth test against the Voxy private depth attachment that {@link
-   *     #runOpaquePass} pre-seeds with the Iris near depth.
+   *     single pass). When false (strict Iris single pass) they are omitted so only gbuffer0-2 stay
+   *     active and the shader pack's samplers fit; occlusion is instead enforced by the hardware
+   *     depth test against the Voxy private depth attachment that {@link #runOpaquePass} pre-seeds
+   *     with the Iris near depth.
    */
   // Returns the gbuffer decode prologue. The reconstruction samplers are sampler2DRect because they
   // are backed by IOSurface RECTANGLE textures (see RESULTS.md); texture(sampler, vec2) reads them.
@@ -437,8 +430,7 @@ final class BridgePrograms {
   // budget. Atlas uv/tile and modelId are not stored for translucents (Metal stores the resolved
   // albedo instead), so they are reported as 0; the gbuffers_water patch shades from sampledColour
   // (the resolved water albedo), lightMap, tint and alpha.
-  private static final String GLSL_TGBUFFER_DECODE =
-      BridgeGlsl.load("tgbuffer_decode.glsl");
+  private static final String GLSL_TGBUFFER_DECODE = BridgeGlsl.load("tgbuffer_decode.glsl");
 
   // Built-in (no shader pack) distant water shade, expressed as a voxy_emitFragment patch so
   // vanilla
@@ -447,8 +439,7 @@ final class BridgePrograms {
   // not a separate renderer. Mirrors the opaque VANILLA_PATCH: lightmap * tint * albedo + the
   // directional face shade, keeping the real water alpha for blending. Declares its own colour
   // output and reads voxyQuadFlags (the shared main sets it before calling voxy_emitFragment).
-  private static final String VANILLA_WATER_PATCH =
-      BridgeGlsl.load("vanilla_water_patch.glsl");
+  private static final String VANILLA_WATER_PATCH = BridgeGlsl.load("vanilla_water_patch.glsl");
 
   // Shared translucent colour main() for BOTH vanilla and strict Iris: reconstruct the front
   // translucent surface (resolved back-to-front by Metal into tgbuffer0/1) and feed it to
@@ -466,7 +457,8 @@ final class BridgePrograms {
     //
     // Why the loaded-volume bound and NOT a hardware depth test against the near water: the distant
     // LOD water and the near Sodium water are the SAME surface (the same water level), so they have
-    // (near-)identical depth across the whole near region. A depth test there z-fights and draws the
+    // (near-)identical depth across the whole near region. A depth test there z-fights and draws
+    // the
     // distant water over the near water (full-surface flicker + double water). The volume bound
     // instead discards distant water wherever the near scene is loaded, so the two never co-occupy.
     String boundDiscard =
@@ -1077,8 +1069,7 @@ final class BridgePrograms {
     }
     try {
       Shader shader =
-          compileHelper(
-              GLSL_TRANSLUCENT_DEPTH_WRITE, "GL41Metal translucent distant depth write");
+          compileHelper(GLSL_TRANSLUCENT_DEPTH_WRITE, "GL41Metal translucent distant depth write");
       this.translucentDepthProgram =
           new TranslucentDepthWrite(
               shader,

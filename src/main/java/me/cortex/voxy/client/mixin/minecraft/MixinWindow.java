@@ -13,16 +13,27 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Window.class)
 public class MixinWindow {
-    @Inject(method = "<init>", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/platform/Window;setBootErrorCallback()V"))
-    private void voxy$injectInitWindow(WindowEventHandler eventHandler, ScreenManager screenManager, DisplayData displayData, String fullscreenVideoModeString, String title, CallbackInfo ci) {
-        //System.load("C:\\Program Files\\RenderDoc\\renderdoc.dll");
-        var prop = System.getProperty("voxy.forceGpuSelectionIndex", "NO");
-        if (!prop.equals("NO")) {
-            GPUSelectorWindows.doSelector(Integer.parseInt(prop));
-        }
-
-        //Force the current thread priority to be realtime
-        Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
-        ThreadUtils.SetSelfThreadPriorityWin32(ThreadUtils.WIN32_THREAD_PRIORITY_TIME_CRITICAL);
+  @Inject(
+      method = "<init>",
+      at =
+          @At(
+              value = "INVOKE",
+              target = "Lcom/mojang/blaze3d/platform/Window;setBootErrorCallback()V"))
+  private void voxy$injectInitWindow(
+      WindowEventHandler eventHandler,
+      ScreenManager screenManager,
+      DisplayData displayData,
+      String fullscreenVideoModeString,
+      String title,
+      CallbackInfo ci) {
+    // System.load("C:\\Program Files\\RenderDoc\\renderdoc.dll");
+    var prop = System.getProperty("voxy.forceGpuSelectionIndex", "NO");
+    if (!prop.equals("NO")) {
+      GPUSelectorWindows.doSelector(Integer.parseInt(prop));
     }
+
+    // Force the current thread priority to be realtime
+    Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
+    ThreadUtils.SetSelfThreadPriorityWin32(ThreadUtils.WIN32_THREAD_PRIORITY_TIME_CRITICAL);
+  }
 }

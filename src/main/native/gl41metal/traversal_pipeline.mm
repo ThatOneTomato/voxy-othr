@@ -4,11 +4,7 @@ using namespace gl41metal;
 
 extern "C" JNIEXPORT void JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_submitSynthetic(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex,
-    jlong frameId);
+    JNIEnv* env, jclass, jlong handle, jint slotIndex, jlong frameId);
 
 namespace gl41metal {
 
@@ -40,8 +36,8 @@ static void setupQuadGbufferAttachments(MTLRenderPassDescriptor* pass, const Slo
 // Binds the slot's 3 translucent gbuffer targets starting at colorAttachments[base]. Clear values
 // mirror the TranslucentFragmentOut layout: tgbuffer1.x == 1 is "far depth", tgbuffer0.w == 0 is
 // "no fragment" (coverage low bit), and tgbufferAccum == 0 is "no accumulated translucency".
-static void setupTranslucentGbufferAttachments(
-    MTLRenderPassDescriptor* pass, const Slot& slot, int base) {
+static void setupTranslucentGbufferAttachments(MTLRenderPassDescriptor* pass, const Slot& slot,
+                                               int base) {
   pass.colorAttachments[base + 0].texture = slot.tgbuffer0->metalTexture;
   pass.colorAttachments[base + 0].loadAction = MTLLoadActionClear;
   pass.colorAttachments[base + 0].storeAction = MTLStoreActionStore;
@@ -62,24 +58,11 @@ extern "C" {
 
 JNIEXPORT void JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_submitTraversal(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex,
-    jlong frameId,
-    jdouble cameraX,
-    jdouble cameraY,
-    jdouble cameraZ,
-    jlong traversalMvpAddress,
-    jlong drawMvpAddress,
-    jfloat subDivisionSize,
-    jfloat earthRadius,
-    jfloat nearExclusionRadius,
-    jfloat renderDistanceSquared,
-    jint viewportWidth,
-    jint viewportHeight,
-    jlong ssaoMatricesAddress,
-    jint ssaoSteps) {
+    JNIEnv* env, jclass, jlong handle, jint slotIndex, jlong frameId, jdouble cameraX,
+    jdouble cameraY, jdouble cameraZ, jlong traversalMvpAddress, jlong drawMvpAddress,
+    jfloat subDivisionSize, jfloat earthRadius, jfloat nearExclusionRadius,
+    jfloat renderDistanceSquared, jint viewportWidth, jint viewportHeight,
+    jlong ssaoMatricesAddress, jint ssaoSteps) {
   @autoreleasepool {
     NativeContext* context = requireContext(env, handle);
     if (context == nullptr) {
@@ -121,15 +104,15 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       throwJava(env, "GL41Metal traversal commandBuffer returned nil");
       return;
     }
-    commandBuffer.label = [NSString stringWithFormat:@"Voxy Frame %ld Slot %d", (long)frameId, (int)slotIndex];
+    commandBuffer.label =
+        [NSString stringWithFormat:@"Voxy Frame %ld Slot %d", (long)frameId, (int)slotIndex];
 
     bool willOpaqueRaster = terrain->opaqueMeshPipeline != nil &&
-        terrain->meshArgsPipeline != nil && terrain->atlas != nil;
-    bool willTranslucentRaster = willOpaqueRaster &&
-        terrain->translucentMeshPipeline != nil &&
-        terrain->translucentCountPipeline != nil &&
-        terrain->translucentPrefixSumPipeline != nil &&
-        terrain->translucentScatterPipeline != nil;
+                            terrain->meshArgsPipeline != nil && terrain->atlas != nil;
+    bool willTranslucentRaster = willOpaqueRaster && terrain->translucentMeshPipeline != nil &&
+                                 terrain->translucentCountPipeline != nil &&
+                                 terrain->translucentPrefixSumPipeline != nil &&
+                                 terrain->translucentScatterPipeline != nil;
 
     // Issue a standalone clear only for targets that won't be cleared by a raster pass below.
     // On Apple Silicon TBDR, each raster pass's MTLLoadActionClear is free (tile-local), so the
@@ -150,7 +133,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
         setupTranslucentGbufferAttachments(pass, slot, nextAttachment);
       }
 
-      id<MTLRenderCommandEncoder> renderEncoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
+      id<MTLRenderCommandEncoder> renderEncoder =
+          [commandBuffer renderCommandEncoderWithDescriptor:pass];
       if (renderEncoder == nil) {
         resetSubmittedSlot(context, slotIndex);
         throwJava(env, "GL41Metal traversal render encoder returned nil");
@@ -165,8 +149,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     queueMeta[0] = static_cast<uint32_t>((terrain->topNodeCount + 31) >> 5);
     queueMeta[1] = 1;
     queueMeta[2] = 1;
-    queueMeta[3] = static_cast<uint32_t>(
-        std::min<uint64_t>(terrain->topNodeCount, static_cast<uint64_t>(terrain->maxTraversalQueue)));
+    queueMeta[3] = static_cast<uint32_t>(std::min<uint64_t>(
+        terrain->topNodeCount, static_cast<uint64_t>(terrain->maxTraversalQueue)));
     for (int i = 1; i < MAX_LOD_ITERATIONS; i++) {
       queueMeta[i * 4 + 1] = 1;
       queueMeta[i * 4 + 2] = 1;
@@ -188,27 +172,34 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     reinterpret_cast<int32_t*>(scene + 128)[1] = camSecY;
     reinterpret_cast<int32_t*>(scene + 128)[2] = camSecZ;
     reinterpret_cast<uint32_t*>(scene + 128)[3] = static_cast<uint32_t>(frameId);
-    reinterpret_cast<float*>(scene + 144)[0] = static_cast<float>(cameraX - static_cast<double>(camSecX << 5));
-    reinterpret_cast<float*>(scene + 144)[1] = static_cast<float>(cameraY - static_cast<double>(camSecY << 5));
-    reinterpret_cast<float*>(scene + 144)[2] = static_cast<float>(cameraZ - static_cast<double>(camSecZ << 5));
+    reinterpret_cast<float*>(scene + 144)[0] =
+        static_cast<float>(cameraX - static_cast<double>(camSecX << 5));
+    reinterpret_cast<float*>(scene + 144)[1] =
+        static_cast<float>(cameraY - static_cast<double>(camSecY << 5));
+    reinterpret_cast<float*>(scene + 144)[2] =
+        static_cast<float>(cameraZ - static_cast<double>(camSecZ << 5));
     float minScreenSpaceSize = 0.0f;
     if (viewportWidth > 0 && viewportHeight > 0) {
       float threshold = std::max(1.0f, static_cast<float>(subDivisionSize));
-      minScreenSpaceSize = (threshold * threshold) /
-          static_cast<float>(viewportWidth * viewportHeight);
+      minScreenSpaceSize =
+          (threshold * threshold) / static_cast<float>(viewportWidth * viewportHeight);
     }
     reinterpret_cast<float*>(scene + 144)[3] = 0.0f;
     reinterpret_cast<float*>(scene + 160)[0] = minScreenSpaceSize;
     reinterpret_cast<float*>(scene + 160)[1] = earthRadius;
-    reinterpret_cast<float*>(scene + 160)[2] = std::max(0.0f, static_cast<float>(nearExclusionRadius));
+    reinterpret_cast<float*>(scene + 160)[2] =
+        std::max(0.0f, static_cast<float>(nearExclusionRadius));
     // renderParams.w: GL46 isWithinRenderDistance / shouldRenderSelf XZ cylinder (blocks^2).
-    reinterpret_cast<float*>(scene + 160)[3] = std::max(0.0f, static_cast<float>(renderDistanceSquared));
+    reinterpret_cast<float*>(scene + 160)[3] =
+        std::max(0.0f, static_cast<float>(renderDistanceSquared));
     reinterpret_cast<uint32_t*>(scene + 176)[0] = static_cast<uint32_t>(terrain->maxWorklistItems);
-    reinterpret_cast<uint32_t*>(scene + 176)[1] = static_cast<uint32_t>(terrain->maxTraversalRequests);
+    reinterpret_cast<uint32_t*>(scene + 176)[1] =
+        static_cast<uint32_t>(terrain->maxTraversalRequests);
     reinterpret_cast<uint32_t*>(scene + 176)[2] = static_cast<uint32_t>(terrain->maxTraversalQueue);
     reinterpret_cast<uint32_t*>(scene + 176)[3] = static_cast<uint32_t>(terrain->topNodeCount);
     reinterpret_cast<uint32_t*>(scene + 192)[0] = static_cast<uint32_t>(std::max(0, viewportWidth));
-    reinterpret_cast<uint32_t*>(scene + 192)[1] = static_cast<uint32_t>(std::max(0, viewportHeight));
+    reinterpret_cast<uint32_t*>(scene + 192)[1] =
+        static_cast<uint32_t>(std::max(0, viewportHeight));
     reinterpret_cast<uint32_t*>(scene + 192)[2] = 0;
     reinterpret_cast<uint32_t*>(scene + 192)[3] = 0;
     reinterpret_cast<uint32_t*>(scene + 208)[0] = static_cast<uint32_t>(terrain->maxRasterQuads);
@@ -295,7 +286,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       renderPass.depthAttachment.clearDepth = 1.0;
       renderPass.depthAttachment.storeAction = MTLStoreActionStore;
 
-      id<MTLRenderCommandEncoder> quadEncoder = [commandBuffer renderCommandEncoderWithDescriptor:renderPass];
+      id<MTLRenderCommandEncoder> quadEncoder =
+          [commandBuffer renderCommandEncoderWithDescriptor:renderPass];
       if (quadEncoder == nil) {
         resetSubmittedSlot(context, slotIndex);
         throwJava(env, "GL41Metal quad render encoder returned nil");
@@ -316,9 +308,9 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       [quadEncoder setRenderPipelineState:terrain->opaqueMeshPipeline];
       [quadEncoder setDepthStencilState:terrain->quadDepthStencil];
       [quadEncoder drawMeshThreadgroupsWithIndirectBuffer:frame->meshIndirectArgs
-                                    indirectBufferOffset:0
-                            threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
-                              threadsPerMeshThreadgroup:MTLSizeMake(64 * 4, 1, 1)];
+                                     indirectBufferOffset:0
+                              threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
+                                threadsPerMeshThreadgroup:MTLSizeMake(64 * 4, 1, 1)];
 
       [quadEncoder endEncoding];
     }
@@ -344,7 +336,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       ssaoEncoder.label = @"Voxy Distant SSAO";
       SsaoUniformHost ssaoUniform;
       std::memcpy(&ssaoUniform, reinterpret_cast<const void*>(ssaoMatricesAddress),
-          48 * sizeof(float));
+                  48 * sizeof(float));
       ssaoUniform.params[0] = static_cast<uint32_t>(ssaoSteps);
       ssaoUniform.params[1] = 0;
       ssaoUniform.params[2] = 0;
@@ -360,10 +352,9 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     // (count -> exclusive prefix sum -> scatter) and rasterise them far->near into the translucent
     // gbuffer, depth-tested against the stored opaque distant depth. Runs only when the full quad
     // pipeline (incl. atlas) is ready, mirroring the opaque guard above.
-    if (terrain->translucentMeshPipeline != nil &&
-        terrain->translucentCountPipeline != nil &&
-        terrain->translucentPrefixSumPipeline != nil && terrain->translucentScatterPipeline != nil &&
-        terrain->atlas != nil) {
+    if (terrain->translucentMeshPipeline != nil && terrain->translucentCountPipeline != nil &&
+        terrain->translucentPrefixSumPipeline != nil &&
+        terrain->translucentScatterPipeline != nil && terrain->atlas != nil) {
       id<MTLComputeCommandEncoder> sortEncoder = [commandBuffer computeCommandEncoder];
       if (sortEncoder == nil) {
         resetSubmittedSlot(context, slotIndex);
@@ -372,8 +363,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       }
       sortEncoder.label = @"Voxy Translucent Sort";
       MTLSize sortGroups = MTLSizeMake(
-          std::max<uint32_t>(1, (static_cast<uint32_t>(terrain->maxWorklistItems) + 127) / 128),
-          1,
+          std::max<uint32_t>(1, (static_cast<uint32_t>(terrain->maxWorklistItems) + 127) / 128), 1,
           1);
       MTLSize sortThreads = MTLSizeMake(128, 1, 1);
 
@@ -446,9 +436,9 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       [translucentEncoder setMeshBuffer:terrain->modelPresentBuffer offset:0 atIndex:5];
       [translucentEncoder setMeshBuffer:frame->sceneUniform offset:0 atIndex:6];
       [translucentEncoder drawMeshThreadgroupsWithIndirectBuffer:frame->translucentMeshIndirectArgs
-                                           indirectBufferOffset:0
-                                  threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
-                                    threadsPerMeshThreadgroup:MTLSizeMake(64 * 4, 1, 1)];
+                                            indirectBufferOffset:0
+                                     threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
+                                       threadsPerMeshThreadgroup:MTLSizeMake(64 * 4, 1, 1)];
       [translucentEncoder endEncoding];
     }
 
@@ -459,30 +449,27 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       {
         std::lock_guard<std::mutex> lock(capturedContext->mutex);
         if (buffer.status == MTLCommandBufferStatusCompleted) {
-          capturedContext->lastMetalGpuTimeMs =
-              (buffer.GPUEndTime - buffer.GPUStartTime) * 1000.0;
+          capturedContext->lastMetalGpuTimeMs = (buffer.GPUEndTime - buffer.GPUStartTime) * 1000.0;
         }
         if (buffer.status == MTLCommandBufferStatusError && buffer.error != nil) {
           capturedContext->asyncFailure = [[buffer.error localizedDescription] UTF8String];
         }
         if (capturedContext->terrain != nullptr) {
           TerrainResources* completedTerrain = capturedContext->terrain.get();
-          std::memcpy(
-              completedTerrain->lastTraversal,
-              [capturedFrame->traversalStats contents],
-              sizeof(completedTerrain->lastTraversal));
+          std::memcpy(completedTerrain->lastTraversal, [capturedFrame->traversalStats contents],
+                      sizeof(completedTerrain->lastTraversal));
           std::memset(completedTerrain->lastRaster, 0, sizeof(completedTerrain->lastRaster));
-          uint32_t* worklistCounter = reinterpret_cast<uint32_t*>(
-              [capturedFrame->worklistCounter contents]);
+          uint32_t* worklistCounter =
+              reinterpret_cast<uint32_t*>([capturedFrame->worklistCounter contents]);
           uint32_t acceptedQuads = worklistCounter[1];
           completedTerrain->lastRaster[0] = acceptedQuads;
           completedTerrain->lastRaster[1] = acceptedQuads;
           completedTerrain->lastRaster[2] = acceptedQuads * 2;
           completedTerrain->lastRaster[7] = worklistCounter[0];
-          uint32_t requestCount = reinterpret_cast<uint32_t*>(
-              [capturedFrame->requestQueue contents])[0];
-          uint32_t* requestData = reinterpret_cast<uint32_t*>(
-              [capturedFrame->requestQueue contents]) + 1;
+          uint32_t requestCount =
+              reinterpret_cast<uint32_t*>([capturedFrame->requestQueue contents])[0];
+          uint32_t* requestData =
+              reinterpret_cast<uint32_t*>([capturedFrame->requestQueue contents]) + 1;
           requestCount = std::min<uint32_t>(
               requestCount, static_cast<uint32_t>(completedTerrain->maxTraversalRequests));
           completedTerrain->pendingRequests.clear();
@@ -492,8 +479,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
             uint64_t lo = requestData[i * 2 + 1];
             completedTerrain->pendingRequests.push_back((hi << 32) | lo);
           }
-          completedTerrain->lastTraversal[4] = static_cast<uint32_t>(
-              std::min<uint64_t>(completedTerrain->topNodeCount, UINT32_MAX));
+          completedTerrain->lastTraversal[4] =
+              static_cast<uint32_t>(std::min<uint64_t>(completedTerrain->topNodeCount, UINT32_MAX));
           completedTerrain->lastTraversal[5] = requestCount;
           completedTerrain->lastTraversal[6] = worklistCounter[0];
         }

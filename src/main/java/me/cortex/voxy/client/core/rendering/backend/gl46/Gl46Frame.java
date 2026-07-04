@@ -1,6 +1,5 @@
 package me.cortex.voxy.client.core.rendering.backend.gl46;
 
-import me.cortex.voxy.client.core.rendering.Viewport;
 import me.cortex.voxy.client.core.rendering.backend.RenderBackendId;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrame;
 
@@ -9,8 +8,8 @@ import me.cortex.voxy.client.core.rendering.backend.RenderFrame;
 // using values captured at frame-setup time, which under Iris happens in beginLevelRendering with
 // a different framebuffer bound.
 public record Gl46Frame(Gl46Viewport<?> viewport) implements RenderFrame {
-    @Override
-    public RenderBackendId backendId() {
-        return RenderBackendId.GL46;
-    }
+  @Override
+  public RenderBackendId backendId() {
+    return RenderBackendId.GL46;
+  }
 }

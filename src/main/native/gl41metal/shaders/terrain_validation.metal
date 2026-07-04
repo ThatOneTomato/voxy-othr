@@ -1,7 +1,16 @@
 #include <metal_stdlib>
 using namespace metal;
-struct SectionMeta { uint4 a; uint4 b; };
-struct BlockModel { uint faceData[6]; uint flagsA; uint colourTint; uint customId; uint pad[7]; };
+struct SectionMeta {
+  uint4 a;
+  uint4 b;
+};
+struct BlockModel {
+  uint faceData[6];
+  uint flagsA;
+  uint colourTint;
+  uint customId;
+  uint pad[7];
+};
 kernel void validateTerrain(device const SectionMeta* sections [[buffer(0)]],
                             device const ulong* quads [[buffer(1)]],
                             device const BlockModel* models [[buffer(2)]],
@@ -13,9 +22,8 @@ kernel void validateTerrain(device const SectionMeta* sections [[buffer(0)]],
   if (id >= maxSections) return;
   SectionMeta meta = sections[id];
   uint ptr = meta.a.w;
-  uint total = (meta.b.x & 0xffffu) + (meta.b.x >> 16) +
-               (meta.b.y & 0xffffu) + (meta.b.y >> 16) +
-               (meta.b.z & 0xffffu) + (meta.b.z >> 16) +
+  uint total = (meta.b.x & 0xffffu) + (meta.b.x >> 16) + (meta.b.y & 0xffffu) +
+               (meta.b.y >> 16) + (meta.b.z & 0xffffu) + (meta.b.z >> 16) +
                (meta.b.w & 0xffffu) + (meta.b.w >> 16);
   if (total == 0) return;
   atomic_fetch_add_explicit(&stats[0], 1u, memory_order_relaxed);

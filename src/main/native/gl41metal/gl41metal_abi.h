@@ -16,9 +16,9 @@ constexpr size_t QUAD_DRAW_REF_BYTES = 16;
 constexpr size_t SCENE_UNIFORM_BYTES = 224;
 
 // Distance-bucket count for the translucent section sort, mirroring GL46
-// buildtranslucents.comp's TRANSLUCENT_WRITE_BASE (1024). Translucent sections are binned by
-// Manhattan distance into these buckets and rasterised far->near so the Metal over-blend
-// accumulates correctly.
+// buildtranslucents.comp's TRANSLUCENT_WRITE_BASE (1024). Translucent sections
+// are binned by Manhattan distance into these buckets and rasterised far->near
+// so the Metal over-blend accumulates correctly.
 constexpr int TRANSLUCENT_BUCKET_COUNT = 1024;
 
 struct alignas(16) SceneUniformHost {
@@ -42,10 +42,11 @@ static_assert(offsetof(SceneUniformHost, queueSizes) == 176);
 static_assert(offsetof(SceneUniformHost, viewport) == 192);
 static_assert(offsetof(SceneUniformHost, rasterLimits) == 208);
 
-// Uniforms for the distant SSAO pass; must match SsaoUniform in ssao.metal. proj/invProj are
-// the Voxy projection alone (view-space reconstruction), modelView rotates the world-space
-// face normal into view space. The Java side writes the 3 matrices contiguously (48 floats,
-// JOML column-major) at ssaoMatricesAddress; submitTraversal fills params.
+// Uniforms for the distant SSAO pass; must match SsaoUniform in ssao.metal.
+// proj/invProj are the Voxy projection alone (view-space reconstruction),
+// modelView rotates the world-space face normal into view space. The Java side
+// writes the 3 matrices contiguously (48 floats, JOML column-major) at
+// ssaoMatricesAddress; submitTraversal fills params.
 constexpr size_t SSAO_UNIFORM_BYTES = 208;
 
 struct alignas(16) SsaoUniformHost {

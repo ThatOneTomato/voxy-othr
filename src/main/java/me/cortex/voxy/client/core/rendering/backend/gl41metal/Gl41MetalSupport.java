@@ -1,7 +1,6 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal;
 
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
-
 import org.lwjgl.system.Platform;
 
 public final class Gl41MetalSupport {

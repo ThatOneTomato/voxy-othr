@@ -1,23 +1,5 @@
 package me.cortex.voxy.client.core.rendering.backend.gl46.pipeline;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import me.cortex.voxy.client.config.VoxyConfig;
-import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
-import me.cortex.voxy.client.core.rendering.post.SSAO;
-import me.cortex.voxy.client.core.gl.GlFramebuffer;
-import me.cortex.voxy.client.core.gl.GlTexture;
-import me.cortex.voxy.client.core.rendering.backend.gl46.Gl46Viewport;
-import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.AsyncNodeManager;
-import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.HierarchicalOcclusionTraverser;
-import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.NodeCleaner;
-import me.cortex.voxy.client.core.rendering.backend.gl46.util.FullscreenBlit;
-import me.cortex.voxy.client.core.util.GPUTiming;
-import net.minecraft.client.Minecraft;
-import org.joml.Matrix4f;
-
-import java.util.List;
-import java.util.function.BooleanSupplier;
-
 import static org.lwjgl.opengl.GL11C.GL_BLEND;
 import static org.lwjgl.opengl.GL11C.GL_DEPTH_COMPONENT;
 import static org.lwjgl.opengl.GL11C.GL_DEPTH_TEST;
@@ -38,127 +20,169 @@ import static org.lwjgl.opengl.GL43.GL_DEPTH_STENCIL_TEXTURE_MODE;
 import static org.lwjgl.opengl.GL45C.glBindTextureUnit;
 import static org.lwjgl.opengl.GL45C.glTextureParameterf;
 
+import com.mojang.blaze3d.systems.RenderSystem;
+import java.util.List;
+import java.util.function.BooleanSupplier;
+import me.cortex.voxy.client.config.VoxyConfig;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
+import me.cortex.voxy.client.core.gl.GlFramebuffer;
+import me.cortex.voxy.client.core.gl.GlTexture;
+import me.cortex.voxy.client.core.rendering.backend.gl46.Gl46Viewport;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.AsyncNodeManager;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.HierarchicalOcclusionTraverser;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.NodeCleaner;
+import me.cortex.voxy.client.core.rendering.backend.gl46.util.FullscreenBlit;
+import me.cortex.voxy.client.core.rendering.post.SSAO;
+import me.cortex.voxy.client.core.util.GPUTiming;
+import net.minecraft.client.Minecraft;
+import org.joml.Matrix4f;
+
 public class NormalRenderPipeline extends AbstractRenderPipeline {
-    private GlTexture colourTex;
-    private GlTexture colourSSAOTex;
-    private final GlFramebuffer fbSSAO = new GlFramebuffer();
+  private GlTexture colourTex;
+  private GlTexture colourSSAOTex;
+  private final GlFramebuffer fbSSAO = new GlFramebuffer();
 
-    private final boolean useEnvFog;
-    private final FullscreenBlit finalBlit;
+  private final boolean useEnvFog;
+  private final FullscreenBlit finalBlit;
 
-    private final SSAO ssao;
+  private final SSAO ssao;
 
-    protected NormalRenderPipeline(AsyncNodeManager nodeManager, NodeCleaner nodeCleaner, HierarchicalOcclusionTraverser traversal, BooleanSupplier frexSupplier) {
-        super(nodeManager, nodeCleaner, traversal, frexSupplier, false);
-        this.useEnvFog = VoxyConfig.CONFIG.renderVoxyFog;
-        this.finalBlit = new FullscreenBlit("voxy:post/blit_texture_depth_cutout.frag",
-                a->a.defineIf("USE_ENV_FOG", this.useEnvFog).define("EMIT_COLOUR"));
-        this.ssao = SSAO.createSSAO(VoxyConfig.CONFIG.getSSAOMode());
+  protected NormalRenderPipeline(
+      AsyncNodeManager nodeManager,
+      NodeCleaner nodeCleaner,
+      HierarchicalOcclusionTraverser traversal,
+      BooleanSupplier frexSupplier) {
+    super(nodeManager, nodeCleaner, traversal, frexSupplier, false);
+    this.useEnvFog = VoxyConfig.CONFIG.renderVoxyFog;
+    this.finalBlit =
+        new FullscreenBlit(
+            "voxy:post/blit_texture_depth_cutout.frag",
+            a -> a.defineIf("USE_ENV_FOG", this.useEnvFog).define("EMIT_COLOUR"));
+    this.ssao = SSAO.createSSAO(VoxyConfig.CONFIG.getSSAOMode());
+  }
+
+  @Override
+  protected int setup(Gl46Viewport<?> viewport, int sourceFB, int srcWidth, int srcHeight) {
+    if (this.colourTex == null
+        || this.colourTex.getHeight() != viewport.height
+        || this.colourTex.getWidth() != viewport.width) {
+      if (this.colourTex != null) {
+        this.colourTex.free();
+        this.colourSSAOTex.free();
+      }
+      this.fb.resize(viewport.width, viewport.height);
+
+      this.colourTex = new GlTexture().store(GL_RGBA8, 1, viewport.width, viewport.height);
+      this.colourSSAOTex = new GlTexture().store(GL_RGBA8, 1, viewport.width, viewport.height);
+
+      this.fb.framebuffer.bind(GL_COLOR_ATTACHMENT0, this.colourTex).verify();
+      this.fbSSAO
+          .bind(this.fb.getDepthAttachmentType(), this.fb.getDepthTex())
+          .bind(GL_COLOR_ATTACHMENT0, this.colourSSAOTex)
+          .verify();
+
+      glTextureParameterf(this.colourTex.id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      glTextureParameterf(this.colourTex.id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+      glTextureParameterf(this.colourSSAOTex.id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      glTextureParameterf(this.colourSSAOTex.id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+      glTextureParameterf(
+          this.fb.getDepthTex().id, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_DEPTH_COMPONENT);
     }
 
-    @Override
-    protected int setup(Gl46Viewport<?> viewport, int sourceFB, int srcWidth, int srcHeight) {
-        if (this.colourTex == null || this.colourTex.getHeight() != viewport.height || this.colourTex.getWidth() != viewport.width) {
-            if (this.colourTex != null) {
-                this.colourTex.free();
-                this.colourSSAOTex.free();
-            }
-            this.fb.resize(viewport.width, viewport.height);
+    this.initDepthStencil(
+        sourceFB,
+        this.fb.framebuffer.id,
+        viewport.width,
+        viewport.height,
+        viewport.width,
+        viewport.height);
 
-            this.colourTex = new GlTexture().store(GL_RGBA8, 1, viewport.width, viewport.height);
-            this.colourSSAOTex = new GlTexture().store(GL_RGBA8, 1, viewport.width, viewport.height);
+    return this.fb.getDepthTex().id;
+  }
 
-            this.fb.framebuffer.bind(GL_COLOR_ATTACHMENT0, this.colourTex).verify();
-            this.fbSSAO.bind(this.fb.getDepthAttachmentType(), this.fb.getDepthTex()).bind(GL_COLOR_ATTACHMENT0, this.colourSSAOTex).verify();
+  @Override
+  protected void postOpaquePreTranslucent(Gl46Viewport<?> viewport, int sourceFrameBuffer) {
+    GPUTiming.INSTANCE.marker("ao");
+    this.ssao.computeSSAO(
+        viewport, this.colourSSAOTex, this.colourTex, this.fb.getDepthTex(), sourceFrameBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, this.fbSSAO.id);
+  }
 
+  @Override
+  protected void finish(
+      Gl46Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
+    this.finalBlit.bind();
+    var vrs = VoxyRenderSystemAccess.getNullable();
+    float fogStart = vrs != null ? vrs.getCapturedFogStart() : RenderSystem.getShaderFogStart();
+    float fogEnd = vrs != null ? vrs.getCapturedFogEnd() : RenderSystem.getShaderFogEnd();
+    float[] fogColor = vrs != null ? vrs.getCapturedFogColor() : RenderSystem.getShaderFogColor();
 
-            glTextureParameterf(this.colourTex.id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTextureParameterf(this.colourTex.id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            glTextureParameterf(this.colourSSAOTex.id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTextureParameterf(this.colourSSAOTex.id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            glTextureParameterf(this.fb.getDepthTex().id, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_DEPTH_COMPONENT);
-        }
+    float renderDistance = Minecraft.getInstance().gameRenderer.getRenderDistance();
+    boolean fogCoversAllRendering = fogEnd < renderDistance;
 
-        this.initDepthStencil(sourceFB, this.fb.framebuffer.id, viewport.width, viewport.height, viewport.width, viewport.height);
-
-        return this.fb.getDepthTex().id;
+    if (this.useEnvFog) {
+      if (Math.abs(fogEnd - fogStart) > 1) {
+        glUniform2f(4, fogStart, fogEnd);
+        glUniform4f(5, fogColor[0], fogColor[1], fogColor[2], 1.0f);
+        glUniform1i(6, RenderSystem.getShaderFogShape().getIndex());
+        glUniform1f(7, VoxyConfig.CONFIG.fogIntensity);
+        glUniform1f(8, VoxyConfig.CONFIG.fogDensity);
+      } else {
+        glUniform2f(4, 0, 0);
+        glUniform4f(5, 0, 0, 0, 0);
+        glUniform1i(6, 0);
+        glUniform1f(7, 0);
+        glUniform1f(8, 0);
+      }
     }
 
-    @Override
-    protected void postOpaquePreTranslucent(Gl46Viewport<?> viewport, int sourceFrameBuffer) {
-        GPUTiming.INSTANCE.marker("ao");
-        this.ssao.computeSSAO(viewport, this.colourSSAOTex, this.colourTex, this.fb.getDepthTex(), sourceFrameBuffer);
-        glBindFramebuffer(GL_FRAMEBUFFER, this.fbSSAO.id);
+    glBindTextureUnit(3, this.colourSSAOTex.id);
+
+    // Do alpha blending
+    // Unbelievably jank hack, only blit out to the framebuffer if we are rendering fog
+    if (!fogCoversAllRendering) {
+      glEnable(GL_BLEND);
+      glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+      AbstractRenderPipeline.transformBlitDepth(
+          this.finalBlit,
+          this.fb.getDepthTex().id,
+          sourceFrameBuffer,
+          viewport,
+          new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
+      glDisable(GL_BLEND);
+    } else {
+      glDisable(GL_STENCIL_TEST);
+      glDisable(GL_DEPTH_TEST);
     }
+    // glBlitNamedFramebuffer(this.fbSSAO.id, sourceFrameBuffer, 0,0, viewport.width,
+    // viewport.height, 0,0, viewport.width, viewport.height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+  }
 
-    @Override
-    protected void finish(Gl46Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
-        this.finalBlit.bind();
-        var vrs = VoxyRenderSystemAccess.getNullable();
-        float fogStart = vrs != null ? vrs.getCapturedFogStart() : RenderSystem.getShaderFogStart();
-        float fogEnd   = vrs != null ? vrs.getCapturedFogEnd()   : RenderSystem.getShaderFogEnd();
-        float[] fogColor = vrs != null ? vrs.getCapturedFogColor() : RenderSystem.getShaderFogColor();
+  @Override
+  public void setupAndBindOpaque(Gl46Viewport<?> viewport) {
+    this.fb.bind();
+  }
 
-        float renderDistance = Minecraft.getInstance().gameRenderer.getRenderDistance();
-        boolean fogCoversAllRendering = fogEnd < renderDistance;
+  @Override
+  public void setupAndBindTranslucent(Gl46Viewport<?> viewport) {
+    glBindFramebuffer(GL_FRAMEBUFFER, this.fbSSAO.id);
+  }
 
-        if (this.useEnvFog) {
-            if (Math.abs(fogEnd - fogStart) > 1) {
-                glUniform2f(4, fogStart, fogEnd);
-                glUniform4f(5, fogColor[0], fogColor[1], fogColor[2], 1.0f);
-                glUniform1i(6, RenderSystem.getShaderFogShape().getIndex());
-                glUniform1f(7, VoxyConfig.CONFIG.fogIntensity);
-                glUniform1f(8, VoxyConfig.CONFIG.fogDensity);
-            } else {
-                glUniform2f(4, 0, 0);
-                glUniform4f(5, 0, 0, 0, 0);
-                glUniform1i(6, 0);
-                glUniform1f(7, 0);
-                glUniform1f(8, 0);
-            }
-        }
-
-        glBindTextureUnit(3, this.colourSSAOTex.id);
-
-        //Do alpha blending
-        //Unbelievably jank hack, only blit out to the framebuffer if we are rendering fog
-        if (!fogCoversAllRendering) {
-            glEnable(GL_BLEND);
-            glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-            AbstractRenderPipeline.transformBlitDepth(this.finalBlit, this.fb.getDepthTex().id, sourceFrameBuffer, viewport, new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
-            glDisable(GL_BLEND);
-        } else {
-            glDisable(GL_STENCIL_TEST);
-            glDisable(GL_DEPTH_TEST);
-        }
-        //glBlitNamedFramebuffer(this.fbSSAO.id, sourceFrameBuffer, 0,0, viewport.width, viewport.height, 0,0, viewport.width, viewport.height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+  @Override
+  public void free() {
+    this.finalBlit.delete();
+    this.ssao.free();
+    this.fbSSAO.free();
+    if (this.colourTex != null) {
+      this.colourTex.free();
+      this.colourSSAOTex.free();
     }
+    super.free0();
+  }
 
-    @Override
-    public void setupAndBindOpaque(Gl46Viewport<?> viewport) {
-        this.fb.bind();
-    }
-
-    @Override
-    public void setupAndBindTranslucent(Gl46Viewport<?> viewport) {
-        glBindFramebuffer(GL_FRAMEBUFFER, this.fbSSAO.id);
-    }
-
-    @Override
-    public void free() {
-        this.finalBlit.delete();
-        this.ssao.free();
-        this.fbSSAO.free();
-        if (this.colourTex != null) {
-            this.colourTex.free();
-            this.colourSSAOTex.free();
-        }
-        super.free0();
-    }
-
-    @Override
-    public void addDebug(List<String> debug) {
-        super.addDebug(debug);
-        this.ssao.addDebugInfo(debug);
-    }
+  @Override
+  public void addDebug(List<String> debug) {
+    super.addDebug(debug);
+    this.ssao.addDebugInfo(debug);
+  }
 }

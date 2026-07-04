@@ -5,7 +5,7 @@ import me.cortex.voxy.common.config.IStoredSectionPositionIterator;
 import me.cortex.voxy.common.world.WorldSection;
 
 public abstract class SectionStorage implements IMappingStorage, IStoredSectionPositionIterator {
-    public abstract int loadSection(WorldSection into);
+  public abstract int loadSection(WorldSection into);
 
-    public abstract void saveSection(WorldSection section);
+  public abstract void saveSection(WorldSection section);
 }

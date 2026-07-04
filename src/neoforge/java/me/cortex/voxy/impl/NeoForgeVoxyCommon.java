@@ -5,7 +5,7 @@ import net.neoforged.fml.common.Mod;
 
 @Mod("voxy")
 public class NeoForgeVoxyCommon extends VoxyCommon {
-    public NeoForgeVoxyCommon() {
-        Serialization.init();
-    }
+  public NeoForgeVoxyCommon() {
+    Serialization.init();
+  }
 }

@@ -15,15 +15,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value = Recorder.class, remap = false)
 public class MixinFlashbackRecorder {
-    @Shadow @Final private FlashbackMeta metadata;
+  @Shadow @Final private FlashbackMeta metadata;
 
-    @Inject(method = "<init>", at = @At("TAIL"))
-    private void voxy$getStoragePath(RegistryAccess registryAccess, CallbackInfo retInf) {
-        if (VoxyCommon.isAvailable()) {
-            var instance = VoxyCommon.getInstance();
-            if (instance instanceof VoxyClientInstance ci) {
-                ((FlashbackMetaAccess)this.metadata).setVoxyPath(ci.getStorageBasePath().toFile());
-            }
-        }
+  @Inject(method = "<init>", at = @At("TAIL"))
+  private void voxy$getStoragePath(RegistryAccess registryAccess, CallbackInfo retInf) {
+    if (VoxyCommon.isAvailable()) {
+      var instance = VoxyCommon.getInstance();
+      if (instance instanceof VoxyClientInstance ci) {
+        ((FlashbackMetaAccess) this.metadata).setVoxyPath(ci.getStorageBasePath().toFile());
+      }
     }
+  }
 }

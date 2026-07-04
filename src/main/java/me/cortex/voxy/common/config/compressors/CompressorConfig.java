@@ -4,9 +4,9 @@ import me.cortex.voxy.common.config.ConfigBuildCtx;
 import me.cortex.voxy.common.config.Serialization;
 
 public abstract class CompressorConfig {
-    static {
-        Serialization.CONFIG_TYPES.add(CompressorConfig.class);
-    }
+  static {
+    Serialization.CONFIG_TYPES.add(CompressorConfig.class);
+  }
 
-    public abstract StorageCompressor build(ConfigBuildCtx ctx);
+  public abstract StorageCompressor build(ConfigBuildCtx ctx);
 }

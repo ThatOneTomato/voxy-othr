@@ -7,6 +7,6 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 
 @Mixin(value = ChunkTracker.class, remap = false)
 public interface AccessorChunkTracker {
-    @Accessor
-    Long2IntOpenHashMap getChunkStatus();
+  @Accessor
+  Long2IntOpenHashMap getChunkStatus();
 }

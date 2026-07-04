@@ -4,47 +4,47 @@ import java.util.List;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderListIterable;
 
 public interface VoxyRenderBackend extends AutoCloseable {
-    RenderBackendId id();
+  RenderBackendId id();
 
-    boolean rendersLodTerrain();
+  boolean rendersLodTerrain();
 
-    /**
-     * Advance this backend through a host frame stage. Backends ignore stages they do not
-     * participate in by returning {@code frame} unchanged.
-     */
-    RenderFrame runFrameStage(RenderStage stage, RenderStageContext context, RenderFrame frame);
+  /**
+   * Advance this backend through a host frame stage. Backends ignore stages they do not participate
+   * in by returning {@code frame} unchanged.
+   */
+  RenderFrame runFrameStage(RenderStage stage, RenderStageContext context, RenderFrame frame);
 
-    RenderFrame setupFrame(RenderFrameContext context);
+  RenderFrame setupFrame(RenderFrameContext context);
 
-    void renderOpaque(RenderFrame frame);
+  void renderOpaque(RenderFrame frame);
 
-    void setRenderDistance(float renderDistance);
+  void setRenderDistance(float renderDistance);
 
-    void addDebugInfo(List<String> debug);
+  void addDebugInfo(List<String> debug);
 
-    RenderFrameMatrices getLastFrameMatrices();
+  RenderFrameMatrices getLastFrameMatrices();
 
-    /**
-     * GL texture id of this backend's Voxy distant-terrain depth target for the most recent frame,
-     * or 0 if it does not own one. The texture holds combined near+far depth (a depth-component
-     * texture whose {@code texelFetch(...).r} yields normalised [0,1] depth). Iris shader packs
-     * sample it as {@code vxDepthTexOpaque} / {@code vxDepthTexTrans} (see {@code
-     * MixinIrisSamplers}). Backends that do not maintain a private distant-depth target (e.g. GL46,
-     * which renders into the Iris-managed pipeline framebuffer) keep the default 0 and let the
-     * caller fall back to the Iris depth target.
-     */
-    default int voxyDistantDepthTextureId() {
-        return 0;
-    }
+  /**
+   * GL texture id of this backend's Voxy distant-terrain depth target for the most recent frame, or
+   * 0 if it does not own one. The texture holds combined near+far depth (a depth-component texture
+   * whose {@code texelFetch(...).r} yields normalised [0,1] depth). Iris shader packs sample it as
+   * {@code vxDepthTexOpaque} / {@code vxDepthTexTrans} (see {@code MixinIrisSamplers}). Backends
+   * that do not maintain a private distant-depth target (e.g. GL46, which renders into the
+   * Iris-managed pipeline framebuffer) keep the default 0 and let the caller fall back to the Iris
+   * depth target.
+   */
+  default int voxyDistantDepthTextureId() {
+    return 0;
+  }
 
-    void onChunkTrackerReset();
+  void onChunkTrackerReset();
 
-    void onSectionRenderStateChanged(long sectionPos, boolean present);
+  void onSectionRenderStateChanged(long sectionPos, boolean present);
 
-    default void beginVanillaRenderSectionSync() {}
+  default void beginVanillaRenderSectionSync() {}
 
-    default void syncVanillaRenderSections(ChunkRenderListIterable renderLists, boolean reverse) {}
+  default void syncVanillaRenderSections(ChunkRenderListIterable renderLists, boolean reverse) {}
 
-    @Override
-    void close();
+  @Override
+  void close();
 }

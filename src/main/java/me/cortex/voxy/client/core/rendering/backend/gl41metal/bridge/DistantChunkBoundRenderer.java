@@ -1,7 +1,5 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge;
 
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
-
 import static org.lwjgl.opengl.GL11C.GL_BLEND;
 import static org.lwjgl.opengl.GL11C.GL_COLOR_WRITEMASK;
 import static org.lwjgl.opengl.GL11C.GL_CULL_FACE;
@@ -39,8 +37,6 @@ import static org.lwjgl.opengl.GL11C.glIsEnabled;
 import static org.lwjgl.opengl.GL11C.glTexImage2D;
 import static org.lwjgl.opengl.GL11C.glTexParameteri;
 import static org.lwjgl.opengl.GL11C.glViewport;
-import static org.lwjgl.opengl.GL20C.GL_CURRENT_PROGRAM;
-import static org.lwjgl.opengl.GL20C.glUseProgram;
 import static org.lwjgl.opengl.GL12C.GL_CLAMP_TO_EDGE;
 import static org.lwjgl.opengl.GL15C.GL_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL15C.GL_DYNAMIC_DRAW;
@@ -50,6 +46,7 @@ import static org.lwjgl.opengl.GL15C.glBindBuffer;
 import static org.lwjgl.opengl.GL15C.glBufferData;
 import static org.lwjgl.opengl.GL15C.glDeleteBuffers;
 import static org.lwjgl.opengl.GL15C.glGenBuffers;
+import static org.lwjgl.opengl.GL20C.GL_CURRENT_PROGRAM;
 import static org.lwjgl.opengl.GL20C.glEnableVertexAttribArray;
 import static org.lwjgl.opengl.GL20C.glGetUniformLocation;
 import static org.lwjgl.opengl.GL20C.glUniform1f;
@@ -57,14 +54,15 @@ import static org.lwjgl.opengl.GL20C.glUniform2f;
 import static org.lwjgl.opengl.GL20C.glUniform2i;
 import static org.lwjgl.opengl.GL20C.glUniform3i;
 import static org.lwjgl.opengl.GL20C.glUniformMatrix4fv;
+import static org.lwjgl.opengl.GL20C.glUseProgram;
 import static org.lwjgl.opengl.GL30C.GL_DEPTH_ATTACHMENT;
 import static org.lwjgl.opengl.GL30C.GL_DEPTH_COMPONENT32F;
 import static org.lwjgl.opengl.GL30C.GL_DRAW_FRAMEBUFFER;
 import static org.lwjgl.opengl.GL30C.GL_DRAW_FRAMEBUFFER_BINDING;
 import static org.lwjgl.opengl.GL30C.GL_FRAMEBUFFER;
 import static org.lwjgl.opengl.GL30C.GL_TEXTURE_COMPARE_MODE;
-import static org.lwjgl.opengl.GL30C.glBindFramebuffer;
 import static org.lwjgl.opengl.GL30C.GL_VERTEX_ARRAY_BINDING;
+import static org.lwjgl.opengl.GL30C.glBindFramebuffer;
 import static org.lwjgl.opengl.GL30C.glBindVertexArray;
 import static org.lwjgl.opengl.GL30C.glDeleteFramebuffers;
 import static org.lwjgl.opengl.GL30C.glDeleteVertexArrays;
@@ -82,6 +80,7 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import me.cortex.voxy.client.core.gl.shader.Shader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
 import me.cortex.voxy.common.Logger;
 import net.minecraft.core.SectionPos;
 import org.joml.Matrix4fc;
@@ -105,24 +104,25 @@ import org.lwjgl.system.MemoryUtil;
  * camera horizontally and matches Sodium's reach vertically. If instead only the terrain's own
  * 16-block cubes were rasterized, a high-flying camera would sit in the empty air ABOVE the terrain
  * "puck": from a steep top-down angle the puck's deep far-bottom corners read FARTHER than distant
- * LOD water just past the horizontal edge, and the farther-depth bound would wrongly clip that water
- * (it vanished when flying high). The camera-centred band fixes that horizontally while NOT clipping
- * the water directly BELOW a high camera: Sodium's visibility BFS only flood-fills ~renderDistance
- * chunks straight down, so the ground far below a high camera is rendered by neither the near scene
- * nor (if the bound claimed full height) the distant LOD - a "neither near nor far" hole. Bounding
- * each column to the band Sodium can actually reach mirrors voxy-fabric ChunkBoundRenderer (whose
- * {@code findEmitBoundingChunks} expands mincy/maxcy only while within {@code renderDistance} of the
- * camera Y; outline.vsh documents the same intent as its commented-out "Expand the y height" TODO).
+ * LOD water just past the horizontal edge, and the farther-depth bound would wrongly clip that
+ * water (it vanished when flying high). The camera-centred band fixes that horizontally while NOT
+ * clipping the water directly BELOW a high camera: Sodium's visibility BFS only flood-fills
+ * ~renderDistance chunks straight down, so the ground far below a high camera is rendered by
+ * neither the near scene nor (if the bound claimed full height) the distant LOD - a "neither near
+ * nor far" hole. Bounding each column to the band Sodium can actually reach mirrors voxy-fabric
+ * ChunkBoundRenderer (whose {@code findEmitBoundingChunks} expands mincy/maxcy only while within
+ * {@code renderDistance} of the camera Y; outline.vsh documents the same intent as its
+ * commented-out "Expand the y height" TODO).
  *
  * <p>The vertex shader applies voxy-fabric outline.vsh's {@code shouldRender()} horizontal cylinder
  * cull: a column is skipped when its XZ footprint is farther than {@code renderDistance} from the
  * REAL (fractional) camera. This makes the bound's horizontal extent track the camera CONTINUOUSLY
- * each frame, exactly as the float vertical band does in Y. It is required because the section SET is
- * discrete in XZ (updated only by Sodium's lagged add/remove events): without it, a column the camera
- * has already receded past stays in the bound for the few frames until Sodium's removeSection
- * arrives, clipping distant water at the receding frontier = a hole while flying BACKWARD. There is
- * NO {@code lodBoundaryBuffer} inward shrink, though: an inward shrink would leave a boundary band
- * where BOTH near and distant water draw (a double-water overlap).
+ * each frame, exactly as the float vertical band does in Y. It is required because the section SET
+ * is discrete in XZ (updated only by Sodium's lagged add/remove events): without it, a column the
+ * camera has already receded past stays in the bound for the few frames until Sodium's
+ * removeSection arrives, clipping distant water at the receding frontier = a hole while flying
+ * BACKWARD. There is NO {@code lodBoundaryBuffer} inward shrink, though: an inward shrink would
+ * leave a boundary band where BOTH near and distant water draw (a double-water overlap).
  *
  * <p>Add/remove timing mirrors voxy-fabric ChunkBoundRenderer's add/remove queues, NOT a "200ms
  * removal delay". Fabric processes its {@code remQueue} BEFORE the bound render (removal is
@@ -131,8 +131,8 @@ import org.lwjgl.system.MemoryUtil;
  * {@code ADD_DELAY_FRAMES} (default 1) before joining the bound. Sodium reports a section built the
  * instant its geometry uploads, yet only DRAWS it a frame later, so an immediate add would clip the
  * distant water a frame before the near water is painted - a moving hole band at the FORWARD edge.
- * Removal must stay immediate because gl41metal distant LOD is persistently resident (independent of
- * the Sodium near distance), so the bound must stop clipping the instant near water unloads to
+ * Removal must stay immediate because gl41metal distant LOD is persistently resident (independent
+ * of the Sodium near distance), so the bound must stop clipping the instant near water unloads to
  * reveal the already-resident distant water; a removal delay would keep clipping a trailing gap
  * band while moving.
  *
@@ -167,33 +167,36 @@ public final class DistantChunkBoundRenderer implements AutoCloseable {
     1, 3, 7, 1, 7, 5 // x=1
   };
 
-  private static final String VERTEX_SOURCE =
-      BridgeGlsl.load("chunk_bound.vert");
+  private static final String VERTEX_SOURCE = BridgeGlsl.load("chunk_bound.vert");
 
-  private static final String FRAGMENT_SOURCE =
-      BridgeGlsl.load("chunk_bound.frag");
+  private static final String FRAGMENT_SOURCE = BridgeGlsl.load("chunk_bound.frag");
 
   private static final int INITIAL_CAPACITY = 1 << 12;
 
   // Fine-tune (in blocks) where the vertical near/distant handoff sits relative to Sodium's exact
-  // downward BFS reach. The float band already removes the integer +/-1 seam; this absorbs the small
+  // downward BFS reach. The float band already removes the integer +/-1 seam; this absorbs the
+  // small
   // systematic offset that Sodium reaches slightly MORE than renderDistance vertically. The default
   // +1 reproduces voxy-fabric ChunkBoundRenderer.testYPos, which expands each section's Y span by 1
-  // block on each side (nearestToZero(ry - 1, ry + 17)) - i.e. an effective renderDistance + 1 reach.
-  // Positive = grow the band (more distant discarded, less overlap, risks a hole); negative = shrink
+  // block on each side (nearestToZero(ry - 1, ry + 17)) - i.e. an effective renderDistance + 1
+  // reach.
+  // Positive = grow the band (more distant discarded, less overlap, risks a hole); negative =
+  // shrink
   // it (more overlap, no hole). 0 = exact cameraY +/- renderDistance.
   private static final double BOUND_VERTICAL_MARGIN =
       Double.parseDouble(System.getProperty("voxy.gl41metal.boundVerticalMargin", "1"));
 
   // Fine-tune (in blocks) the camera-relative horizontal cylinder cull radius (see the shader's
-  // uCameraBlockXZ comment). Positive = grow the cull radius (bound covers a wider ring); negative =
+  // uCameraBlockXZ comment). Positive = grow the cull radius (bound covers a wider ring); negative
+  // =
   // shrink it (more distant kept in the outer ring). Default 0 = cull at exactly renderDistance.
   private static final double BOUND_HORIZONTAL_MARGIN =
       Double.parseDouble(System.getProperty("voxy.gl41metal.boundHorizontalMargin", "0"));
 
   // Frames to DELAY a section ENTERING the bound after Sodium reports it built. The Sodium hook
   // (MixinRenderSectionManager#voxy$updateOnUpload) fires the instant a section's geometry is
-  // uploaded (setInfo), but Sodium does not actually DRAW that section until a later frame, when its
+  // uploaded (setInfo), but Sodium does not actually DRAW that section until a later frame, when
+  // its
   // visibility graph next includes it. If the bound covered the section immediately, then while
   // flying FORWARD the leading ring of freshly-built columns would claim "near already covers this"
   // and clip the distant water there a frame BEFORE Sodium paints the near water - a moving hole
@@ -215,7 +218,8 @@ public final class DistantChunkBoundRenderer implements AutoCloseable {
   // Mutated only on the render thread from the Sodium hooks; guarded for the rare off-thread
   // report.
   private final LongOpenHashSet sections = new LongOpenHashSet(INITIAL_CAPACITY);
-  // Sections waiting out their ADD_DELAY_FRAMES countdown before joining {@link #sections}. Keyed by
+  // Sections waiting out their ADD_DELAY_FRAMES countdown before joining {@link #sections}. Keyed
+  // by
   // SectionPos long -> frames remaining; ticked down once per rendered frame in tickPendingAdds().
   private final Long2IntOpenHashMap pendingAdds = new Long2IntOpenHashMap();
   private boolean sectionsDirty = true;
@@ -279,7 +283,8 @@ public final class DistantChunkBoundRenderer implements AutoCloseable {
     }
   }
 
-  // Advances the deferred-add countdowns by one rendered frame, promoting any section that has waited
+  // Advances the deferred-add countdowns by one rendered frame, promoting any section that has
+  // waited
   // out ADD_DELAY_FRAMES into the live bound set. Called once per frame from render() before the
   // instance data is (re)built, so a promotion this frame is picked up this frame.
   private void tickPendingAdds() {
@@ -376,14 +381,17 @@ public final class DistantChunkBoundRenderer implements AutoCloseable {
       int secOriginZ = (bz >> 5) << 5;
 
       // Bound each column to the camera-centred vertical band [cameraY - R, cameraY + R] (R =
-      // verticalRadiusBlocks = renderDistance in blocks), as FLOATS so the boundary sits at the exact
+      // verticalRadiusBlocks = renderDistance in blocks), as FLOATS so the boundary sits at the
+      // exact
       // fractional camera height with no integer quantization. Sodium's visibility BFS only reaches
       // ~renderDistance chunks straight down through open air, so a full-height column under a high
       // camera would claim the near scene covers ground Sodium never renders -> a "neither near nor
       // far" hole directly below. An integer floor(cameraY) +/- R band (fraction dropped) left a
       // ~1-block seam that drifted with the camera's fractional height; the float band removes that
-      // quantization, and BOUND_VERTICAL_MARGIN fine-tunes the handoff against Sodium's exact vertical
-      // reach (tune live with -Dvoxy.gl41metal.boundVerticalMargin). When the whole band falls outside
+      // quantization, and BOUND_VERTICAL_MARGIN fine-tunes the handoff against Sodium's exact
+      // vertical
+      // reach (tune live with -Dvoxy.gl41metal.boundVerticalMargin). When the whole band falls
+      // outside
       // the world (camera far above build height) it is degenerate and we skip it, so the bound is
       // empty there and the distant water below is fully kept.
       double radius = verticalRadiusBlocks + BOUND_VERTICAL_MARGIN;
@@ -534,9 +542,11 @@ public final class DistantChunkBoundRenderer implements AutoCloseable {
       this.sectionsDirty = false;
     }
     // Each instance is rasterized as a FULL vertical column (uColumnMinY..uColumnMaxY), so a
-    // section's own Y is irrelevant. Collapse the 3D section set to unique XZ columns: a column with
+    // section's own Y is irrelevant. Collapse the 3D section set to unique XZ columns: a column
+    // with
     // many stacked loaded sections then emits ONE tall slab instead of one per section, avoiding a
-    // ~(worldHeight/16)x depth-overdraw blow-up. The emitted Y is a placeholder (0); the shader uses
+    // ~(worldHeight/16)x depth-overdraw blow-up. The emitted Y is a placeholder (0); the shader
+    // uses
     // only XZ from aSectionCoord.
     LongOpenHashSet columns = new LongOpenHashSet(snapshot.length);
     for (long pos : snapshot) {

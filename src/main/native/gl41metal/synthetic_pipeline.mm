@@ -6,11 +6,7 @@ extern "C" {
 
 JNIEXPORT void JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_submitSynthetic(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex,
-    jlong frameId) {
+    JNIEnv* env, jclass, jlong handle, jint slotIndex, jlong frameId) {
   @autoreleasepool {
     NativeContext* context = requireContext(env, handle);
     if (context == nullptr) {
@@ -66,7 +62,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     pass.colorAttachments[2].texture = slot.gbuffer2->metalTexture;
     pass.colorAttachments[2].loadAction = MTLLoadActionClear;
     pass.colorAttachments[2].storeAction = MTLStoreActionStore;
-    pass.colorAttachments[2].clearColor = MTLClearColorMake(albedoPacked, lightPacked, tintPacked, faceFlagsCoverage);
+    pass.colorAttachments[2].clearColor =
+        MTLClearColorMake(albedoPacked, lightPacked, tintPacked, faceFlagsCoverage);
 
     id<MTLRenderCommandEncoder> encoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
     if (encoder == nil) {

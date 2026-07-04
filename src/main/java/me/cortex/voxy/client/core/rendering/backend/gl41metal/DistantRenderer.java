@@ -1,11 +1,10 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal;
 
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SharedDistantGbuffer;
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
-
 import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameContext;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SharedDistantGbuffer;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;

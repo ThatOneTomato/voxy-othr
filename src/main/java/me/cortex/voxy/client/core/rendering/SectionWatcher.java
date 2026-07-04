@@ -3,21 +3,21 @@ package me.cortex.voxy.client.core.rendering;
 import me.cortex.voxy.common.world.WorldEngine;
 
 public interface SectionWatcher {
-    default boolean watch(int lvl, int x, int y, int z, int types) {
-        return this.watch(WorldEngine.getWorldSectionId(lvl, x, y, z), types);
-    }
+  default boolean watch(int lvl, int x, int y, int z, int types) {
+    return this.watch(WorldEngine.getWorldSectionId(lvl, x, y, z), types);
+  }
 
-    boolean watch(long position, int types);
+  boolean watch(long position, int types);
 
-    default boolean unwatch(int lvl, int x, int y, int z, int types) {
-        return this.unwatch(WorldEngine.getWorldSectionId(lvl, x, y, z), types);
-    }
+  default boolean unwatch(int lvl, int x, int y, int z, int types) {
+    return this.unwatch(WorldEngine.getWorldSectionId(lvl, x, y, z), types);
+  }
 
-    boolean unwatch(long position, int types);
+  boolean unwatch(long position, int types);
 
-    default int get(int lvl, int x, int y, int z) {
-        return this.get(WorldEngine.getWorldSectionId(lvl, x, y, z));
-    }
+  default int get(int lvl, int x, int y, int z) {
+    return this.get(WorldEngine.getWorldSectionId(lvl, x, y, z));
+  }
 
-    int get(long position);
+  int get(long position);
 }

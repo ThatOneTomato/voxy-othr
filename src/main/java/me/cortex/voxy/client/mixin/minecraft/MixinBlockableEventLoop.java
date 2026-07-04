@@ -12,7 +12,8 @@
 
 //     @Shadow public static boolean isNonRecoverable(Throwable throwable){return false;}
 
-//     @Redirect(method = "doRunTask", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/thread/BlockableEventLoop;isNonRecoverable(Ljava/lang/Throwable;)Z"))
+//     @Redirect(method = "doRunTask", at = @At(value = "INVOKE", target =
+// "Lnet/minecraft/util/thread/BlockableEventLoop;isNonRecoverable(Ljava/lang/Throwable;)Z"))
 //     private boolean voxy$forceCrashOnError(Throwable exception) {
 //         if (exception instanceof LoadException le) {
 //             if (le.getCause() instanceof RuntimeException cause) {

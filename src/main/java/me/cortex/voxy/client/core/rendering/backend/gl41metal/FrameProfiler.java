@@ -16,11 +16,9 @@ public final class FrameProfiler {
   private static final int WINDOW_SIZE =
       Math.max(
           10,
-          Integer.parseInt(
-              System.getProperty("voxy.gl41metal.profileWindowSize", "120").trim()));
+          Integer.parseInt(System.getProperty("voxy.gl41metal.profileWindowSize", "120").trim()));
   private static final long LOG_INTERVAL_MS =
-      Long.parseLong(
-          System.getProperty("voxy.gl41metal.profileLogIntervalMs", "5000").trim());
+      Long.parseLong(System.getProperty("voxy.gl41metal.profileLogIntervalMs", "5000").trim());
 
   private long tickAccum;
   private long metalSubmitAccum;

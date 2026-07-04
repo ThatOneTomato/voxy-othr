@@ -14,9 +14,7 @@ extern "C" {
 
 JNIEXPORT void JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_validateTerrainResources(
-    JNIEnv* env,
-    jclass,
-    jlong handle) {
+    JNIEnv* env, jclass, jlong handle) {
   @autoreleasepool {
     NativeContext* context = requireContext(env, handle);
     if (context == nullptr || context->terrain == nullptr) {
@@ -48,7 +46,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_v
     [encoder setBuffer:terrain->validationStats offset:0 atIndex:4];
     [encoder setBuffer:terrain->validationMaxSections offset:0 atIndex:5];
     [encoder setBuffer:terrain->validationGeometryQuadCapacity offset:0 atIndex:6];
-    NSUInteger width = std::min<NSUInteger>(terrain->validationPipeline.maxTotalThreadsPerThreadgroup, 128);
+    NSUInteger width =
+        std::min<NSUInteger>(terrain->validationPipeline.maxTotalThreadsPerThreadgroup, 128);
     MTLSize threadsPerGroup = MTLSizeMake(width, 1, 1);
     MTLSize threads = MTLSizeMake(static_cast<NSUInteger>(terrain->maxSections), 1, 1);
     [encoder dispatchThreads:threads threadsPerThreadgroup:threadsPerGroup];
@@ -59,7 +58,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_v
       throwJava(env, [[commandBuffer.error localizedDescription] UTF8String]);
       return;
     }
-    std::memcpy(terrain->lastValidation, [terrain->validationStats contents], sizeof(terrain->lastValidation));
+    std::memcpy(terrain->lastValidation, [terrain->validationStats contents],
+                sizeof(terrain->lastValidation));
   }
 }
 

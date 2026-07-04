@@ -4,6 +4,6 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import org.jetbrains.annotations.Nullable;
 
 public interface ClientChunkCacheAccess {
-    @Nullable
-    LevelChunk voxy$cheekyGetChunk(int x, int z);
+  @Nullable
+  LevelChunk voxy$cheekyGetChunk(int x, int z);
 }

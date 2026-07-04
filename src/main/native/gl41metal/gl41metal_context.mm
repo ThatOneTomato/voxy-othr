@@ -19,11 +19,8 @@ NativeContext* requireContext(JNIEnv* env, jlong handle) {
   return reinterpret_cast<NativeContext*>(handle);
 }
 
-id<MTLComputePipelineState> createComputePipeline(
-    JNIEnv* env,
-    NativeContext* context,
-    NSString* functionName,
-    const char* label) {
+id<MTLComputePipelineState> createComputePipeline(JNIEnv* env, NativeContext* context,
+                                                  NSString* functionName, const char* label) {
   if (context->shaderLibrary == nil) {
     throwJava(env, std::string("GL41Metal shader library is not loaded for ") + label);
     return nil;
@@ -53,7 +50,8 @@ id<MTLComputePipelineState> createComputePipeline(
   return pipeline;
 }
 
-static id<MTLLibrary> loadShaderLibrary(JNIEnv* env, id<MTLDevice> device, jstring shaderLibraryPath) {
+static id<MTLLibrary> loadShaderLibrary(JNIEnv* env, id<MTLDevice> device,
+                                        jstring shaderLibraryPath) {
   if (shaderLibraryPath == nullptr) {
     throwJava(env, "GL41Metal shader library path is null");
     return nil;
@@ -91,8 +89,7 @@ extern "C" {
 
 JNIEXPORT jstring JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getUnsupportedReason(
-    JNIEnv* env,
-    jclass) {
+    JNIEnv* env, jclass) {
   @autoreleasepool {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     if (device == nil) {
@@ -107,12 +104,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
 
 JNIEXPORT jlong JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_createContext(
-    JNIEnv* env,
-    jclass,
-    jint slotCount,
-    jint width,
-    jint height,
-    jstring shaderLibraryPath) {
+    JNIEnv* env, jclass, jint slotCount, jint width, jint height, jstring shaderLibraryPath) {
   @autoreleasepool {
     if (slotCount < 2) {
       throwJava(env, "GL41Metal requires at least two shared slots");
@@ -161,18 +153,15 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_c
 
 JNIEXPORT void JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_destroyContext(
-    JNIEnv* env,
-    jclass,
-    jlong handle) {
+    JNIEnv* env, jclass, jlong handle) {
   NativeContext* context = requireContext(env, handle);
   if (context == nullptr) {
     return;
   }
   {
     std::unique_lock<std::mutex> lock(context->mutex);
-    context->condition.wait_for(lock, std::chrono::seconds(5), [&] {
-      return context->pendingCommandBuffers == 0;
-    });
+    context->condition.wait_for(lock, std::chrono::seconds(5),
+                                [&] { return context->pendingCommandBuffers == 0; });
   }
   delete context;
 }
@@ -184,11 +173,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_d
 // re-streamed every time the user drags the window edge.
 JNIEXPORT void JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_resizeContext(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint width,
-    jint height) {
+    JNIEnv* env, jclass, jlong handle, jint width, jint height) {
   @autoreleasepool {
     NativeContext* context = requireContext(env, handle);
     if (context == nullptr) {
@@ -204,9 +189,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_r
     }
     {
       std::unique_lock<std::mutex> lock(context->mutex);
-      context->condition.wait_for(lock, std::chrono::seconds(5), [&] {
-        return context->pendingCommandBuffers == 0;
-      });
+      context->condition.wait_for(lock, std::chrono::seconds(5),
+                                  [&] { return context->pendingCommandBuffers == 0; });
       if (context->width == width && context->height == height) {
         return;
       }
@@ -239,9 +223,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_r
 
 JNIEXPORT jstring JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getDeviceName(
-    JNIEnv* env,
-    jclass,
-    jlong handle) {
+    JNIEnv* env, jclass, jlong handle) {
   NativeContext* context = requireContext(env, handle);
   if (context == nullptr) {
     return nullptr;
@@ -251,18 +233,14 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
 
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTextureTarget(
-    JNIEnv* env,
-    jclass,
-    jlong handle) {
+    JNIEnv* env, jclass, jlong handle) {
   NativeContext* context = requireContext(env, handle);
   return context == nullptr ? 0 : static_cast<jint>(context->textureTarget);
 }
 
 JNIEXPORT jdouble JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getLastMetalGpuTimeMs(
-    JNIEnv* env,
-    jclass,
-    jlong handle) {
+    JNIEnv* env, jclass, jlong handle) {
   NativeContext* context = requireContext(env, handle);
   if (context == nullptr) {
     return 0.0;
@@ -276,10 +254,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
 // the same order.
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getGbuffer0Texture(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex) {
+    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
   NativeContext* context = requireContext(env, handle);
   return context == nullptr ? 0
                             : static_cast<jint>(context->slots.at(slotIndex).gbuffer0->glTexture);
@@ -287,10 +262,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
 
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getGbuffer1Texture(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex) {
+    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
   NativeContext* context = requireContext(env, handle);
   return context == nullptr ? 0
                             : static_cast<jint>(context->slots.at(slotIndex).gbuffer1->glTexture);
@@ -298,10 +270,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
 
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getGbuffer2Texture(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex) {
+    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
   NativeContext* context = requireContext(env, handle);
   return context == nullptr ? 0
                             : static_cast<jint>(context->slots.at(slotIndex).gbuffer2->glTexture);
@@ -312,10 +281,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
 // water shading, tgbufferAccum carries the back->front over-blended flat colour + alpha.
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTgbuffer0Texture(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex) {
+    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
   NativeContext* context = requireContext(env, handle);
   return context == nullptr ? 0
                             : static_cast<jint>(context->slots.at(slotIndex).tgbuffer0->glTexture);
@@ -323,10 +289,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
 
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTgbuffer1Texture(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex) {
+    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
   NativeContext* context = requireContext(env, handle);
   return context == nullptr ? 0
                             : static_cast<jint>(context->slots.at(slotIndex).tgbuffer1->glTexture);
@@ -334,14 +297,11 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
 
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTgbufferAccumTexture(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex) {
+    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
   NativeContext* context = requireContext(env, handle);
   return context == nullptr
-      ? 0
-      : static_cast<jint>(context->slots.at(slotIndex).tgbufferAccum->glTexture);
+             ? 0
+             : static_cast<jint>(context->slots.at(slotIndex).tgbufferAccum->glTexture);
 }
 
 }  // extern "C"

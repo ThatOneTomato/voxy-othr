@@ -10,12 +10,7 @@ namespace gl41metal {
 //    exact float values; f32 represents every integer < 2^24 exactly, half (10-bit) does not.
 // See quad_raster.metal's QuadFragmentOut for the per-channel layout shared with the GL side.
 const FormatSpec GBUFFER0_FORMAT = {
-    "RGBA32F",
-    kCVPixelFormatType_128RGBAFloat,
-    16,
-    MTLPixelFormatRGBA32Float,
-    GL_RGBA32F,
-    GL_RGBA,
+    "RGBA32F", kCVPixelFormatType_128RGBAFloat, 16, MTLPixelFormatRGBA32Float, GL_RGBA32F, GL_RGBA,
     GL_FLOAT,
 };
 
@@ -51,13 +46,8 @@ NSDictionary* makeSurfaceProperties(const FormatSpec& format, int width, int hei
   };
 }
 
-bool importSurfaceToGlTexture(
-    SharedTexture* shared,
-    const FormatSpec& format,
-    int width,
-    int height,
-    GLenum target,
-    std::string* error) {
+bool importSurfaceToGlTexture(SharedTexture* shared, const FormatSpec& format, int width,
+                              int height, GLenum target, std::string* error) {
   GLuint texture = 0;
   glGenTextures(1, &texture);
   glBindTexture(target, texture);
@@ -66,16 +56,9 @@ bool importSurfaceToGlTexture(
   glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-  CGLError cglError = CGLTexImageIOSurface2D(
-      CGLGetCurrentContext(),
-      target,
-      format.cglInternalFormat,
-      width,
-      height,
-      format.glFormat,
-      format.glType,
-      shared->surface,
-      0);
+  CGLError cglError =
+      CGLTexImageIOSurface2D(CGLGetCurrentContext(), target, format.cglInternalFormat, width,
+                             height, format.glFormat, format.glType, shared->surface, 0);
   if (cglError != kCGLNoError) {
     std::ostringstream out;
     out << "CGLTexImageIOSurface2D failed for " << format.name << ": " << CGLErrorString(cglError);
@@ -97,12 +80,8 @@ bool importSurfaceToGlTexture(
   return true;
 }
 
-std::unique_ptr<SharedTexture> createSharedTexture(
-    const FormatSpec& format,
-    int width,
-    int height,
-    id<MTLDevice> device,
-    std::string* error) {
+std::unique_ptr<SharedTexture> createSharedTexture(const FormatSpec& format, int width, int height,
+                                                   id<MTLDevice> device, std::string* error) {
   auto shared = std::make_unique<SharedTexture>();
   NSDictionary* properties = makeSurfaceProperties(format, width, height);
   shared->surface = IOSurfaceCreate((__bridge CFDictionaryRef)properties);
@@ -116,7 +95,8 @@ std::unique_ptr<SharedTexture> createSharedTexture(
                                                          width:width
                                                         height:height
                                                      mipmapped:NO];
-  descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget;
+  descriptor.usage =
+      MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget;
   descriptor.storageMode = MTLStorageModeShared;
   shared->metalTexture = [device newTextureWithDescriptor:descriptor
                                                 iosurface:shared->surface
@@ -148,18 +128,18 @@ bool createSlotTextures(Slot* slot, NativeContext* context, std::string* error) 
   if (!slot->gbuffer2) {
     return false;
   }
-  slot->tgbuffer0 =
-      createSharedTexture(TGBUFFER0_FORMAT, context->width, context->height, context->device, error);
+  slot->tgbuffer0 = createSharedTexture(TGBUFFER0_FORMAT, context->width, context->height,
+                                        context->device, error);
   if (!slot->tgbuffer0) {
     return false;
   }
-  slot->tgbuffer1 =
-      createSharedTexture(TGBUFFER1_FORMAT, context->width, context->height, context->device, error);
+  slot->tgbuffer1 = createSharedTexture(TGBUFFER1_FORMAT, context->width, context->height,
+                                        context->device, error);
   if (!slot->tgbuffer1) {
     return false;
   }
-  slot->tgbufferAccum = createSharedTexture(
-      TGBUFFER_ACCUM_FORMAT, context->width, context->height, context->device, error);
+  slot->tgbufferAccum = createSharedTexture(TGBUFFER_ACCUM_FORMAT, context->width, context->height,
+                                            context->device, error);
   if (!slot->tgbufferAccum) {
     return false;
   }

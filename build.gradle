@@ -1,6 +1,24 @@
 // Root project: shared configuration and the gl41metal native/shader build tasks.
 // The actual mod jars are produced by the :fabric and :neoforge subprojects.
 
+plugins {
+    id 'com.diffplug.spotless' version '8.8.0'
+}
+
+repositories {
+    mavenCentral()
+}
+
+// All Java sources (main + both loader source sets) live under the root src/, so Spotless is
+// configured here rather than in the loader subprojects. Native code (.mm/.h/.metal) is formatted
+// separately with clang-format via the .clang-format file (BasedOnStyle: Google).
+spotless {
+    java {
+        target 'src/*/java/**/*.java'
+        googleJavaFormat()
+    }
+}
+
 def isInGHA = System.getenv("GITHUB_ACTIONS") == "true"
 def isMacOsHost = System.getProperty("os.name").toLowerCase().contains("mac")
 

@@ -1,59 +1,61 @@
 package me.cortex.voxy.common.config.storage.other;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
-import me.cortex.voxy.common.config.storage.StorageBackend;
-import me.cortex.voxy.common.util.MemoryBuffer;
-
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.function.LongConsumer;
+import me.cortex.voxy.common.config.storage.StorageBackend;
+import me.cortex.voxy.common.util.MemoryBuffer;
 
 public class DelegatingStorageAdaptor extends StorageBackend {
-    protected final StorageBackend delegate;
-    public DelegatingStorageAdaptor(StorageBackend delegate) {
-        this.delegate = delegate;
-    }
+  protected final StorageBackend delegate;
 
-    @Override
-    public void iteratePositions(int level, LongConsumer consumer) {this.delegate.iteratePositions(level, consumer);}
+  public DelegatingStorageAdaptor(StorageBackend delegate) {
+    this.delegate = delegate;
+  }
 
-    @Override
-    public MemoryBuffer getSectionData(long key, MemoryBuffer scratch) {
-        return this.delegate.getSectionData(key, scratch);
-    }
+  @Override
+  public void iteratePositions(int level, LongConsumer consumer) {
+    this.delegate.iteratePositions(level, consumer);
+  }
 
-    @Override
-    public void setSectionData(long key, MemoryBuffer data) {
-        this.delegate.setSectionData(key, data);
-    }
+  @Override
+  public MemoryBuffer getSectionData(long key, MemoryBuffer scratch) {
+    return this.delegate.getSectionData(key, scratch);
+  }
 
-    @Override
-    public void deleteSectionData(long key) {
-        this.delegate.deleteSectionData(key);
-    }
+  @Override
+  public void setSectionData(long key, MemoryBuffer data) {
+    this.delegate.setSectionData(key, data);
+  }
 
-    @Override
-    public void putIdMapping(int id, ByteBuffer data) {
-        this.delegate.putIdMapping(id, data);
-    }
+  @Override
+  public void deleteSectionData(long key) {
+    this.delegate.deleteSectionData(key);
+  }
 
-    @Override
-    public Int2ObjectOpenHashMap<byte[]> getIdMappingsData() {
-        return this.delegate.getIdMappingsData();
-    }
+  @Override
+  public void putIdMapping(int id, ByteBuffer data) {
+    this.delegate.putIdMapping(id, data);
+  }
 
-    @Override
-    public void flush() {
-        this.delegate.flush();
-    }
+  @Override
+  public Int2ObjectOpenHashMap<byte[]> getIdMappingsData() {
+    return this.delegate.getIdMappingsData();
+  }
 
-    @Override
-    public void close() {
-        this.delegate.close();
-    }
+  @Override
+  public void flush() {
+    this.delegate.flush();
+  }
 
-    @Override
-    public List<StorageBackend> getChildBackends() {
-        return List.of(this.delegate);
-    }
+  @Override
+  public void close() {
+    this.delegate.close();
+  }
+
+  @Override
+  public List<StorageBackend> getChildBackends() {
+    return List.of(this.delegate);
+  }
 }

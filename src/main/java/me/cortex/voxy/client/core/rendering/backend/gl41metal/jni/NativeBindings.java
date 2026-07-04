@@ -87,7 +87,8 @@ public final class NativeBindings {
 
   public static native String getUnsupportedReason();
 
-  public static native long createContext(int slotCount, int width, int height, String shaderLibraryPath);
+  public static native long createContext(
+      int slotCount, int width, int height, String shaderLibraryPath);
 
   public static long createContext(int slotCount, int width, int height) {
     if (SHADER_LIBRARY_PATH == null) {

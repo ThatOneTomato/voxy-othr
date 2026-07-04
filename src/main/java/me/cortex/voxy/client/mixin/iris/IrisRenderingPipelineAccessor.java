@@ -8,9 +8,9 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 
 @Mixin(value = IrisRenderingPipeline.class, remap = false)
 public interface IrisRenderingPipelineAccessor {
-    @Accessor
-    RenderTargets getRenderTargets();
+  @Accessor
+  RenderTargets getRenderTargets();
 
-    @Accessor
-    ShaderStorageBufferHolder getShaderStorageBufferHolder();
+  @Accessor
+  ShaderStorageBufferHolder getShaderStorageBufferHolder();
 }

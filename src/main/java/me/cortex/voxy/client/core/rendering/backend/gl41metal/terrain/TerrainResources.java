@@ -1,7 +1,5 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain;
 
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
-
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import java.util.Arrays;
 import me.cortex.voxy.client.config.VoxyConfig;
@@ -9,15 +7,16 @@ import me.cortex.voxy.client.core.model.ModelBakerySubsystem;
 import me.cortex.voxy.client.core.rendering.RenderDistanceTracker;
 import me.cortex.voxy.client.core.rendering.backend.BackendContext;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameContext;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 import me.cortex.voxy.client.core.rendering.building.RenderGenerationService;
 import me.cortex.voxy.client.core.rendering.hierarchical.CpuNodeSyncHost;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.Logger;
+import me.cortex.voxy.common.VoxyFlags;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.common.world.WorldSection;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.block.state.BlockState;
-import me.cortex.voxy.common.VoxyFlags;
 
 public final class TerrainResources implements AutoCloseable {
   private static final int MAX_RESIDENT_SECTIONS =
@@ -34,8 +33,7 @@ public final class TerrainResources implements AutoCloseable {
       readInt("voxy.gl41metal.maxWorklistItems", 400_000, 1024, 2_000_000);
   private static final int MAX_RASTER_QUADS =
       readInt("voxy.gl41metal.maxRasterQuads", 8_000_000, 1024, 32_000_000);
-  private static final int MESH_BATCH_SIZE =
-      readInt("voxy.gl41metal.meshBatchSize", 32, 16, 64);
+  private static final int MESH_BATCH_SIZE = readInt("voxy.gl41metal.meshBatchSize", 32, 16, 64);
 
   private final WorldEngine world;
   private final MaterialStore materialStore;

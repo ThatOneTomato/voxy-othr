@@ -14,16 +14,20 @@ bool createOpaqueMeshPipeline(JNIEnv* env, NativeContext* context, TerrainResour
   MTLFunctionConstantValues* constants = [[MTLFunctionConstantValues alloc] init];
   [constants setConstantValue:&batchSize type:MTLDataTypeUInt atIndex:0];
 
-  id<MTLFunction> object =
-      [context->shaderLibrary newFunctionWithName:@"voxy_opaque_object" constantValues:constants error:&error];
+  id<MTLFunction> object = [context->shaderLibrary newFunctionWithName:@"voxy_opaque_object"
+                                                        constantValues:constants
+                                                                 error:&error];
   if (object == nil) {
-    NSLog(@"GL41Metal mesh object function unavailable: %@", error ? [error localizedDescription] : @"unknown");
+    NSLog(@"GL41Metal mesh object function unavailable: %@",
+          error ? [error localizedDescription] : @"unknown");
     return true;
   }
-  id<MTLFunction> mesh =
-      [context->shaderLibrary newFunctionWithName:@"voxy_opaque_mesh" constantValues:constants error:&error];
+  id<MTLFunction> mesh = [context->shaderLibrary newFunctionWithName:@"voxy_opaque_mesh"
+                                                      constantValues:constants
+                                                               error:&error];
   if (mesh == nil) {
-    NSLog(@"GL41Metal mesh function unavailable: %@", error ? [error localizedDescription] : @"unknown");
+    NSLog(@"GL41Metal mesh function unavailable: %@",
+          error ? [error localizedDescription] : @"unknown");
     return true;
   }
   id<MTLFunction> fragment = [context->shaderLibrary newFunctionWithName:@"voxy_quad_fragment"];
@@ -33,7 +37,8 @@ bool createOpaqueMeshPipeline(JNIEnv* env, NativeContext* context, TerrainResour
   }
 
   MTLMeshRenderPipelineDescriptor* descriptor = [[MTLMeshRenderPipelineDescriptor alloc] init];
-  descriptor.label = [NSString stringWithFormat:@"Voxy GL41Metal opaque mesh (batch=%u)", batchSize];
+  descriptor.label =
+      [NSString stringWithFormat:@"Voxy GL41Metal opaque mesh (batch=%u)", batchSize];
   descriptor.objectFunction = object;
   descriptor.meshFunction = mesh;
   descriptor.fragmentFunction = fragment;
@@ -48,9 +53,9 @@ bool createOpaqueMeshPipeline(JNIEnv* env, NativeContext* context, TerrainResour
   MTLRenderPipelineReflection* reflection = nil;
   terrain->opaqueMeshPipeline =
       [context->device newRenderPipelineStateWithMeshDescriptor:descriptor
-                                                       options:MTLPipelineOptionNone
-                                                    reflection:&reflection
-                                                         error:&error];
+                                                        options:MTLPipelineOptionNone
+                                                     reflection:&reflection
+                                                          error:&error];
   if (terrain->opaqueMeshPipeline == nil) {
     std::string message = "GL41Metal opaque mesh pipeline creation failed";
     if (error != nil) {
@@ -73,7 +78,8 @@ bool createOpaqueMeshPipeline(JNIEnv* env, NativeContext* context, TerrainResour
   return true;
 }
 
-bool createTranslucentSortPipelines(JNIEnv* env, NativeContext* context, TerrainResources* terrain) {
+bool createTranslucentSortPipelines(JNIEnv* env, NativeContext* context,
+                                    TerrainResources* terrain) {
   terrain->translucentCountPipeline =
       createComputePipeline(env, context, @"prepare_translucent_sort", "translucent sort count");
   if (terrain->translucentCountPipeline == nil) {
@@ -109,10 +115,9 @@ bool createTranslucentMeshPipeline(JNIEnv* env, NativeContext* context, TerrainR
   [constants setConstantValue:&batchSize type:MTLDataTypeUInt atIndex:0];
 
   NSError* error = nil;
-  id<MTLFunction> object =
-      [context->shaderLibrary newFunctionWithName:@"voxy_translucent_object"
-                                   constantValues:constants
-                                            error:&error];
+  id<MTLFunction> object = [context->shaderLibrary newFunctionWithName:@"voxy_translucent_object"
+                                                        constantValues:constants
+                                                                 error:&error];
   id<MTLFunction> mesh = [context->shaderLibrary newFunctionWithName:@"voxy_translucent_mesh"
                                                       constantValues:constants
                                                                error:&error];
@@ -154,9 +159,9 @@ bool createTranslucentMeshPipeline(JNIEnv* env, NativeContext* context, TerrainR
   MTLRenderPipelineReflection* reflection = nil;
   terrain->translucentMeshPipeline =
       [context->device newRenderPipelineStateWithMeshDescriptor:descriptor
-                                                       options:MTLPipelineOptionNone
-                                                    reflection:&reflection
-                                                         error:&error];
+                                                        options:MTLPipelineOptionNone
+                                                     reflection:&reflection
+                                                          error:&error];
   if (terrain->translucentMeshPipeline == nil) {
     std::string message = "GL41Metal translucent mesh pipeline creation failed";
     if (error != nil) {

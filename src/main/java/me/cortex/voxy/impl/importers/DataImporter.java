@@ -3,13 +3,19 @@ package me.cortex.voxy.impl.importers;
 import me.cortex.voxy.common.world.WorldEngine;
 
 public interface DataImporter {
-    interface ICompletionCallback{void onCompletion(int chunks);}
-    interface IUpdateCallback{void onUpdate(int finished, int outOf);}
+  interface ICompletionCallback {
+    void onCompletion(int chunks);
+  }
 
-    void runImport(IUpdateCallback updateCallback, ICompletionCallback completionCallback);
+  interface IUpdateCallback {
+    void onUpdate(int finished, int outOf);
+  }
 
-    WorldEngine getEngine();
+  void runImport(IUpdateCallback updateCallback, ICompletionCallback completionCallback);
 
-    void shutdown();
-    boolean isRunning();
+  WorldEngine getEngine();
+
+  void shutdown();
+
+  boolean isRunning();
 }

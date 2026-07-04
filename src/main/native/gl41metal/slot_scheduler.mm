@@ -21,9 +21,7 @@ extern "C" {
 
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_acquireFreeSlot(
-    JNIEnv* env,
-    jclass,
-    jlong handle) {
+    JNIEnv* env, jclass, jlong handle) {
   NativeContext* context = requireContext(env, handle);
   if (context == nullptr) {
     return -1;
@@ -40,11 +38,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_a
 
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_waitCurrent(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint currentSlot,
-    jint timeoutMs) {
+    JNIEnv* env, jclass, jlong handle, jint currentSlot, jint timeoutMs) {
   NativeContext* context = requireContext(env, handle);
   if (context == nullptr) {
     return -1;
@@ -55,7 +49,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_w
   }
   auto readyOrFailed = [&] {
     return context->slots[currentSlot].state == SlotState::MetalReady ||
-        !context->asyncFailure.empty();
+           !context->asyncFailure.empty();
   };
   if (timeoutMs <= 0) {
     context->condition.wait(lock, readyOrFailed);
@@ -75,10 +69,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_w
 
 JNIEXPORT void JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_discardCurrentSlot(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex) {
+    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
   NativeContext* context = requireContext(env, handle);
   if (context == nullptr) {
     return;
@@ -102,10 +93,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_d
 
 JNIEXPORT void JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_releaseSampledSlot(
-    JNIEnv* env,
-    jclass,
-    jlong handle,
-    jint slotIndex) {
+    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
   NativeContext* context = requireContext(env, handle);
   if (context == nullptr) {
     return;

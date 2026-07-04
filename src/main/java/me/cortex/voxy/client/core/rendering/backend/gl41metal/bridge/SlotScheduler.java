@@ -1,7 +1,5 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge;
 
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
-
 import static org.lwjgl.opengl.GL32C.GL_ALREADY_SIGNALED;
 import static org.lwjgl.opengl.GL32C.GL_CONDITION_SATISFIED;
 import static org.lwjgl.opengl.GL32C.GL_SYNC_FLUSH_COMMANDS_BIT;
@@ -14,6 +12,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 import me.cortex.voxy.common.Logger;
 
 public final class SlotScheduler {

@@ -308,10 +308,8 @@ final class GbufferCompositor {
       }
       glUniform2f(behindShader.sharedSizeUniform(), slot.width(), slot.height());
       glUniform2f(behindShader.targetSizeUniform(), job.outputWidth(), job.outputHeight());
-      this.bindSharedTexture(
-          GBUFFER0_TEXTURE_UNIT, slot.textureTarget(), slot.tgbuffer0Texture());
-      this.bindSharedTexture(
-          GBUFFER1_TEXTURE_UNIT, slot.textureTarget(), slot.tgbuffer1Texture());
+      this.bindSharedTexture(GBUFFER0_TEXTURE_UNIT, slot.textureTarget(), slot.tgbuffer0Texture());
+      this.bindSharedTexture(GBUFFER1_TEXTURE_UNIT, slot.textureTarget(), slot.tgbuffer1Texture());
       this.bindSharedTexture(
           GBUFFER2_TEXTURE_UNIT, slot.textureTarget(), slot.tgbufferAccumTexture());
       LightMapHelper.bind(LIGHTMAP_TEXTURE_UNIT);
@@ -347,8 +345,7 @@ final class GbufferCompositor {
       glUniform1i(depthWriteShader.tgbuffer1Uniform(), GBUFFER1_TEXTURE_UNIT);
       glUniform2f(depthWriteShader.sharedSizeUniform(), slot.width(), slot.height());
       glUniform2f(depthWriteShader.targetSizeUniform(), job.outputWidth(), job.outputHeight());
-      this.bindSharedTexture(
-          GBUFFER1_TEXTURE_UNIT, slot.textureTarget(), slot.tgbuffer1Texture());
+      this.bindSharedTexture(GBUFFER1_TEXTURE_UNIT, slot.textureTarget(), slot.tgbuffer1Texture());
       glBindVertexArray(this.fullscreenVao);
       glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     }

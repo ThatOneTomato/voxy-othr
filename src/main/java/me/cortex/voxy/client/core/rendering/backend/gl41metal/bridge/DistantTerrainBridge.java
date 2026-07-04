@@ -32,7 +32,6 @@ import static org.lwjgl.opengl.GL15C.glBindBuffer;
 import static org.lwjgl.opengl.GL20C.GL_CURRENT_PROGRAM;
 import static org.lwjgl.opengl.GL20C.GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS;
 import static org.lwjgl.opengl.GL20C.glUseProgram;
-import static org.lwjgl.opengl.GL30C.GL_DEPTH24_STENCIL8;
 import static org.lwjgl.opengl.GL30C.GL_DRAW_FRAMEBUFFER;
 import static org.lwjgl.opengl.GL30C.GL_DRAW_FRAMEBUFFER_BINDING;
 import static org.lwjgl.opengl.GL30C.GL_READ_FRAMEBUFFER;
@@ -63,9 +62,8 @@ import org.lwjgl.system.MemoryStack;
  * implementation differs between the two {@link DistantBridgeJob} flavours:
  *
  * <ul>
- *   <li>vanilla / no shader pack uses the built-in vanilla patch (GL46 non-patched
- *       lighting: lightmap sample + directional face tint), drawing straight into the source
- *       framebuffer; and
+ *   <li>vanilla / no shader pack uses the built-in vanilla patch (GL46 non-patched lighting:
+ *       lightmap sample + directional face tint), drawing straight into the source framebuffer; and
  *   <li>Iris strict uses the shader pack's patch, header, uniforms and SSBOs, drawing into the Iris
  *       render targets.
  * </ul>
@@ -253,7 +251,8 @@ public final class DistantTerrainBridge implements AutoCloseable {
         boolean useManualDepthMask = USE_MANUAL_DEPTH_MASK && sourceDepthTexture != 0;
         int nearDepthSnapshot =
             useManualDepthMask
-                ? this.compositor.snapshotNearDepth(sourceDepthTexture, sourceDepthWidth, sourceDepthHeight)
+                ? this.compositor.snapshotNearDepth(
+                    sourceDepthTexture, sourceDepthWidth, sourceDepthHeight)
                 : 0;
         if (useManualDepthMask && nearDepthSnapshot == 0) {
           useManualDepthMask = false;
@@ -424,7 +423,9 @@ public final class DistantTerrainBridge implements AutoCloseable {
         depthMask = depthMaskBuffer.get(0) != 0;
       }
       int maxUnit =
-          Math.max(glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS), GbufferCompositor.LIGHTMAP_TEXTURE_UNIT + 1);
+          Math.max(
+              glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS),
+              GbufferCompositor.LIGHTMAP_TEXTURE_UNIT + 1);
       int[] rectangleTextures = new int[maxUnit];
       int[] textures1d = new int[maxUnit];
       int[] textures2d = new int[maxUnit];

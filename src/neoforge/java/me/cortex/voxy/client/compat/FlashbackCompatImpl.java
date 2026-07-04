@@ -4,9 +4,9 @@ import java.nio.file.Path;
 
 /** NeoForge implementation: flashback is fabric-only. */
 final class FlashbackCompatImpl {
-    private FlashbackCompatImpl() {}
+  private FlashbackCompatImpl() {}
 
-    static Path getReplayStoragePath() {
-        return null;
-    }
+  static Path getReplayStoragePath() {
+    return null;
+  }
 }

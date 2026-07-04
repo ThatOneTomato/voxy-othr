@@ -6,26 +6,26 @@ import java.nio.ByteBuffer;
 
 public class ByteBufferBackedInputStream extends InputStream {
 
-    private final ByteBuffer buf;
+  private final ByteBuffer buf;
 
-    public ByteBufferBackedInputStream(ByteBuffer buf) {
-        this.buf = buf;
+  public ByteBufferBackedInputStream(ByteBuffer buf) {
+    this.buf = buf;
+  }
+
+  public int read() throws IOException {
+    if (!this.buf.hasRemaining()) {
+      return -1;
+    }
+    return this.buf.get() & 0xFF;
+  }
+
+  public int read(byte[] bytes, int off, int len) throws IOException {
+    if (!this.buf.hasRemaining()) {
+      return -1;
     }
 
-    public int read() throws IOException {
-        if (!this.buf.hasRemaining()) {
-            return -1;
-        }
-        return this.buf.get() & 0xFF;
-    }
-
-    public int read(byte[] bytes, int off, int len) throws IOException {
-        if (!this.buf.hasRemaining()) {
-            return -1;
-        }
-
-        len = Math.min(len, this.buf.remaining());
-        this.buf.get(bytes, off, len);
-        return len;
-    }
+    len = Math.min(len, this.buf.remaining());
+    this.buf.get(bytes, off, len);
+    return len;
+  }
 }

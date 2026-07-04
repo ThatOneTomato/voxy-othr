@@ -12,16 +12,19 @@ import net.neoforged.neoforge.common.NeoForge;
 
 @Mod(value = "voxy", dist = Dist.CLIENT)
 public class NeoForgeVoxyClient extends VoxyClient {
-    public NeoForgeVoxyClient(IEventBus modBus, ModContainer container) {
-        NeoForge.EVENT_BUS.addListener((RegisterClientCommandsEvent evt) -> {
-            if (VoxyCommon.isAvailable()) {
-                evt.getDispatcher().register(VoxyCommands.register());
-            }
+  public NeoForgeVoxyClient(IEventBus modBus, ModContainer container) {
+    NeoForge.EVENT_BUS.addListener(
+        (RegisterClientCommandsEvent evt) -> {
+          if (VoxyCommon.isAvailable()) {
+            evt.getDispatcher().register(VoxyCommands.register());
+          }
         });
 
-        container.registerExtensionPoint(IConfigScreenFactory.class, (mc, parent) -> {
-            var screen = VoxyConfigScreenFactory.create(parent);
-            return screen != null ? screen : parent;
+    container.registerExtensionPoint(
+        IConfigScreenFactory.class,
+        (mc, parent) -> {
+          var screen = VoxyConfigScreenFactory.create(parent);
+          return screen != null ? screen : parent;
         });
-    }
+  }
 }

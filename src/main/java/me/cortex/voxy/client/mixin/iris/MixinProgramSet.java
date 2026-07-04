@@ -1,9 +1,10 @@
 package me.cortex.voxy.client.mixin.iris;
 
+import java.util.function.Function;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.util.IrisUtil;
-import me.cortex.voxy.client.iris.VoxyPatchDataAccess;
 import me.cortex.voxy.client.iris.IrisShaderPatch;
+import me.cortex.voxy.client.iris.VoxyPatchDataAccess;
 import me.cortex.voxy.common.Logger;
 import net.irisshaders.iris.shaderpack.ShaderPack;
 import net.irisshaders.iris.shaderpack.include.AbsolutePackPath;
@@ -18,40 +19,49 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.function.Function;
-
 @Mixin(value = ProgramSet.class, remap = false)
 public class MixinProgramSet implements VoxyPatchDataAccess {
-    @Shadow @Final private PackDirectives packDirectives;
-    @Unique IrisShaderPatch patchData;
+  @Shadow @Final private PackDirectives packDirectives;
+  @Unique IrisShaderPatch patchData;
 
-    @Inject(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/irisshaders/iris/shaderpack/programs/ProgramSet;locateDirectives()V", shift = At.Shift.BEFORE))
-    private void voxy$injectPatchMaker(AbsolutePackPath directory, Function<AbsolutePackPath, String> sourceProvider, ShaderProperties shaderProperties, ShaderPack pack, CallbackInfo ci) {
-        if (VoxyConfig.CONFIG.isRenderingEnabled() && IrisUtil.SHADER_SUPPORT) {
-            try {
-                this.patchData = IrisShaderPatch.makePatch(pack, directory, sourceProvider);
-            } catch (RuntimeException e) {
-                Logger.error("Failed to load Voxy shader-pack patch data; GL41Metal strict bridge disabled", e);
-                this.patchData = null;
-            }
-        }
-        /*
-        if (this.patchData != null) {
-            //Inject directives from voxy
-            DispatchingDirectiveHolder ddh = new DispatchingDirectiveHolder();
-            this.packDirectives.acceptDirectivesFrom(ddh);
-            CommentDirectiveParser.findDirective(this.patchData.getPatchSource(), CommentDirective.Type.RENDERTARGETS)
-                    .map(dir->Arrays.stream(dir.getDirective().split(","))
-                            .mapToInt(Integer::parseInt).toArray())
-                    .ifPresent(ddh::processDirective);
-
-        }
-         */
+  @Inject(
+      method = "<init>",
+      at =
+          @At(
+              value = "INVOKE",
+              target = "Lnet/irisshaders/iris/shaderpack/programs/ProgramSet;locateDirectives()V",
+              shift = At.Shift.BEFORE))
+  private void voxy$injectPatchMaker(
+      AbsolutePackPath directory,
+      Function<AbsolutePackPath, String> sourceProvider,
+      ShaderProperties shaderProperties,
+      ShaderPack pack,
+      CallbackInfo ci) {
+    if (VoxyConfig.CONFIG.isRenderingEnabled() && IrisUtil.SHADER_SUPPORT) {
+      try {
+        this.patchData = IrisShaderPatch.makePatch(pack, directory, sourceProvider);
+      } catch (RuntimeException e) {
+        Logger.error(
+            "Failed to load Voxy shader-pack patch data; GL41Metal strict bridge disabled", e);
+        this.patchData = null;
+      }
     }
+    /*
+    if (this.patchData != null) {
+        //Inject directives from voxy
+        DispatchingDirectiveHolder ddh = new DispatchingDirectiveHolder();
+        this.packDirectives.acceptDirectivesFrom(ddh);
+        CommentDirectiveParser.findDirective(this.patchData.getPatchSource(), CommentDirective.Type.RENDERTARGETS)
+                .map(dir->Arrays.stream(dir.getDirective().split(","))
+                        .mapToInt(Integer::parseInt).toArray())
+                .ifPresent(ddh::processDirective);
 
-
-    @Override
-    public IrisShaderPatch voxy$getPatchData() {
-        return this.patchData;
     }
+     */
+  }
+
+  @Override
+  public IrisShaderPatch voxy$getPatchData() {
+    return this.patchData;
+  }
 }

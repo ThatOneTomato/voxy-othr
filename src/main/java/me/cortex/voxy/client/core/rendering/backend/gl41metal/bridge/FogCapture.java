@@ -9,10 +9,10 @@ import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import net.minecraft.client.Minecraft;
 
 /**
- * Captured-vanilla environmental fog: uniform upload + the "fog hides everything" frame skip.
- * The GLSL side lives in vanilla_patch.glsl / vanilla_water_patch.glsl; the parameters are the
- * ones MixinFogRenderer captured before neutralising vanilla terrain fog. The Iris paths never
- * touch this: shader packs fog their own scene.
+ * Captured-vanilla environmental fog: uniform upload + the "fog hides everything" frame skip. The
+ * GLSL side lives in vanilla_patch.glsl / vanilla_water_patch.glsl; the parameters are the ones
+ * MixinFogRenderer captured before neutralising vanilla terrain fog. The Iris paths never touch
+ * this: shader packs fog their own scene.
  */
 final class FogCapture {
   private FogCapture() {}
@@ -24,8 +24,7 @@ final class FogCapture {
    * renderVoxyFog=off or degenerate captured fog uploads intensity 0, which the shader treats as
    * "no fog". No-ops on programs that compile without the fog block (strict Iris / debug shapes).
    */
-  static void setVanillaFogUniforms(
-      int paramsUniform, int colorUniform, int shapeUniform) {
+  static void setVanillaFogUniforms(int paramsUniform, int colorUniform, int shapeUniform) {
     if (paramsUniform < 0) {
       return;
     }

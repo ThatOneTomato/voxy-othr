@@ -1,14 +1,5 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal;
 
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantChunkBoundRenderer;
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantGbufferSlot;
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantTerrainBridge;
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SharedDistantGbuffer;
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SlotScheduler;
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.TerrainResources;
-
 import java.util.List;
 import me.cortex.voxy.client.core.rendering.backend.BackendContext;
 import me.cortex.voxy.client.core.rendering.backend.RenderBackendId;
@@ -19,6 +10,14 @@ import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import me.cortex.voxy.client.core.rendering.backend.RenderStageContext;
 import me.cortex.voxy.client.core.rendering.backend.ShaderPatchBridgePayload;
 import me.cortex.voxy.client.core.rendering.backend.VoxyRenderBackend;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantChunkBoundRenderer;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantGbufferSlot;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantTerrainBridge;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SharedDistantGbuffer;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SlotScheduler;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.TerrainResources;
 import me.cortex.voxy.common.Logger;
 import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
@@ -106,9 +105,9 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
         this.sampleFrame(frame, context, true);
         yield frame;
       }
-        // Distant translucent (water/glass) composite at Iris beginTranslucents RETURN. Reuses the
-        // slot
-        // held by PRE_TRANSLUCENT and retires it afterwards (Plan A).
+      // Distant translucent (water/glass) composite at Iris beginTranslucents RETURN. Reuses the
+      // slot
+      // held by PRE_TRANSLUCENT and retires it afterwards (Plan A).
       case TRANSLUCENT -> {
         if (context.shaderPackActive()) {
           this.sampleTranslucent(context);
@@ -156,8 +155,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       }
       return new Frame(context, this.nextFrameId++, -1, new Matrix4f(), new Matrix4f());
     }
-    DistantRenderer.FrameMatrices frameMatrices =
-        DistantRenderer.computeFrameMatrices(context);
+    DistantRenderer.FrameMatrices frameMatrices = DistantRenderer.computeFrameMatrices(context);
     this.lastFrameMatrices =
         new RenderFrameMatrices(
             frameMatrices.traversalMvp(),
@@ -297,8 +295,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       this.bridge.renderTranslucent(
           renderContext,
           slot,
-          DistantTerrainBridge.vanillaTranslucentJob(
-              renderContext, this.config.visibleComposite()),
+          DistantTerrainBridge.vanillaTranslucentJob(renderContext, this.config.visibleComposite()),
           gl41MetalFrame.drawMvp(),
           gl41MetalFrame.vanillaDrawMvp(),
           this.currentBound);
@@ -451,8 +448,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       Logger.info("Voxy GL41Metal shared gbuffer resized: " + this.gbuffer.description());
       return;
     }
-    this.gbuffer =
-        SharedDistantGbuffer.create(this.config.slotCount(), width, height);
+    this.gbuffer = SharedDistantGbuffer.create(this.config.slotCount(), width, height);
     this.slotScheduler.reset();
     Logger.info("Voxy GL41Metal shared gbuffer initialized: " + this.gbuffer.description());
   }

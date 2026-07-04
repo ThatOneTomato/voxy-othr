@@ -1,13 +1,12 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain;
 
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
-
 import java.util.ArrayDeque;
 import java.util.Queue;
 import me.cortex.voxy.client.core.model.BakedModelPayload;
 import me.cortex.voxy.client.core.model.BiomeModelPayload;
 import me.cortex.voxy.client.core.model.ModelFactory;
 import me.cortex.voxy.client.core.model.ModelOutputSink;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import org.lwjgl.system.MemoryUtil;

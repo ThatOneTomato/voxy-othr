@@ -1,26 +1,27 @@
 package me.cortex.voxy.common.config.storage.lmdb;
 
-import org.lwjgl.util.lmdb.MDBVal;
-
 import static me.cortex.voxy.common.config.storage.lmdb.LMDBInterface.E;
 import static org.lwjgl.util.lmdb.LMDB.*;
 
+import org.lwjgl.util.lmdb.MDBVal;
+
 public class Cursor implements AutoCloseable {
-    private final long cursor;
-    public Cursor(long cursor) {
-        this.cursor = cursor;
-    }
+  private final long cursor;
 
-    public int get(int op, MDBVal key, MDBVal data) {
-        int e = mdb_cursor_get(this.cursor, key, data, op);
-        if (e != MDB_SUCCESS && e != MDB_NOTFOUND) {
-            E(e);
-        }
-        return e;
-    }
+  public Cursor(long cursor) {
+    this.cursor = cursor;
+  }
 
-    @Override
-    public void close() {
-        mdb_cursor_close(this.cursor);
+  public int get(int op, MDBVal key, MDBVal data) {
+    int e = mdb_cursor_get(this.cursor, key, data, op);
+    if (e != MDB_SUCCESS && e != MDB_NOTFOUND) {
+      E(e);
     }
+    return e;
+  }
+
+  @Override
+  public void close() {
+    mdb_cursor_close(this.cursor);
+  }
 }

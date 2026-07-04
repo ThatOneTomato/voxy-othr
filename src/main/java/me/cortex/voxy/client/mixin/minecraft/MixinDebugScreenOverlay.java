@@ -1,9 +1,12 @@
 package me.cortex.voxy.client.mixin.minecraft;
 
+import java.util.ArrayList;
+import java.util.List;
 import me.cortex.voxy.client.RenderStatistics;
-import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import me.cortex.voxy.client.core.VoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import me.cortex.voxy.client.core.util.GPUTiming;
+import me.cortex.voxy.common.platform.PlatformAccess;
 import me.cortex.voxy.impl.VoxyCommon;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -17,62 +20,65 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.ArrayList;
-import java.util.List;
-import me.cortex.voxy.common.platform.PlatformAccess;
-
 @Mixin(DebugScreenOverlay.class)
 public abstract class MixinDebugScreenOverlay {
 
-    @Shadow
-    private boolean renderDebug;
+  @Shadow private boolean renderDebug;
 
-    @Unique
-    private boolean lastDebugEnabledState = false;
+  @Unique private boolean lastDebugEnabledState = false;
 
-    @Inject(method = "render", at = @At("HEAD"))
-    private void manageGpuTiming(GuiGraphics guiGraphics, CallbackInfo ci) {
-        boolean isDebugOpen = this.renderDebug;
+  @Inject(method = "render", at = @At("HEAD"))
+  private void manageGpuTiming(GuiGraphics guiGraphics, CallbackInfo ci) {
+    boolean isDebugOpen = this.renderDebug;
 
-        if (isDebugOpen != lastDebugEnabledState) {
-            lastDebugEnabledState = isDebugOpen;
+    if (isDebugOpen != lastDebugEnabledState) {
+      lastDebugEnabledState = isDebugOpen;
 
-            GPUTiming.INSTANCE.setEnabled(isDebugOpen);
-            RenderStatistics.enabled = isDebugOpen;
-        }
+      GPUTiming.INSTANCE.setEnabled(isDebugOpen);
+      RenderStatistics.enabled = isDebugOpen;
+    }
+  }
+
+  @Inject(at = @At("RETURN"), method = "getGameInformation")
+  protected void getGameInformation(CallbackInfoReturnable<List<String>> info) {
+    List<String> voxyLines = new ArrayList<>();
+
+    if (!VoxyCommon.isAvailable()) {
+      voxyLines.add(
+          ChatFormatting.RED
+              + "voxy-"
+              + PlatformAccess.MOD_VERSION); // Voxy installed, not avalible
+      return;
+    }
+    var instance = VoxyCommon.getInstance();
+    if (instance == null) {
+      voxyLines.add(
+          ChatFormatting.YELLOW
+              + "voxy-"
+              + PlatformAccess.MOD_VERSION); // Voxy avalible, no instance active
+      return;
+    }
+    VoxyRenderSystem vrs = null;
+    var wr = Minecraft.getInstance().levelRenderer;
+    if (wr != null) vrs = ((VoxyRenderSystemAccess) wr).voxy$getRenderSystem();
+
+    // Voxy instance active
+    voxyLines.add(
+        (vrs == null ? ChatFormatting.DARK_GREEN : ChatFormatting.GREEN)
+            + "voxy-"
+            + PlatformAccess.MOD_VERSION);
+
+    // lines.addLineToSection();
+    List<String> instanceLines = new ArrayList<>();
+    instance.addDebug(instanceLines);
+    voxyLines.addAll(instanceLines);
+
+    if (vrs != null) {
+      List<String> renderLines = new ArrayList<>();
+      vrs.addDebugInfo(renderLines);
+      voxyLines.addAll(renderLines);
     }
 
-    @Inject(at = @At("RETURN"), method = "getGameInformation")
-    protected void getGameInformation(CallbackInfoReturnable<List<String>> info) {
-        List<String> voxyLines = new ArrayList<>();
-
-        if (!VoxyCommon.isAvailable()) {
-            voxyLines.add(ChatFormatting.RED + "voxy-"+PlatformAccess.MOD_VERSION);//Voxy installed, not avalible
-            return;
-        }
-        var instance = VoxyCommon.getInstance();
-        if (instance == null) {
-            voxyLines.add(ChatFormatting.YELLOW + "voxy-" + PlatformAccess.MOD_VERSION);//Voxy avalible, no instance active
-            return;
-        }
-        VoxyRenderSystem vrs = null;
-        var wr = Minecraft.getInstance().levelRenderer;
-        if (wr != null) vrs = ((VoxyRenderSystemAccess) wr).voxy$getRenderSystem();
-
-        //Voxy instance active
-        voxyLines.add((vrs==null?ChatFormatting.DARK_GREEN:ChatFormatting.GREEN)+"voxy-"+PlatformAccess.MOD_VERSION);
-
-        //lines.addLineToSection();
-        List<String> instanceLines = new ArrayList<>();
-        instance.addDebug(instanceLines);
-        voxyLines.addAll(instanceLines);
-
-        if (vrs != null) {
-            List<String> renderLines = new ArrayList<>();
-            vrs.addDebugInfo(renderLines);
-            voxyLines.addAll(renderLines);
-        }
-
-        info.getReturnValue().addAll(voxyLines);
-    }
+    info.getReturnValue().addAll(voxyLines);
+  }
 }
