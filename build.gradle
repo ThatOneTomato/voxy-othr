@@ -110,6 +110,7 @@ loom {
                 'voxy.gl41metal.debugStrictAlbedo'      : 'false',
                 'voxy.gl41metal.debugStrictAlbedoSource': 'albedoTint',
                 'voxy.gl41metal.debugTranslucent'       : 'false',
+                'voxy.gl41metal.debugFogEnd'            : '0',
                 'voxy.gl41metal.boundVerticalMargin'    : '1',
                 'voxy.gl41metal.boundHorizontalMargin'  : '0',
                 'voxy.gl41metal.boundAddDelayFrames'    : '1',

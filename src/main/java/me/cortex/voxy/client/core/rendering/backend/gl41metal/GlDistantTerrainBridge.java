@@ -68,6 +68,7 @@ import static org.lwjgl.opengl.GL20C.glDrawBuffers;
 import static org.lwjgl.opengl.GL20C.glGetUniformLocation;
 import static org.lwjgl.opengl.GL20C.glUniform1i;
 import static org.lwjgl.opengl.GL20C.glUniform2f;
+import static org.lwjgl.opengl.GL20C.glUniform4f;
 import static org.lwjgl.opengl.GL20C.glUniformMatrix4fv;
 import static org.lwjgl.opengl.GL20C.glUseProgram;
 import static org.lwjgl.opengl.GL30C.GL_COLOR_ATTACHMENT0;
@@ -102,6 +103,7 @@ import static org.lwjgl.opengl.GL31C.GL_UNIFORM_BUFFER;
 import static org.lwjgl.opengl.GL33C.GL_SAMPLER_BINDING;
 import static org.lwjgl.opengl.GL33C.glBindSampler;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import java.nio.FloatBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -112,6 +114,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import me.cortex.voxy.client.config.VoxyConfig;
+import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
 import me.cortex.voxy.client.core.gl.shader.Shader;
 import me.cortex.voxy.client.core.gl.shader.ShaderLoader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
@@ -120,6 +124,7 @@ import me.cortex.voxy.client.core.rendering.backend.ShaderPatchBridgePayload;
 import me.cortex.voxy.client.core.rendering.util.LightMapHelper;
 import me.cortex.voxy.client.iris.IrisBridgeShaderBindings;
 import me.cortex.voxy.common.Logger;
+import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.lwjgl.system.MemoryStack;
@@ -203,6 +208,10 @@ final class GlDistantTerrainBridge implements AutoCloseable {
   // sampler count. Enable with -Dvoxy.gl41metal.dumpShaders=true.
   private static final boolean DUMP_SHADERS =
       Boolean.parseBoolean(System.getProperty("voxy.gl41metal.dumpShaders", "false"));
+  // Diagnostic: override the captured env-fog range (fogEnd = value, fogStart = value/4) so the
+  // distant fog is visible regardless of the configured section render distance.
+  private static final float DEBUG_FOG_END =
+      Float.parseFloat(System.getProperty("voxy.gl41metal.debugFogEnd", "0"));
   // The Iris colour pass embeds a shader pack's whole fragment patch, which Apple's GL4.1 GLSL
   // linker cannot compile as-is -- it SIGSEGVs in glpLLVMGetFunctionGlobalVariableUse while
   // analysing the synthesized global-init routine for the pack's file-scope initializer chain
@@ -222,12 +231,50 @@ final class GlDistantTerrainBridge implements AutoCloseable {
   //
   // Both apply only to the Iris colour pass; the vanilla single pass is byte-for-byte unchanged.
 
+  // Captured-vanilla environmental fog, the gl41metal equivalent of GL46's USE_ENV_FOG final
+  // blit (blit_texture_depth_cutout.frag): MixinFogRenderer captures the vanilla terrain fog
+  // parameters before neutralising them, and the vanilla composite re-applies them to the
+  // distant lit colour. uFogParams = (start, end, intensity, density); intensity <= 0 disables
+  // (also how the Java side encodes renderVoxyFog=off / degenerate fog). Shape and the distance
+  // helper mirror sodium's fog.glsl getFragDistance (0 = spherical, 1 = cylindrical). The
+  // position comes from rev3d (camera-relative, the same space GL46 feeds getFragDistance).
+  // Shared verbatim by VANILLA_PATCH and VANILLA_WATER_PATCH (separate programs, so each patch
+  // embeds its own copy). The Iris paths never include this: shader packs fog their own scene.
+  private static final String GLSL_VANILLA_FOG =
+      """
+      uniform vec4 uFogParams;
+      uniform vec4 uFogColor;
+      uniform int uFogShape;
+
+      float voxyFogDistance(int shape, vec3 pos) {
+        if (shape == 1) {
+          return max(length(pos.xz), abs(pos.y));
+        }
+        return length(pos);
+      }
+
+      vec3 voxyApplyFog(vec3 color, vec2 targetPixel, float voxyDepth) {
+        if (uFogParams.z <= 0.0) {
+          return color;
+        }
+        vec3 pos = rev3d(vec3(targetPixel / max(uTargetSize, vec2(1.0)), voxyDepth));
+        float fogLerp = smoothstep(uFogParams.x, uFogParams.y, voxyFogDistance(uFogShape, pos));
+        if (uFogParams.w > 0.0) {
+          fogLerp = (exp(uFogParams.w * fogLerp) - 1.0) / (exp(uFogParams.w) - 1.0);
+        }
+        return mix(color, uFogColor.rgb, clamp(fogLerp * uFogParams.z, 0.0, 1.0));
+      }
+      """;
+
   // GL46 quads.frag non-patched lighting expressed as a built-in voxy_emitFragment: sample the MC
   // lightmap with the baked light UV, fold in the conditional tint, then apply the directional face
   // shade. uLightmapTex and voxyQuadFlags are provided by the shared header below.
   private static final String VANILLA_PATCH =
       """
       layout(location = 0) out vec4 voxyVanillaColor;
+      """
+          + GLSL_VANILLA_FOG
+          + """
 
       float voxyVanillaFaceTint(bool shaded, uint face) {
         if (!shaded) {
@@ -250,6 +297,8 @@ final class GlDistantTerrainBridge implements AutoCloseable {
         vec4 color = parameters.sampledColour * parameters.tinting * light;
         bool shaded = ((voxyQuadFlags >> 6u) & 1u) != 0u;
         color.rgb *= voxyVanillaFaceTint(shaded, uint(parameters.face));
+        color.rgb =
+            voxyApplyFog(color.rgb, voxy_OverrideFragCoord.xy, voxy_OverrideFragCoord.z);
         voxyVanillaColor = vec4(color.rgb, 1.0);
       }
       """;
@@ -490,6 +539,9 @@ final class GlDistantTerrainBridge implements AutoCloseable {
     if (!job.valid()) {
       return false;
     }
+    if (!job.ownFramebuffer() && vanillaFogHidesDistant()) {
+      return false;
+    }
     BridgeProgram colorProgram = this.programFor(job);
     if (colorProgram == null) {
       return false;
@@ -601,6 +653,9 @@ final class GlDistantTerrainBridge implements AutoCloseable {
       return false;
     }
     boolean vanilla = !job.ownFramebuffer();
+    if (vanilla && vanillaFogHidesDistant()) {
+      return false;
+    }
     if (!vanilla && job.sourceDepthTextureId() == 0) {
       // Strict Iris contract: without the near (opaque) depth we cannot occlude distant water
       // against the near scene, so skip this frame's distant translucent output.
@@ -894,6 +949,10 @@ final class GlDistantTerrainBridge implements AutoCloseable {
           colorProgram.boundSizeUniform(),
           colorProgram.boundEnabledUniform(),
           bound);
+      setVanillaFogUniforms(
+          colorProgram.fogParamsUniform(),
+          colorProgram.fogColorUniform(),
+          colorProgram.fogShapeUniform());
     } else {
       this.bindShaderPackResources(job);
     }
@@ -978,6 +1037,12 @@ final class GlDistantTerrainBridge implements AutoCloseable {
       if (colorProgram.lightSamplerUniform() >= 0) {
         glUniform1i(colorProgram.lightSamplerUniform(), LIGHTMAP_TEXTURE_UNIT);
       }
+      // Only the vanilla program (VANILLA_PATCH) declares the fog uniforms; the debug shapes
+      // compile them out (location -1) and the helper no-ops.
+      setVanillaFogUniforms(
+          colorProgram.fogParamsUniform(),
+          colorProgram.fogColorUniform(),
+          colorProgram.fogShapeUniform());
       if (DEBUG_MODE != DEBUG_NONE) {
         glUniform1i(colorProgram.debugModeUniform(), DEBUG_MODE);
       }
@@ -1172,6 +1237,65 @@ final class GlDistantTerrainBridge implements AutoCloseable {
     glUniformMatrix4fv(program.vanillaMvpUniform(), false, matrixBuffer);
   }
 
+  /**
+   * Uploads the captured-vanilla environmental fog uniforms (see {@code GLSL_VANILLA_FOG}). The
+   * gl41metal counterpart of GL46 NormalRenderPipeline.finish's USE_ENV_FOG uniform block: the fog
+   * parameters are the ones MixinFogRenderer captured before neutralising vanilla terrain fog.
+   * renderVoxyFog=off or degenerate captured fog uploads intensity 0, which the shader treats as
+   * "no fog". No-ops on programs that compile without the fog block (strict Iris / debug shapes).
+   */
+  private static void setVanillaFogUniforms(
+      int paramsUniform, int colorUniform, int shapeUniform) {
+    if (paramsUniform < 0) {
+      return;
+    }
+    var vrs = IGetVoxyRenderSystem.getNullable();
+    float fogStart = vrs != null ? vrs.getCapturedFogStart() : RenderSystem.getShaderFogStart();
+    float fogEnd = vrs != null ? vrs.getCapturedFogEnd() : RenderSystem.getShaderFogEnd();
+    // DIAGNOSTIC: force a short fog range to make the distant env fog obvious, verifying the
+    // whole capture -> uniform -> shader chain. -Dvoxy.gl41metal.debugFogEnd=<blocks>.
+    if (DEBUG_FOG_END > 0.0f) {
+      fogStart = DEBUG_FOG_END * 0.25f;
+      fogEnd = DEBUG_FOG_END;
+    }
+    float[] fogColor = vrs != null ? vrs.getCapturedFogColor() : RenderSystem.getShaderFogColor();
+    if (VoxyConfig.CONFIG.renderVoxyFog && Math.abs(fogEnd - fogStart) > 1) {
+      glUniform4f(
+          paramsUniform,
+          fogStart,
+          fogEnd,
+          VoxyConfig.CONFIG.fogIntensity,
+          VoxyConfig.CONFIG.fogDensity);
+      if (colorUniform >= 0) {
+        glUniform4f(colorUniform, fogColor[0], fogColor[1], fogColor[2], 1.0f);
+      }
+      if (shapeUniform >= 0) {
+        glUniform1i(shapeUniform, RenderSystem.getShaderFogShape().getIndex());
+      }
+    } else {
+      glUniform4f(paramsUniform, 0.0f, 0.0f, 0.0f, 0.0f);
+      if (colorUniform >= 0) {
+        glUniform4f(colorUniform, 0.0f, 0.0f, 0.0f, 0.0f);
+      }
+      if (shapeUniform >= 0) {
+        glUniform1i(shapeUniform, 0);
+      }
+    }
+  }
+
+  /**
+   * GL46 NormalRenderPipeline's "fogCoversAllRendering" skip: when the (captured) vanilla fog
+   * closes before the vanilla render distance (in lava, blindness, powdered snow...), everything
+   * beyond the near scene sits behind fully opaque fog, so the vanilla composite skips the distant
+   * output entirely for the frame. The Iris paths never take this branch: shader packs own their
+   * fog and Voxy has no business second-guessing it.
+   */
+  private static boolean vanillaFogHidesDistant() {
+    var vrs = IGetVoxyRenderSystem.getNullable();
+    float fogEnd = vrs != null ? vrs.getCapturedFogEnd() : RenderSystem.getShaderFogEnd();
+    return fogEnd < Minecraft.getInstance().gameRenderer.getRenderDistance();
+  }
+
   /** uSourceDepthTex unit + near-mask parameters (only present in masking programs). */
   private void setNearMaskUniforms(
       BridgeProgram program,
@@ -1288,7 +1412,10 @@ final class GlDistantTerrainBridge implements AutoCloseable {
             glGetUniformLocation(shader.id(), "uUseManualDepthMask"),
             glGetUniformLocation(shader.id(), "uDebugMode"),
             glGetUniformLocation(shader.id(), "uInvVoxyMvp"),
-            glGetUniformLocation(shader.id(), "uVanillaMvp"));
+            glGetUniformLocation(shader.id(), "uVanillaMvp"),
+            glGetUniformLocation(shader.id(), "uFogParams"),
+            glGetUniformLocation(shader.id(), "uFogColor"),
+            glGetUniformLocation(shader.id(), "uFogShape"));
     if (!bridgeProgram.hasRequiredUniforms()) {
       shader.free();
       Logger.error("Voxy GL41Metal distant terrain bridge is missing required uniforms");
@@ -1350,7 +1477,10 @@ final class GlDistantTerrainBridge implements AutoCloseable {
               glGetUniformLocation(shader.id(), "uVanillaMvp"),
               glGetUniformLocation(shader.id(), "uBoundDepthTex"),
               glGetUniformLocation(shader.id(), "uBoundSize"),
-              glGetUniformLocation(shader.id(), "uBoundEnabled"));
+              glGetUniformLocation(shader.id(), "uBoundEnabled"),
+              glGetUniformLocation(shader.id(), "uFogParams"),
+              glGetUniformLocation(shader.id(), "uFogColor"),
+              glGetUniformLocation(shader.id(), "uFogShape"));
       if (!bridgeProgram.hasRequiredUniforms()) {
         shader.free();
         this.failedTranslucentShaderKey = shaderKey;
@@ -2119,6 +2249,9 @@ __VOXY_OPAQUE_MASK__        voxyQuadFlags = g.flags;
 
       layout(location = 0) out vec4 voxyWaterColor;
       uniform sampler2DRect uTgbufferAccumTex;
+      """
+          + GLSL_VANILLA_FOG
+          + """
 
       float voxyWaterFaceTint(bool shaded, uint face) {
         if (!shaded) {
@@ -2149,7 +2282,9 @@ __VOXY_OPAQUE_MASK__        voxyQuadFlags = g.flags;
         float bA = max(accum.a - frontAlpha, 0.0);
 
         if (bA <= 0.001) {
-          voxyWaterColor = vec4(frontColor.rgb, frontAlpha);
+          vec3 foggedFront =
+              voxyApplyFog(frontColor.rgb, voxy_OverrideFragCoord.xy, voxy_OverrideFragCoord.z);
+          voxyWaterColor = vec4(foggedFront, frontAlpha);
           return;
         }
 
@@ -2163,7 +2298,12 @@ __VOXY_OPAQUE_MASK__        voxyQuadFlags = g.flags;
 
         float combinedAlpha = frontAlpha + bA;
         vec3 combinedPremul = frontColor.rgb * frontAlpha + behindLit;
-        voxyWaterColor = vec4(combinedPremul / max(combinedAlpha, 0.001), combinedAlpha);
+        vec3 combined =
+            voxyApplyFog(
+                combinedPremul / max(combinedAlpha, 0.001),
+                voxy_OverrideFragCoord.xy,
+                voxy_OverrideFragCoord.z);
+        voxyWaterColor = vec4(combined, combinedAlpha);
       }
       """;
 
@@ -3356,7 +3496,10 @@ __VOXY_TRANSLUCENT_TAIL__      }
       int useManualDepthMaskUniform,
       int debugModeUniform,
       int invVoxyMvpUniform,
-      int vanillaMvpUniform) {
+      int vanillaMvpUniform,
+      int fogParamsUniform,
+      int fogColorUniform,
+      int fogShapeUniform) {
     boolean hasRequiredUniforms() {
       // The strict Iris colour pass (usesNearMask=false) deliberately omits uSourceDepthTex and the
       // near-mask uniforms so it stays at 3 base samplers; only require them for the masking shapes
@@ -3410,7 +3553,10 @@ __VOXY_TRANSLUCENT_TAIL__      }
       int vanillaMvpUniform,
       int boundDepthTexUniform,
       int boundSizeUniform,
-      int boundEnabledUniform) {
+      int boundEnabledUniform,
+      int fogParamsUniform,
+      int fogColorUniform,
+      int fogShapeUniform) {
     boolean hasRequiredUniforms() {
       boolean base =
           this.tgbuffer0TexUniform >= 0
