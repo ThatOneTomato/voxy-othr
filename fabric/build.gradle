@@ -87,6 +87,11 @@ loom {
             voxyRunProps.each { key, value ->
                 property key, value
             }
+
+            // e.g. ./gradlew :fabric:runClient -PquickplayWorld="New World"
+            if (project.hasProperty('quickplayWorld')) {
+                programArgs('--quickPlaySingleplayer', project.property('quickplayWorld').toString())
+            }
         }
     }
 }

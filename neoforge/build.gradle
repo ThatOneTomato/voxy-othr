@@ -103,6 +103,11 @@ neoForge {
             rootProject.ext.voxyRunProperties().each { key, value ->
                 systemProperty key, value
             }
+
+            // e.g. ./gradlew :neoforge:runClient -PquickplayWorld="New World"
+            if (project.hasProperty('quickplayWorld')) {
+                programArguments.addAll('--quickPlaySingleplayer', project.property('quickplayWorld').toString())
+            }
         }
         server {
             server()
