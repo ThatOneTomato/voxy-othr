@@ -3,8 +3,8 @@ package me.cortex.voxy.common.voxelization;
 import it.unimi.dsi.fastutil.objects.Reference2IntOpenHashMap;
 import me.cortex.voxy.common.world.other.Mapper;
 import me.cortex.voxy.common.world.other.Mipper;
+import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.caffeinemc.mods.lithium.common.world.chunk.LithiumHashPalette;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.util.LinearCongruentialGenerator;
@@ -23,7 +23,7 @@ import net.minecraft.world.level.chunk.SingleValuePalette;
 import java.util.WeakHashMap;
 
 public class WorldConversionFactory {
-    private static final boolean LITHIUM_INSTALLED = FabricLoader.getInstance().isModLoaded("lithium");
+    private static final boolean LITHIUM_INSTALLED = VoxyCommon.getPlatformUtil().isModLoaded("lithium");
 
     private static final class Cache {
         private final int[] biomeCache = new int[4*4*4];

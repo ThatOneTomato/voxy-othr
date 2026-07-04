@@ -1,6 +1,6 @@
 package me.cortex.voxy.client.mixin;
 
-import net.fabricmc.loader.api.FabricLoader;
+import me.cortex.voxy.commonImpl.VoxyCommon;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
@@ -16,9 +16,11 @@ public class ClientVoxyMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public void onLoad(String mixinPackage) {
-        valkyrienSkiesInstalled = FabricLoader.getInstance().isModLoaded("valkyrienskies");
-        nvidiumInstalled = FabricLoader.getInstance().isModLoaded("nvidium");
-        connectorInstalled = FabricLoader.getInstance().isModLoaded("connector");
+        // PlatformUtilImpl is early-load-safe on both loaders (FabricLoader / LoadingModList).
+        var platform = VoxyCommon.getPlatformUtil();
+        valkyrienSkiesInstalled = platform.isModLoaded("valkyrienskies");
+        nvidiumInstalled = platform.isModLoaded("nvidium");
+        connectorInstalled = platform.isModLoaded("connector");
     }
 
     @Override

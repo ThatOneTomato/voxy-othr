@@ -7,21 +7,15 @@ import me.cortex.voxy.client.core.rendering.backend.RenderBackendSelector;
 import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.commonImpl.VoxyCommon;
-import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.ResourceLocation;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.channels.FileLock;
 import java.nio.channels.NonWritableChannelException;
 import java.util.HashSet;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
-public class VoxyClient implements ClientModInitializer {
+public abstract class VoxyClient {
     private static final HashSet<String> FREX = new HashSet<>();
     private static FileLock EXCLUSIVE_LOCK;
     private static RenderBackendSelection renderBackendSelection =
@@ -88,21 +82,12 @@ public class VoxyClient implements ClientModInitializer {
         return renderBackendSelection.id();
     }
 
-    @Override
-    public void onInitializeClient() {
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-            if (VoxyCommon.isAvailable()) {
-                dispatcher.register(VoxyCommands.register());
-            }
-        });
-
-        FabricLoader.getInstance()
-                .getEntrypoints("frex_flawless_frames", Consumer.class)
-                .forEach(api -> ((Consumer<Function<String,Consumer<Boolean>>>)api).accept(name->active->{if (active) {
-                    FREX.add(name);
-                } else {
-                    FREX.remove(name);
-                }}));
+    protected static void setFrexState(String name, boolean active) {
+        if (active) {
+            FREX.add(name);
+        } else {
+            FREX.remove(name);
+        }
     }
 
     public static boolean isFrexActive() {

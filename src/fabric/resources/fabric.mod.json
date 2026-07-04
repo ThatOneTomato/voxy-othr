@@ -18,7 +18,7 @@
   "environment": "*",
   "entrypoints": {
     "client": [
-      "me.cortex.voxy.client.VoxyClient"
+      "me.cortex.voxy.client.FabricVoxyClient"
     ],
     "modmenu": [
       "me.cortex.voxy.client.config.ModMenuIntegration"
@@ -27,7 +27,7 @@
       "me.cortex.voxy.client.config.VoxyConfigMenu"
     ],
     "main": [
-      "me.cortex.voxy.commonImpl.VoxyCommon"
+      "me.cortex.voxy.commonImpl.FabricVoxyCommon"
     ]
   },
   "mixins": [

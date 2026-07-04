@@ -9,8 +9,8 @@ import me.cortex.voxy.client.iris.IGetVoxyPatchData;
 import me.cortex.voxy.client.iris.IrisBridgeShaderBindings;
 import me.cortex.voxy.client.iris.IrisShaderPatch;
 import me.cortex.voxy.client.mixin.iris.IrisRenderingPipelineAccessor;
+import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.caffeinemc.mods.sodium.client.render.chunk.ChunkRenderMatrices;
-import net.fabricmc.loader.api.FabricLoader;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.api.v0.IrisApi;
 import net.irisshaders.iris.gl.IrisRenderSystem;
@@ -58,7 +58,7 @@ public class IrisUtil {
     private static IrisShaderPatch cachedBindingsPatch;
     private static IrisBridgeShaderBindings.Bindings cachedBindings;
 
-    public static final boolean IRIS_INSTALLED = FabricLoader.getInstance().isModLoaded("iris");
+    public static final boolean IRIS_INSTALLED = VoxyCommon.getPlatformUtil().isModLoaded("iris");
     public static final boolean SHADER_SUPPORT = true;//System.getProperty("voxy.enableExperimentalIrisPipeline", "false").equalsIgnoreCase("true");
 
     public static CapturedViewportParameters getCapturedOrFallbackViewportParameters() {
