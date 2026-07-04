@@ -1,4 +1,4 @@
-package me.cortex.voxy.client.core;
+package me.cortex.voxy.client.core.rendering.post;
 
 import me.cortex.voxy.client.core.gl.Capabilities;
 import me.cortex.voxy.client.core.gl.GlTexture;

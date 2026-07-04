@@ -15,7 +15,7 @@ import java.util.function.Consumer;
 
 import static org.lwjgl.system.APIUtil.apiGetFunctionAddressOptional;
 
-public class GPUSelectorWindows2 {
+public class GPUSelectorWindows {
     private static final long D3DKMTSetProperties = apiGetFunctionAddressOptional(GDI32.getLibrary(), "D3DKMTSetProperties");
     private static final long D3DKMTEnumAdapters2 = apiGetFunctionAddressOptional(GDI32.getLibrary(), "D3DKMTEnumAdapters2");
     private static final long D3DKMTCloseAdapter = apiGetFunctionAddressOptional(GDI32.getLibrary(), "D3DKMTCloseAdapter");

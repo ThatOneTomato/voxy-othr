@@ -2,8 +2,8 @@ package me.cortex.voxy.client.config;
 
 import com.google.common.collect.ImmutableList;
 import me.cortex.voxy.client.ClientSessionEvents;
-import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
-import me.cortex.voxy.client.core.SSAO;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
+import me.cortex.voxy.client.core.rendering.post.SSAO;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.util.cpu.CpuLayout;
 import me.cortex.voxy.impl.VoxyCommon;
@@ -46,7 +46,7 @@ public abstract class VoxyConfigScreenPages {
                             }
 
                             if (!v) {
-                                var vrsh = (IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer;
+                                var vrsh = (VoxyRenderSystemAccess) Minecraft.getInstance().levelRenderer;
                                 if (vrsh != null) {
                                     vrsh.voxy$shutdownRenderer();
                                 }
@@ -109,7 +109,7 @@ public abstract class VoxyConfigScreenPages {
                         .setControl(TickBoxControl::new)
                         .setBinding((s, v)->{
                             s.enableRendering = v;
-                            var vrsh = (IGetVoxyRenderSystem)Minecraft.getInstance().levelRenderer;
+                            var vrsh = (VoxyRenderSystemAccess)Minecraft.getInstance().levelRenderer;
                             if (vrsh != null) {
                                 if (v) {
                                     vrsh.voxy$createRenderer();
@@ -138,7 +138,7 @@ public abstract class VoxyConfigScreenPages {
                             // Value stored as float fraction
                             s.sectionRenderDistance = ((float)v) / 16.0f;
 
-                            var vrsh = (IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer;
+                            var vrsh = (VoxyRenderSystemAccess) Minecraft.getInstance().levelRenderer;
                             if (vrsh != null) {
                                 var vrs = vrsh.voxy$getRenderSystem();
                                 if (vrs != null) {
@@ -218,7 +218,7 @@ public abstract class VoxyConfigScreenPages {
     private static void reloadActiveRenderer() {
         try {
             var minecraft = Minecraft.getInstance();
-            var renderer = (IGetVoxyRenderSystem) minecraft.levelRenderer;
+            var renderer = (VoxyRenderSystemAccess) minecraft.levelRenderer;
             if (renderer != null && minecraft.level != null && VoxyConfig.CONFIG.isRenderingEnabled()) {
                 renderer.voxy$shutdownRenderer();
                 renderer.voxy$createRenderer();

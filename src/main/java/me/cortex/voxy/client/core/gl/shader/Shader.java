@@ -43,22 +43,22 @@ public class Shader extends TrackedObject {
     }
 
 
-    public static Builder<Shader> make(IShaderProcessor... processor) {
+    public static Builder<Shader> make(ShaderProcessor... processor) {
         return makeInternal((a,b)->new Shader(b), processor);
     }
 
-    public static Builder<AutoBindingShader> makeAuto(IShaderProcessor... processor) {
+    public static Builder<AutoBindingShader> makeAuto(ShaderProcessor... processor) {
         return makeInternal(AutoBindingShader::new, processor);
     }
 
 
 
-    static <T extends Shader> Builder<T> makeInternal(Builder.IShaderObjectConstructor<T> constructor, IShaderProcessor[] processors) {
-        List<IShaderProcessor> aa = new ArrayList<>(List.of(processors));
+    static <T extends Shader> Builder<T> makeInternal(Builder.IShaderObjectConstructor<T> constructor, ShaderProcessor[] processors) {
+        List<ShaderProcessor> aa = new ArrayList<>(List.of(processors));
         Collections.reverse(aa);
-        IShaderProcessor applicator = (type,source)->source;
-        for (IShaderProcessor processor : processors) {
-            IShaderProcessor finalApplicator = applicator;
+        ShaderProcessor applicator = (type,source)->source;
+        for (ShaderProcessor processor : processors) {
+            ShaderProcessor finalApplicator = applicator;
             applicator = (type, source) -> finalApplicator.process(type, processor.process(type, source));
         }
         return new Builder<>(constructor, applicator);
@@ -71,9 +71,9 @@ public class Shader extends TrackedObject {
         final Map<String, String> defines = new HashMap<>();
         final Map<String, String> replacements = new LinkedHashMap<>();
         private final Map<ShaderType, String> sources = new HashMap<>();
-        private final IShaderProcessor processor;
+        private final ShaderProcessor processor;
         private final IShaderObjectConstructor<T> constructor;
-        private Builder(IShaderObjectConstructor<T> constructor, IShaderProcessor processor) {
+        private Builder(IShaderObjectConstructor<T> constructor, ShaderProcessor processor) {
             this.constructor = constructor;
             this.processor = processor;
         }

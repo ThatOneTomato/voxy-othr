@@ -1,4 +1,4 @@
-package me.cortex.voxy.client.core.util;
+package me.cortex.voxy.client.core.rendering.building;
 
 import java.util.Random;
 

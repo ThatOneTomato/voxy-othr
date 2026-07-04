@@ -1,8 +1,8 @@
 package me.cortex.voxy.client.mixin.sodium;
 
-import me.cortex.voxy.client.ICheekyClientChunkCache;
+import me.cortex.voxy.client.ClientChunkCacheAccess;
 import me.cortex.voxy.client.config.VoxyConfig;
-import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import me.cortex.voxy.client.core.VoxyRenderSystem;
 import me.cortex.voxy.common.world.service.VoxelIngestService;
 import net.caffeinemc.mods.sodium.client.gl.device.CommandList;
@@ -39,7 +39,7 @@ public class MixinRenderSectionManager {
     @Inject(method = "<init>", at = @At("TAIL"))
     private void voxy$resetChunkTracker(ClientLevel level, int renderDistance, CommandList commandList, CallbackInfo ci) {
         if (level.levelRenderer != null) {
-            var system = ((IGetVoxyRenderSystem)(level.levelRenderer)).voxy$getRenderSystem();
+            var system = ((VoxyRenderSystemAccess)(level.levelRenderer)).voxy$getRenderSystem();
             if (system != null) {
                 system.onChunkTrackerReset();
             }
@@ -51,7 +51,7 @@ public class MixinRenderSectionManager {
     private void voxy$injectIngest(int x, int z, CallbackInfo ci) {
         //TODO: Am not quite sure if this is right
         if (VoxyConfig.CONFIG.ingestEnabled && !BOBBY_INSTALLED) {
-            var cccm = (ICheekyClientChunkCache)this.level.getChunkSource();
+            var cccm = (ClientChunkCacheAccess)this.level.getChunkSource();
             if (cccm != null) {
                 var chunk = cccm.voxy$cheekyGetChunk(x, z);
                 if (chunk != null) {
@@ -79,7 +79,7 @@ public class MixinRenderSectionManager {
     @Inject(method = "onChunkRemoved", at = @At("HEAD"))
     private void voxy$trackChunkRemove(int x, int z, CallbackInfo ci) {
         if (this.level.worldRenderer != null) {
-            var system = ((IGetVoxyRenderSystem)(this.level.worldRenderer)).getVoxyRenderSystem();
+            var system = ((VoxyRenderSystemAccess)(this.level.worldRenderer)).getVoxyRenderSystem();
             if (system != null) {
                 system.chunkBoundRenderer.removeSection(ChunkPos.toLong(x, z));
             }
@@ -105,7 +105,7 @@ public class MixinRenderSectionManager {
         if (flags == 0)//Only process things with stuff
             return true;
 
-        VoxyRenderSystem system = ((IGetVoxyRenderSystem)(this.level.levelRenderer)).voxy$getRenderSystem();
+        VoxyRenderSystem system = ((VoxyRenderSystemAccess)(this.level.levelRenderer)).voxy$getRenderSystem();
         if (system == null) {
             return true;
         }
@@ -122,7 +122,7 @@ public class MixinRenderSectionManager {
             }
             if (this.cachedChunkStatus == 3) {//If this chunk still has surrounding chunks
                 var cccm = this.level.getChunkSource();
-                //var chunk = ((ICheekyClientChunkCache)cccm).voxy$cheekyGetChunk(x, z);
+                //var chunk = ((ClientChunkCacheAccess)cccm).voxy$cheekyGetChunk(x, z);
                 //Dont thinks need to use cheekyGetChunk here as thats handled by the inject into head of onChunkRemoved
                 // but only ingest if the chunkstatus is full and exists
                 var chunk = cccm.getChunk(x, z, ChunkStatus.FULL, false);

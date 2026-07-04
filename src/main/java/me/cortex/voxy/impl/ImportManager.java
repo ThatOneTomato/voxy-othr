@@ -1,7 +1,7 @@
 package me.cortex.voxy.impl;
 
 import me.cortex.voxy.common.world.WorldEngine;
-import me.cortex.voxy.impl.importers.IDataImporter;
+import me.cortex.voxy.impl.importers.DataImporter;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -17,12 +17,12 @@ public class ImportManager {
     private final Map<WorldEngine, ImportTask> activeImporters = new HashMap<>();
 
     protected class ImportTask {
-        protected final IDataImporter importer;
+        protected final DataImporter importer;
         protected long startTime;
         protected long timer;
         protected long updateEvery = 50;
 
-        protected ImportTask(IDataImporter importer) {
+        protected ImportTask(DataImporter importer) {
             this.importer = importer;
             this.timer = System.currentTimeMillis();
         }
@@ -58,11 +58,11 @@ public class ImportManager {
         }
     }
 
-    protected synchronized ImportTask createImportTask(IDataImporter importer) {
+    protected synchronized ImportTask createImportTask(DataImporter importer) {
         return new ImportTask(importer);
     }
 
-    public boolean tryRunImport(IDataImporter importer) {
+    public boolean tryRunImport(DataImporter importer) {
         ImportTask task;
         synchronized (this) {
             {
@@ -82,7 +82,7 @@ public class ImportManager {
         return true;
     }
 
-    public boolean makeAndRunIfNone(WorldEngine engine, Supplier<IDataImporter> factory) {
+    public boolean makeAndRunIfNone(WorldEngine engine, Supplier<DataImporter> factory) {
         try {
             engine.acquireRef();
             synchronized (this) {

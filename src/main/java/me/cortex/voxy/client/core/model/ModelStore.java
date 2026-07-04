@@ -1,6 +1,6 @@
 package me.cortex.voxy.client.core.model;
 
-import me.cortex.voxy.client.core.RenderResourceReuse;
+import me.cortex.voxy.client.core.rendering.util.RenderResourceReuse;
 import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.gl.GlTexture;
 import net.minecraft.client.Minecraft;

@@ -2,7 +2,7 @@ package me.cortex.voxy.client;
 
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.impl.ImportManager;
-import me.cortex.voxy.impl.importers.IDataImporter;
+import me.cortex.voxy.impl.importers.DataImporter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.LerpingBossEvent;
 import net.minecraft.network.chat.Component;
@@ -14,7 +14,7 @@ public class ClientImportManager extends ImportManager {
     protected class ClientImportTask extends ImportTask {
         private final UUID bossbarUUID;
         private final LerpingBossEvent bossBar;
-        protected ClientImportTask(IDataImporter importer) {
+        protected ClientImportTask(DataImporter importer) {
             super(importer);
 
             this.bossbarUUID = UUID.randomUUID();
@@ -51,7 +51,7 @@ public class ClientImportManager extends ImportManager {
     }
 
     @Override
-    protected synchronized ImportTask createImportTask(IDataImporter importer) {
+    protected synchronized ImportTask createImportTask(DataImporter importer) {
         return new ClientImportTask(importer);
     }
 }

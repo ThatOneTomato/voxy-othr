@@ -1,11 +1,11 @@
 package me.cortex.voxy.client.mixin.iris;
 
-import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameStageState;
 import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import me.cortex.voxy.client.core.util.IrisUtil;
-import me.cortex.voxy.client.iris.IGetIrisVoxyPipelineData;
-import me.cortex.voxy.client.iris.IGetVoxyPatchData;
+import me.cortex.voxy.client.iris.IrisVoxyPipelineDataAccess;
+import me.cortex.voxy.client.iris.VoxyPatchDataAccess;
 import me.cortex.voxy.client.iris.IrisShaderPatch;
 import me.cortex.voxy.client.iris.IrisVoxyRenderPipelineData;
 import net.irisshaders.iris.gl.buffer.ShaderStorageBufferHolder;
@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value = IrisRenderingPipeline.class, remap = false)
-public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVoxyPipelineData {
+public class MixinIrisRenderingPipeline implements VoxyPatchDataAccess, IrisVoxyPipelineDataAccess {
     @Shadow @Final private CustomUniforms customUniforms;
     @Shadow private ShaderStorageBufferHolder shaderStorageBufferHolder;
     @Unique IrisShaderPatch patchData;
@@ -41,13 +41,13 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
     @Inject(method = "<init>", at = @At("HEAD"), remap = false)
     private static void voxy$stashPatchData(ProgramSet programSet, CallbackInfo ci) {
         IrisShaderPatch.CONSTRUCTING_PIPELINE_PATCH.set(
-                ((IGetVoxyPatchData) programSet).voxy$getPatchData());
+                ((VoxyPatchDataAccess) programSet).voxy$getPatchData());
     }
 
     @Inject(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/irisshaders/iris/pipeline/transform/ShaderPrinter;resetPrintState()V", shift = At.Shift.AFTER))
     private void voxy$injectPatchDataStore(ProgramSet programSet, CallbackInfo ci) {
         if (IrisUtil.SHADER_SUPPORT) {
-            this.patchData = ((IGetVoxyPatchData) programSet).voxy$getPatchData();
+            this.patchData = ((VoxyPatchDataAccess) programSet).voxy$getPatchData();
         }
     }
 
@@ -82,7 +82,7 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
     private void voxy$injectFrameBegin(CallbackInfo ci) {
         var parameters = IrisUtil.getCapturedOrFallbackViewportParameters();
         if (parameters != null) {
-            var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
+            var renderer = ((VoxyRenderSystemAccess) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
             if (renderer != null) {
                 RenderFrameStageState.store(
                         parameters.runStage(
@@ -94,7 +94,7 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
     @Inject(method = "beginLevelRendering", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;activeTexture(I)V", shift = At.Shift.BEFORE), remap = false)
     private void voxy$injectViewportSetup(CallbackInfo ci) {
         if (IrisUtil.CAPTURED_VIEWPORT_PARAMETERS != null) {
-            var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
+            var renderer = ((VoxyRenderSystemAccess) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
             if (renderer != null) {
                 RenderFrameStageState.store(
                         IrisUtil.CAPTURED_VIEWPORT_PARAMETERS.runStage(
@@ -109,7 +109,7 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
     private void voxy$injectPreTranslucentBridge(CallbackInfo ci) {
         var parameters = IrisUtil.getCapturedOrFallbackViewportParameters();
         if (parameters != null) {
-            var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
+            var renderer = ((VoxyRenderSystemAccess) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
             if (renderer != null) {
                 parameters.runStage(
                         renderer,
@@ -131,7 +131,7 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
     private void voxy$injectTranslucentBridge(CallbackInfo ci) {
         var parameters = IrisUtil.getCapturedOrFallbackViewportParameters();
         if (parameters != null) {
-            var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
+            var renderer = ((VoxyRenderSystemAccess) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
             if (renderer != null) {
                 parameters.runStage(
                         renderer,

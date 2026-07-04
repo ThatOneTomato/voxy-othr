@@ -9,7 +9,7 @@ import java.util.function.LongConsumer;
 
 import static me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_BLOCK_BIT;
 
-public class SectionUpdateRouter implements ISectionWatcher {
+public class SectionUpdateRouter implements SectionWatcher {
     private static final int SLICES = 1<<4;
     public interface IChildUpdate {void accept(WorldSection section);}
 

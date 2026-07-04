@@ -7,7 +7,7 @@ import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.rendering.backend.gl46.pipeline.AbstractRenderPipeline;
 import me.cortex.voxy.client.core.rendering.backend.gl46.pipeline.RenderPipelineFactory;
-import me.cortex.voxy.client.core.RenderResourceReuse;
+import me.cortex.voxy.client.core.rendering.util.RenderResourceReuse;
 import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.gl.GlTexture;
 import me.cortex.voxy.client.core.model.ModelBakerySubsystem;
@@ -29,11 +29,11 @@ import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.AsyncNodeMana
 import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.HierarchicalOcclusionTraverser;
 import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.NodeCleaner;
-import me.cortex.voxy.client.core.rendering.backend.gl46.section.IUsesMeshlets;
+import me.cortex.voxy.client.core.rendering.backend.gl46.section.UsesMeshlets;
 import me.cortex.voxy.client.core.rendering.backend.gl46.section.AbstractSectionRenderer;
 import me.cortex.voxy.client.core.rendering.backend.gl46.section.mdic.MDICSectionRenderer;
 import me.cortex.voxy.client.core.rendering.geometry.BasicSectionGeometryData;
-import me.cortex.voxy.client.core.rendering.geometry.IGeometryData;
+import me.cortex.voxy.client.core.rendering.geometry.GeometryData;
 import me.cortex.voxy.client.core.rendering.util.DownloadStream;
 import me.cortex.voxy.client.core.rendering.backend.gl46.util.PrintfDebugUtil;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
@@ -72,7 +72,7 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
 
     private final ModelBakerySubsystem modelService;
     private final RenderGenerationService renderGen;
-    private final IGeometryData geometryData;
+    private final GeometryData geometryData;
     private final AsyncNodeManager nodeManager;
     private final NodeCleaner nodeCleaner;
     private final HierarchicalOcclusionTraverser traversal;
@@ -86,7 +86,7 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
 
     private RenderFrameMatrices lastFrameMatrices = RenderFrameMatrices.identity();
 
-    private static AbstractSectionRenderer.Factory<?,? extends IGeometryData> getRenderBackendFactory() {
+    private static AbstractSectionRenderer.Factory<?,? extends GeometryData> getRenderBackendFactory() {
         //TODO: need todo a thing where selects optimal section render based on if supports the pipeline and geometry data type
         return MDICSectionRenderer.FACTORY;
     }
@@ -120,7 +120,7 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
 
         {
             this.modelService = new ModelBakerySubsystem(world.getMapper());
-            this.renderGen = new RenderGenerationService(world, this.modelService, context.serviceManager(), IUsesMeshlets.class.isAssignableFrom(backendFactory.clz()));
+            this.renderGen = new RenderGenerationService(world, this.modelService, context.serviceManager(), UsesMeshlets.class.isAssignableFrom(backendFactory.clz()));
 
             this.geometryData = new BasicSectionGeometryData(1<<20, RenderResourceReuse.getOrCreateGeometryBuffer());
 

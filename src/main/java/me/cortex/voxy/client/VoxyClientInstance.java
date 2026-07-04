@@ -2,7 +2,7 @@ package me.cortex.voxy.client;
 
 import me.cortex.voxy.client.compat.FlashbackCompat;
 import me.cortex.voxy.client.config.VoxyConfig;
-import me.cortex.voxy.client.core.RenderResourceReuse;
+import me.cortex.voxy.client.core.rendering.util.RenderResourceReuse;
 import me.cortex.voxy.client.mixin.sodium.AccessorSodiumWorldRenderer;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.StorageConfigUtil;

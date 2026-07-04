@@ -1,6 +1,6 @@
 package me.cortex.voxy.client.iris;
 
-import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import me.cortex.voxy.client.core.VoxyRenderSystem;
 import net.irisshaders.iris.gl.sampler.SamplerHolder;
 import net.irisshaders.iris.pipeline.IrisRenderingPipeline;
@@ -17,7 +17,7 @@ public class VoxySamplers {
         // was the cause of vxDepthTexOpaque silently aliasing texture unit 0 / colortex0.
         var patchData = IrisShaderPatch.CONSTRUCTING_PIPELINE_PATCH.get();
         if (patchData == null) {
-            patchData = ((IGetVoxyPatchData) pipeline).voxy$getPatchData();
+            patchData = ((VoxyPatchDataAccess) pipeline).voxy$getPatchData();
         }
         if (patchData != null) {
             String[] opaqueNames = new String[]{"vxDepthTexOpaque"};
@@ -34,7 +34,7 @@ public class VoxySamplers {
             // (GL46) keep the gl46 IrisVoxyRenderPipeline private fb depth path below, falling back
             // to the Iris depth targets when that pipeline does not exist either.
             IntSupplier gl46Opaque = () -> {
-                var pipeData = ((IGetIrisVoxyPipelineData) pipeline).voxy$getPipelineData();
+                var pipeData = ((IrisVoxyPipelineDataAccess) pipeline).voxy$getPipelineData();
                 if (pipeData == null || pipeData.thePipeline == null) {
                     return 0;
                 }
@@ -43,7 +43,7 @@ public class VoxySamplers {
                 return dt == null ? 0 : dt.id;
             };
             IntSupplier gl46Translucent = () -> {
-                var pipeData = ((IGetIrisVoxyPipelineData) pipeline).voxy$getPipelineData();
+                var pipeData = ((IrisVoxyPipelineDataAccess) pipeline).voxy$getPipelineData();
                 if (pipeData == null || pipeData.thePipeline == null) {
                     return 0;
                 }
@@ -67,7 +67,7 @@ public class VoxySamplers {
 
     private static int voxyDistantDepthOr(IntSupplier gl46Path, IntSupplier gl41MetalFallback) {
         try {
-            VoxyRenderSystem voxy = IGetVoxyRenderSystem.getNullable();
+            VoxyRenderSystem voxy = VoxyRenderSystemAccess.getNullable();
             if (voxy == null) {
                 return gl46Path.getAsInt();
             }

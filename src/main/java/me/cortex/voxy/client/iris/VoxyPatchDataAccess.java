@@ -1,5 +1,5 @@
 package me.cortex.voxy.client.iris;
 
-public interface IGetVoxyPatchData {
+public interface VoxyPatchDataAccess {
     IrisShaderPatch voxy$getPatchData();
 }

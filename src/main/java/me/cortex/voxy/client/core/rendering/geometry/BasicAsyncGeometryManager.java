@@ -14,7 +14,7 @@ import java.util.function.Consumer;
 
 //Is basicly the manager for an "undefined" data store, the underlying store is irrelevant
 // this manager serves as an overlay, that is, it allows an implementation to do "async management" of the data store
-public class BasicAsyncGeometryManager implements IGeometryManager {
+public class BasicAsyncGeometryManager implements GeometryManager {
     public static final int SECTION_METADATA_SIZE = 32;
 
     private static final long GEOMETRY_ELEMENT_SIZE = 8;

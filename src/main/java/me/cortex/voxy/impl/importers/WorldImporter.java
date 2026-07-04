@@ -63,8 +63,8 @@ import me.cortex.voxy.common.voxelization.VoxelizedSection;
 import me.cortex.voxy.common.voxelization.WorldConversionFactory;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.common.world.WorldUpdater;
-import me.cortex.voxy.impl.importers.IDataImporter.ICompletionCallback;
-import me.cortex.voxy.impl.importers.IDataImporter.IUpdateCallback;
+import me.cortex.voxy.impl.importers.DataImporter.ICompletionCallback;
+import me.cortex.voxy.impl.importers.DataImporter.IUpdateCallback;
 import net.minecraft.core.Holder;
 import net.minecraft.core.IdMap;
 import net.minecraft.core.registries.Registries;
@@ -87,7 +87,7 @@ import net.minecraft.world.level.chunk.PalettedContainerRO.PackedData;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.storage.RegionFileVersion;
 
-public class WorldImporter implements IDataImporter {
+public class WorldImporter implements DataImporter {
     private final WorldEngine world;
     private final PalettedContainerRO<Holder<Biome>> defaultBiomeProvider;
     private final Codec<PalettedContainerRO<Holder<Biome>>> biomeCodec;

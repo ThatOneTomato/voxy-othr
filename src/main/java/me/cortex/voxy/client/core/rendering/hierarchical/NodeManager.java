@@ -7,9 +7,9 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import me.cortex.voxy.client.core.gl.GlBuffer;
-import me.cortex.voxy.client.core.rendering.ISectionWatcher;
+import me.cortex.voxy.client.core.rendering.SectionWatcher;
 import me.cortex.voxy.client.core.rendering.building.BuiltSection;
-import me.cortex.voxy.client.core.rendering.geometry.IGeometryManager;
+import me.cortex.voxy.client.core.rendering.geometry.GeometryManager;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.client.core.util.ExpandingObjectAllocationList;
 import me.cortex.voxy.common.Logger;
@@ -82,8 +82,8 @@ public class NodeManager {
     private final ExpandingObjectAllocationList<SingleNodeRequest> singleRequests = new ExpandingObjectAllocationList<>(SingleNodeRequest[]::new, NodeStore.REQUEST_ID_MSK);
     private final ExpandingObjectAllocationList<NodeChildRequest> childRequests = new ExpandingObjectAllocationList<>(NodeChildRequest[]::new, NodeStore.REQUEST_ID_MSK);
     private final IntOpenHashSet nodeUpdates = new IntOpenHashSet();
-    private final IGeometryManager geometryManager;
-    private final ISectionWatcher watcher;
+    private final GeometryManager geometryManager;
+    private final SectionWatcher watcher;
     private final Long2IntOpenHashMap activeSectionMap = new Long2IntOpenHashMap();
     private final NodeStore nodeData;
     public final int maxNodeCount;
@@ -110,7 +110,7 @@ public class NodeManager {
         this.topLevelNodeIdRemovedCallback = onRemove;
     }
 
-    public NodeManager(int maxNodeCount, IGeometryManager geometryManager, ISectionWatcher watcher) {
+    public NodeManager(int maxNodeCount, GeometryManager geometryManager, SectionWatcher watcher) {
         if ((maxNodeCount&(maxNodeCount-1))!=0) {
             throw new IllegalArgumentException("Max node count must be a power of 2");
         }

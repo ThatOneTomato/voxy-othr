@@ -11,8 +11,8 @@ import me.cortex.voxy.common.voxelization.WorldVoxilizedSectionMipper;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.common.world.WorldUpdater;
 import me.cortex.voxy.common.world.other.Mapper;
-import me.cortex.voxy.impl.importers.IDataImporter.ICompletionCallback;
-import me.cortex.voxy.impl.importers.IDataImporter.IUpdateCallback;
+import me.cortex.voxy.impl.importers.DataImporter.ICompletionCallback;
+import me.cortex.voxy.impl.importers.DataImporter.IUpdateCallback;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
@@ -48,7 +48,7 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
-public class DHImporter implements IDataImporter {
+public class DHImporter implements DataImporter {
     private final Connection db;
     private final WorldEngine engine;
     private final Service service;

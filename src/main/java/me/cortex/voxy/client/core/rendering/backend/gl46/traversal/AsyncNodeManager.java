@@ -14,7 +14,7 @@ import me.cortex.voxy.client.core.rendering.building.BuiltSection;
 import me.cortex.voxy.client.core.rendering.building.RenderGenerationService;
 import me.cortex.voxy.client.core.rendering.geometry.BasicAsyncGeometryManager;
 import me.cortex.voxy.client.core.rendering.geometry.BasicSectionGeometryData;
-import me.cortex.voxy.client.core.rendering.geometry.IGeometryData;
+import me.cortex.voxy.client.core.rendering.geometry.GeometryData;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.AllocationArena;
@@ -68,7 +68,7 @@ public class AsyncNodeManager {
 
     private final NodeManager manager;
     private final BasicAsyncGeometryManager geometryManager;
-    private final IGeometryData geometryData;
+    private final GeometryData geometryData;
     private final SectionUpdateRouter router;
 
     private final GeometryCache geometryCache = new GeometryCache(1L<<32);
@@ -86,8 +86,8 @@ public class AsyncNodeManager {
 
     private boolean needsWaitForSync = false;
 
-    public AsyncNodeManager(int maxNodeCount, IGeometryData geometryData, RenderGenerationService renderService) {
-        //Note the current implmentation of ISectionWatcher is threadsafe
+    public AsyncNodeManager(int maxNodeCount, GeometryData geometryData, RenderGenerationService renderService) {
+        //Note the current implmentation of SectionWatcher is threadsafe
         //Note: geometry data is the data store/source, not the management, it is just a raw store of data
         // it MUST ONLY be accessed on the render thread
         // AsyncNodeManager will use an AsyncGeometryManager as the manager for the data store, and sync the results on the render thread

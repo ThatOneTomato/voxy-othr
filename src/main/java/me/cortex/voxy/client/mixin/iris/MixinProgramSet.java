@@ -2,7 +2,7 @@ package me.cortex.voxy.client.mixin.iris;
 
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.util.IrisUtil;
-import me.cortex.voxy.client.iris.IGetVoxyPatchData;
+import me.cortex.voxy.client.iris.VoxyPatchDataAccess;
 import me.cortex.voxy.client.iris.IrisShaderPatch;
 import me.cortex.voxy.common.Logger;
 import net.irisshaders.iris.shaderpack.ShaderPack;
@@ -21,7 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.function.Function;
 
 @Mixin(value = ProgramSet.class, remap = false)
-public class MixinProgramSet implements IGetVoxyPatchData {
+public class MixinProgramSet implements VoxyPatchDataAccess {
     @Shadow @Final private PackDirectives packDirectives;
     @Unique IrisShaderPatch patchData;
 

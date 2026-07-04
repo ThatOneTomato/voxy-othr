@@ -17,7 +17,7 @@ import static org.lwjgl.opengl.GL30C.GL_RED_INTEGER;
 import static org.lwjgl.opengl.GL43.GL_SHADER_STORAGE_BUFFER;
 import static org.lwjgl.opengl.GL45.nglClearNamedBufferSubData;
 
-public class PrintfInjector implements IShaderProcessor {
+public class PrintfInjector implements ShaderProcessor {
     private final GlBuffer textBuffer;
     private final HashMap<String, Integer> printfStringMap = new HashMap<>();
     private final HashMap<Integer, String> idToPrintfStringMap = new HashMap<>();

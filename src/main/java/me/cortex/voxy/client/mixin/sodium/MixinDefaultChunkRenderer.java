@@ -1,7 +1,7 @@
 package me.cortex.voxy.client.mixin.sodium;
 
 import me.cortex.voxy.client.VoxyClient;
-import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameStageState;
 import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import me.cortex.voxy.client.core.util.IrisUtil;
@@ -46,7 +46,7 @@ public abstract class MixinDefaultChunkRenderer extends ShaderChunkRenderer {
 
     @Unique
     private void doRender(ChunkRenderMatrices matrices, ChunkRenderListIterable renderLists, TerrainRenderPass renderPass, CameraTransform camera) {
-        var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
+        var renderer = ((VoxyRenderSystemAccess) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
         if (renderer == null) {
             return;
         }

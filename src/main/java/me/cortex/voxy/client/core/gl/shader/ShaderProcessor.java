@@ -1,5 +1,5 @@
 package me.cortex.voxy.client.core.gl.shader;
 
-public interface IShaderProcessor {
+public interface ShaderProcessor {
     String process(ShaderType type, String source);
 }

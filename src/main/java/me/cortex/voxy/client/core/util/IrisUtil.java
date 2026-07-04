@@ -5,7 +5,7 @@ import me.cortex.voxy.client.core.VoxyRenderSystem;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrame;
 import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import me.cortex.voxy.client.core.rendering.backend.ShaderPatchBridgePayload;
-import me.cortex.voxy.client.iris.IGetVoxyPatchData;
+import me.cortex.voxy.client.iris.VoxyPatchDataAccess;
 import me.cortex.voxy.client.iris.IrisBridgeShaderBindings;
 import me.cortex.voxy.client.iris.IrisShaderPatch;
 import me.cortex.voxy.client.mixin.iris.IrisRenderingPipelineAccessor;
@@ -117,7 +117,7 @@ public class IrisUtil {
         if (!irisShaderPackEnabled()) {
             return ShaderPatchBridgePayload.unavailable("Iris shader pack is not active");
         }
-        if (!(pipeline instanceof IGetVoxyPatchData patchSource)) {
+        if (!(pipeline instanceof VoxyPatchDataAccess patchSource)) {
             return ShaderPatchBridgePayload.unavailable("Iris pipeline has no Voxy patch accessor");
         }
         IrisShaderPatch patch = patchSource.voxy$getPatchData();
@@ -170,7 +170,7 @@ public class IrisUtil {
         if (!irisShaderPackEnabled()) {
             return ShaderPatchBridgePayload.unavailable("Iris shader pack is not active");
         }
-        if (!(pipeline instanceof IGetVoxyPatchData patchSource)) {
+        if (!(pipeline instanceof VoxyPatchDataAccess patchSource)) {
             return ShaderPatchBridgePayload.unavailable("Iris pipeline has no Voxy patch accessor");
         }
         IrisShaderPatch patch = patchSource.voxy$getPatchData();

@@ -1,7 +1,7 @@
 package me.cortex.voxy.client.mixin.minecraft;
 
 import me.cortex.voxy.client.config.VoxyConfig;
-import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 
 import net.minecraft.client.Camera;
 import net.minecraft.client.renderer.FogRenderer;
@@ -29,7 +29,7 @@ public class MixinFogRenderer {
         float tickDelta,
         CallbackInfo ci
     ) {
-        var vrs = IGetVoxyRenderSystem.getNullable();
+        var vrs = VoxyRenderSystemAccess.getNullable();
         if (vrs == null) return;
 
         if (RenderSystem.getShaderFogEnd() < 10.0f) return;

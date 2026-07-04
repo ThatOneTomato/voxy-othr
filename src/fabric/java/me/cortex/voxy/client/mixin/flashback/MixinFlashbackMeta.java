@@ -2,7 +2,7 @@ package me.cortex.voxy.client.mixin.flashback;
 
 import com.google.gson.JsonObject;
 import com.moulberry.flashback.record.FlashbackMeta;
-import me.cortex.voxy.client.compat.IFlashbackMeta;
+import me.cortex.voxy.client.compat.FlashbackMetaAccess;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.io.File;
 
 @Mixin(value = FlashbackMeta.class, remap = false)
-public class MixinFlashbackMeta implements IFlashbackMeta {
+public class MixinFlashbackMeta implements FlashbackMetaAccess {
     @Unique private File voxyPath;
 
     @Override
@@ -38,7 +38,7 @@ public class MixinFlashbackMeta implements IFlashbackMeta {
         var val = cir.getReturnValue();
         if (val != null && meta != null) {
             if (meta.has("voxy_storage_path")) {
-                ((IFlashbackMeta)val).setVoxyPath(new File(meta.get("voxy_storage_path").getAsString()));
+                ((FlashbackMetaAccess)val).setVoxyPath(new File(meta.get("voxy_storage_path").getAsString()));
             }
         }
     }

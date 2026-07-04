@@ -5,7 +5,7 @@ import static org.lwjgl.opengl.GL20C.glUniform4f;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import me.cortex.voxy.client.config.VoxyConfig;
-import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import net.minecraft.client.Minecraft;
 
 /**
@@ -29,7 +29,7 @@ final class FogCapture {
     if (paramsUniform < 0) {
       return;
     }
-    var vrs = IGetVoxyRenderSystem.getNullable();
+    var vrs = VoxyRenderSystemAccess.getNullable();
     float fogStart = vrs != null ? vrs.getCapturedFogStart() : RenderSystem.getShaderFogStart();
     float fogEnd = vrs != null ? vrs.getCapturedFogEnd() : RenderSystem.getShaderFogEnd();
     float[] fogColor = vrs != null ? vrs.getCapturedFogColor() : RenderSystem.getShaderFogColor();
@@ -65,7 +65,7 @@ final class FogCapture {
    * fog and Voxy has no business second-guessing it.
    */
   static boolean vanillaFogHidesDistant() {
-    var vrs = IGetVoxyRenderSystem.getNullable();
+    var vrs = VoxyRenderSystemAccess.getNullable();
     float fogEnd = vrs != null ? vrs.getCapturedFogEnd() : RenderSystem.getShaderFogEnd();
     return fogEnd < Minecraft.getInstance().gameRenderer.getRenderDistance();
   }

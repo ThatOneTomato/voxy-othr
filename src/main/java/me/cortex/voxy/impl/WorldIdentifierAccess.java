@@ -1,5 +1,5 @@
 package me.cortex.voxy.impl;
 
-public interface IWorldGetIdentifier {
+public interface WorldIdentifierAccess {
     WorldIdentifier voxy$getIdentifier();
 }

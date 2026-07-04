@@ -6,7 +6,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameStageState;
 import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import me.cortex.voxy.client.core.util.IrisUtil;
@@ -34,7 +34,7 @@ public class MixinSodiumWorldRendererVS {
     @Unique
     private void doRender(ChunkRenderMatrices matrices, RenderType renderLayer, double x, double y, double z) {
         if (renderLayer == RenderType.solid()) {
-            var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
+            var renderer = ((VoxyRenderSystemAccess) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
             if (renderer != null) {
                 boolean shaderPackActive = IrisUtil.irisShaderPackEnabled();
                 var frame = renderer.runFrameStage(

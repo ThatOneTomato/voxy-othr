@@ -1,7 +1,7 @@
 package me.cortex.voxy.client.mixin.minecraft;
 
 import me.cortex.voxy.client.RenderStatistics;
-import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import me.cortex.voxy.client.core.VoxyRenderSystem;
 import me.cortex.voxy.client.core.util.GPUTiming;
 import me.cortex.voxy.impl.VoxyCommon;
@@ -57,7 +57,7 @@ public abstract class MixinDebugScreenOverlay {
         }
         VoxyRenderSystem vrs = null;
         var wr = Minecraft.getInstance().levelRenderer;
-        if (wr != null) vrs = ((IGetVoxyRenderSystem) wr).voxy$getRenderSystem();
+        if (wr != null) vrs = ((VoxyRenderSystemAccess) wr).voxy$getRenderSystem();
 
         //Voxy instance active
         voxyLines.add((vrs==null?ChatFormatting.DARK_GREEN:ChatFormatting.GREEN)+"voxy-"+PlatformAccess.MOD_VERSION);

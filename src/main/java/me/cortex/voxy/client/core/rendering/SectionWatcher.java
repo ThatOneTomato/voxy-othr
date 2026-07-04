@@ -2,7 +2,7 @@ package me.cortex.voxy.client.core.rendering;
 
 import me.cortex.voxy.common.world.WorldEngine;
 
-public interface ISectionWatcher {
+public interface SectionWatcher {
     default boolean watch(int lvl, int x, int y, int z, int types) {
         return this.watch(WorldEngine.getWorldSectionId(lvl, x, y, z), types);
     }

@@ -3,7 +3,7 @@ package me.cortex.voxy.client.mixin.flashback;
 import com.moulberry.flashback.record.FlashbackMeta;
 import com.moulberry.flashback.record.Recorder;
 import me.cortex.voxy.client.VoxyClientInstance;
-import me.cortex.voxy.client.compat.IFlashbackMeta;
+import me.cortex.voxy.client.compat.FlashbackMetaAccess;
 import me.cortex.voxy.impl.VoxyCommon;
 import net.minecraft.core.RegistryAccess;
 import org.spongepowered.asm.mixin.Final;
@@ -22,7 +22,7 @@ public class MixinFlashbackRecorder {
         if (VoxyCommon.isAvailable()) {
             var instance = VoxyCommon.getInstance();
             if (instance instanceof VoxyClientInstance ci) {
-                ((IFlashbackMeta)this.metadata).setVoxyPath(ci.getStorageBasePath().toFile());
+                ((FlashbackMetaAccess)this.metadata).setVoxyPath(ci.getStorageBasePath().toFile());
             }
         }
     }

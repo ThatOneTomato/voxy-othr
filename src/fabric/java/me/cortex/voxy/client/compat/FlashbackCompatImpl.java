@@ -15,7 +15,7 @@ final class FlashbackCompatImpl {
         if (replayServer != null) {
             FlashbackMeta meta = replayServer.getMetadata();
             if (meta != null) {
-                var path = ((IFlashbackMeta)meta).getVoxyPath();
+                var path = ((FlashbackMetaAccess)meta).getVoxyPath();
                 if (path != null) {
                     Logger.info("Flashback replay server exists and meta exists");
                     if (path.exists()) {

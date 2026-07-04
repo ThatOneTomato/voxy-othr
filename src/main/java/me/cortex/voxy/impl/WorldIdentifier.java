@@ -90,7 +90,7 @@ public class WorldIdentifier {
         if (level == null) {
             return null;
         }
-        return ((IWorldGetIdentifier)level).voxy$getIdentifier();
+        return ((WorldIdentifierAccess)level).voxy$getIdentifier();
     }
 
     //Common utility function to get or create a world engine

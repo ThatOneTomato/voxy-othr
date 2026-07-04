@@ -4,7 +4,7 @@ import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.AsyncNodeMana
 import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.HierarchicalOcclusionTraverser;
 import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.NodeCleaner;
 import me.cortex.voxy.client.core.util.IrisUtil;
-import me.cortex.voxy.client.iris.IGetIrisVoxyPipelineData;
+import me.cortex.voxy.client.iris.IrisVoxyPipelineDataAccess;
 import me.cortex.voxy.common.Logger;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.api.v0.IrisApi;
@@ -29,7 +29,7 @@ public class RenderPipelineFactory {
         if (irisPipe == null) {
             return null;
         }
-        if (irisPipe instanceof IGetIrisVoxyPipelineData getVoxyPipeData) {
+        if (irisPipe instanceof IrisVoxyPipelineDataAccess getVoxyPipeData) {
             var pipeData = getVoxyPipeData.voxy$getPipelineData();
             if (pipeData == null) {
                 return null;

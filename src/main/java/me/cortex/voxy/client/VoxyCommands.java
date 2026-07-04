@@ -7,7 +7,7 @@ import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
-import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import me.cortex.voxy.common.DebugUtils;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.impl.VoxyCommon;
@@ -83,7 +83,7 @@ public class VoxyCommands {
         }
         var wr = Minecraft.getInstance().levelRenderer;
         if (wr!=null) {
-            ((IGetVoxyRenderSystem)wr).voxy$shutdownRenderer();
+            ((VoxyRenderSystemAccess)wr).voxy$shutdownRenderer();
         }
 
         VoxyCommon.shutdownInstance();

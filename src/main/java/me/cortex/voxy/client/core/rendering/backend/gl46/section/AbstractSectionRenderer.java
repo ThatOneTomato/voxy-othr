@@ -7,7 +7,7 @@ import me.cortex.voxy.client.core.gl.shader.ShaderType;
 import me.cortex.voxy.client.core.model.ModelStore;
 import me.cortex.voxy.client.core.rendering.backend.gl46.Gl46Viewport;
 import me.cortex.voxy.client.core.rendering.geometry.BasicSectionGeometryData;
-import me.cortex.voxy.client.core.rendering.geometry.IGeometryData;
+import me.cortex.voxy.client.core.rendering.geometry.GeometryData;
 import me.cortex.voxy.common.Logger;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.Direction;
@@ -17,17 +17,17 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 
 //Takes in mesh ids from the hierarchical traversal and may perform more culling then renders it
-public abstract class AbstractSectionRenderer <T extends Gl46Viewport<T>, J extends IGeometryData> {
-    public interface FactoryConstructor<VIEWPORT extends Gl46Viewport<VIEWPORT>, GEODATA extends IGeometryData> {
+public abstract class AbstractSectionRenderer <T extends Gl46Viewport<T>, J extends GeometryData> {
+    public interface FactoryConstructor<VIEWPORT extends Gl46Viewport<VIEWPORT>, GEODATA extends GeometryData> {
         AbstractSectionRenderer<VIEWPORT, GEODATA> create(AbstractRenderPipeline pipeline, ModelStore modelStore, GEODATA geometryData);
     }
 
-    public record Factory<VIEWPORT extends Gl46Viewport<VIEWPORT>, GEODATA extends IGeometryData>(Class<? extends AbstractSectionRenderer<VIEWPORT, GEODATA>> clz, FactoryConstructor<VIEWPORT, GEODATA> constructor) {
-        public AbstractSectionRenderer<VIEWPORT, GEODATA> create(AbstractRenderPipeline pipeline, ModelStore store, IGeometryData geometryData) {
+    public record Factory<VIEWPORT extends Gl46Viewport<VIEWPORT>, GEODATA extends GeometryData>(Class<? extends AbstractSectionRenderer<VIEWPORT, GEODATA>> clz, FactoryConstructor<VIEWPORT, GEODATA> constructor) {
+        public AbstractSectionRenderer<VIEWPORT, GEODATA> create(AbstractRenderPipeline pipeline, ModelStore store, GeometryData geometryData) {
             return this.constructor.create(pipeline, store, (GEODATA) geometryData);
         }
 
-        public static <VIEWPORT2 extends Gl46Viewport<VIEWPORT2>, GEODATA2 extends IGeometryData> Factory<VIEWPORT2, GEODATA2> create(Class<? extends AbstractSectionRenderer<VIEWPORT2, GEODATA2>> clz) {
+        public static <VIEWPORT2 extends Gl46Viewport<VIEWPORT2>, GEODATA2 extends GeometryData> Factory<VIEWPORT2, GEODATA2> create(Class<? extends AbstractSectionRenderer<VIEWPORT2, GEODATA2>> clz) {
             var constructors = clz.getConstructors();
             if (constructors.length != 1) {
                 Logger.error("Render backend " + clz.getCanonicalName() + " had more then 1 constructor");
@@ -35,7 +35,7 @@ public abstract class AbstractSectionRenderer <T extends Gl46Viewport<T>, J exte
             }
             var constructor = constructors[0];
             var params = constructor.getParameterTypes();
-            if (params.length != 3 || params[0] != AbstractRenderPipeline.class || params[1] != ModelStore.class || !IGeometryData.class.isAssignableFrom(params[2])) {
+            if (params.length != 3 || params[0] != AbstractRenderPipeline.class || params[1] != ModelStore.class || !GeometryData.class.isAssignableFrom(params[2])) {
                 Logger.error("Render backend " + clz.getCanonicalName() + " had invalid constructor");
                 return null;
             }

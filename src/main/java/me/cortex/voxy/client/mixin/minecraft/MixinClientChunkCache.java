@@ -1,6 +1,6 @@
 package me.cortex.voxy.client.mixin.minecraft;
 
-import me.cortex.voxy.client.ICheekyClientChunkCache;
+import me.cortex.voxy.client.ClientChunkCacheAccess;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.common.world.service.VoxelIngestService;
 import net.minecraft.client.multiplayer.ClientChunkCache;
@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import me.cortex.voxy.common.platform.PlatformAccess;
 
 @Mixin(ClientChunkCache.class)
-public class MixinClientChunkCache implements ICheekyClientChunkCache {
+public class MixinClientChunkCache implements ClientChunkCacheAccess {
     @Unique
     private static final boolean BOBBY_INSTALLED = PlatformAccess.get().isModLoaded("bobby");
 
