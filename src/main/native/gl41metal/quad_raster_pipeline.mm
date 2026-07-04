@@ -136,8 +136,14 @@ bool createTranslucentMeshPipeline(JNIEnv* env, NativeContext* context, TerrainR
   descriptor.colorAttachments[2].blendingEnabled = YES;
   descriptor.colorAttachments[2].rgbBlendOperation = MTLBlendOperationAdd;
   descriptor.colorAttachments[2].alphaBlendOperation = MTLBlendOperationAdd;
+  // Order-independent accumulation. Draw order is only sorted per-section, so a premultiplied
+  // OVER (ONE, ONE_MINUS_SRC_ALPHA on rgb) mis-weights layers that live in the same section
+  // (glass box standing in water). Instead: rgb = plain sum of premultiplied flat colours
+  // (commutative), alpha = 1 - prod(1-a_i) (commutative). The GL composite reconstructs the
+  // behind-layers contribution as (accum.rgb - frontFlat) * (1 - frontAlpha), exact for two
+  // layers in any order and a mild overestimate of the deepest layers for three or more.
   descriptor.colorAttachments[2].sourceRGBBlendFactor = MTLBlendFactorOne;
-  descriptor.colorAttachments[2].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+  descriptor.colorAttachments[2].destinationRGBBlendFactor = MTLBlendFactorOne;
   descriptor.colorAttachments[2].sourceAlphaBlendFactor = MTLBlendFactorOne;
   descriptor.colorAttachments[2].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
   descriptor.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;

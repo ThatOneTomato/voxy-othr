@@ -855,10 +855,11 @@ void voxy_translucent_mesh(
 }
 
 // Translucent distant gbuffer ABI (see SharedDistantGbuffer / GlDistantTerrainBridge). Three RGBA32F
-// shared targets. tgbuffer0/1 hold the FRONT-most translucent surface (blend off -> nearest wins,
-// since the raster draws back->front) for strict Iris water-program shading; tgbufferAccum holds the
-// back->front over-blended flat colour of ALL layers (blend on, premultiplied over) so layers behind
-// the front surface still contribute colour in the deferred-hybrid composite.
+// shared targets. tgbuffer0/1 hold the FRONT-most translucent surface (blend off; nearest wins via
+// the framebuffer-fetch depth compare below, since within-section draw order is arbitrary) for
+// strict Iris water-program shading; tgbufferAccum holds the order-independent accumulation of ALL
+// layers (rgb = additive sum of premultiplied flat colours, alpha = 1 - prod(1-a_i)) so layers
+// behind the front surface still contribute colour in the deferred-hybrid composite.
 //
 //   tgbuffer0 RGBA32F  .x albedoPacked (r<<16|g<<8|b)  .y lightPacked (lx12<<12|ly12)
 //                      .z tintPacked (tr<<16|tg<<8|tb) .w (face<<9)|(flags<<1)|coverage
@@ -870,9 +871,17 @@ struct TranslucentFragmentOut {
   float4 tgbufferAccum [[color(2)]];
 };
 
+// prevT0/prevT1 are framebuffer-fetch reads (Apple-silicon tile memory) of the current
+// tgbuffer0/1 contents. Draw order is only sorted per-SECTION (back->front across sections,
+// arbitrary within one section), so "last write wins" does NOT select the nearest surface for
+// layers inside the same section (e.g. a glass box standing in water). Instead each fragment
+// compares its depth against the stored front surface and keeps whichever is nearer, making the
+// front-surface extraction order-independent.
 fragment TranslucentFragmentOut voxy_translucent_fragment(
     QuadVertexOut in [[stage_in]],
     bool isFrontFacing [[front_facing]],
+    float4 prevT0 [[color(0)]],
+    float4 prevT1 [[color(1)]],
     texture2d<float> atlas [[texture(0)]]) {
   if ((in.flagsFaceCov & (1u << 19u)) == 0u) {
     discard_fragment();
@@ -896,6 +905,21 @@ fragment TranslucentFragmentOut voxy_translucent_fragment(
     discard_fragment();
   }
 
+  // Single-sided translucency, aligned to the quad's SEMANTIC face rather than raw winding.
+  // The mesher emits the same corner order for both directions of a face pair (that is why the
+  // opaque fragment derives the observed face from [[front_facing]]), so fixed-function
+  // MTLCullModeFront (added to stop glass rendering double-layered) also culled the exposed side
+  // of +Z/+X/-Y faces - distant water and stained glass lost their side walls. Instead keep only
+  // fragments seen from the direction the stored face points to, which is exactly vanilla's
+  // GL_CULL_FACE/GL_BACK behaviour for translucent blocks.
+  bool glFrontFacing = !isFrontFacing;
+  bool faceAxisNonZero = (face >> 1u) != 0u;
+  bool viewedFromBehind = (bool(face & 1u)) != (glFrontFacing != faceAxisNonZero);
+  if (viewedFromBehind) {
+    discard_fragment();
+  }
+  uint normalFace = face;
+
   float4 sampled = atlas.sample(atlasSampler, metalTexPos, gradient2d(dfdx(metalUvSmol), dfdy(metalUvSmol)));
   float alpha = sampled.a;
 
@@ -917,12 +941,8 @@ fragment TranslucentFragmentOut voxy_translucent_fragment(
     }
   }
 
-  bool glFrontFacing = !isFrontFacing;
-  uint normalFace = face;
-  bool faceAxisNonZero = (normalFace >> 1u) != 0u;
-  bool faceFlip = (bool(normalFace & 1u)) != (glFrontFacing != faceAxisNonZero);
-  normalFace ^= uint(faceFlip);
-
+  // Fragments viewed from behind the stored face were discarded above, so the observed face is
+  // always the stored face here (no winding-derived flip needed).
   float albedoPacked = float(pack_float_to_unorm4x8(float4(sampled.b, sampled.g, sampled.r, 0.0f)));
   float tintPacked = float(pack_float_to_unorm4x8(float4(tint.b, tint.g, tint.r, 0.0f)));
   float faceFlagsCoverage = float((normalFace << 9u) | ((flags & 0xFFu) << 1u) | 1u);
@@ -940,8 +960,17 @@ fragment TranslucentFragmentOut voxy_translucent_fragment(
   float3 flatColour = saturate(sampled.rgb) * saturate(tint.rgb) * faceShade * alpha;
 
   TranslucentFragmentOut out;
-  out.tgbuffer0 = float4(albedoPacked, in.gbuf2_y, tintPacked, faceFlagsCoverage);
-  out.tgbuffer1 = float4(screenDepth, saturate(alpha), in.gbuf1_z, in.gbuf1_w);
+  // Nearest-wins front surface: keep the stored fragment when it has coverage (tgbuffer0.w low
+  // bit) and is closer than this one; tgbuffer0/1 blending is off, so the returned value is
+  // stored verbatim either way. tgbufferAccum always accumulates (order-independent blend).
+  bool prevCovered = (uint(prevT0.w + 0.5f) & 1u) != 0u;
+  if (prevCovered && prevT1.x <= screenDepth) {
+    out.tgbuffer0 = prevT0;
+    out.tgbuffer1 = prevT1;
+  } else {
+    out.tgbuffer0 = float4(albedoPacked, in.gbuf2_y, tintPacked, faceFlagsCoverage);
+    out.tgbuffer1 = float4(screenDepth, saturate(alpha), in.gbuf1_z, in.gbuf1_w);
+  }
   out.tgbufferAccum = float4(flatColour, saturate(alpha));
   return out;
 }

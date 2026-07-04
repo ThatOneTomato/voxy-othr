@@ -395,7 +395,12 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_subm
       }
       translucentEncoder.label = @"Voxy Translucent Quad Raster";
       [translucentEncoder setDepthStencilState:terrain->translucentDepthStencil];
-      [translucentEncoder setCullMode:MTLCullModeFront];
+      // No fixed-function culling: the mesher does not normalize quad winding per face direction,
+      // so MTLCullModeFront (previously used to emulate vanilla's GL_BACK culling for translucent
+      // blocks) also culled the exposed side of +Z/+X/-Y faces, removing water/stained-glass side
+      // walls. voxy_translucent_fragment now discards fragments viewed from behind the quad's
+      // semantic face instead, which is the correct single-sided behaviour.
+      [translucentEncoder setCullMode:MTLCullModeNone];
       [translucentEncoder setFragmentTexture:terrain->atlas atIndex:0];
       [translucentEncoder setRenderPipelineState:terrain->translucentMeshPipeline];
       [translucentEncoder setObjectBuffer:frame->translucentDrawArgs offset:0 atIndex:0];

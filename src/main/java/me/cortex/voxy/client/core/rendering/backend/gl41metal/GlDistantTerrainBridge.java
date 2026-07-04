@@ -1731,6 +1731,10 @@ final class GlDistantTerrainBridge implements AutoCloseable {
         vec3 frontAlbedo = unpackRgb8(decodePackedUint(t0.x));
         vec3 frontTint = unpackRgb8(decodePackedUint(t0.z));
         vec3 frontPremul = frontAlbedo * frontTint * frontFaceShade * frontAlpha;
+        // accum.rgb is an order-independent SUM of premultiplied flat colours (Metal blends the
+        // accum target additively because within-section draw order is arbitrary). Subtracting the
+        // front layer leaves sum(behind flats); attenuating once by (1 - frontAlpha) is exact for
+        // two layers in any order and mildly overestimates the deepest layers beyond that.
         vec3 bRgb = max(accum.rgb - frontPremul, vec3(0.0));
         behindColour = vec4(bRgb * light * (1.0 - frontAlpha), bA);
       }
@@ -2140,6 +2144,10 @@ __VOXY_OPAQUE_MASK__        voxyQuadFlags = g.flags;
         }
 
         vec3 frontPremul = parameters.sampledColour.rgb * parameters.tinting.rgb * frontFaceShade * frontAlpha;
+        // accum.rgb is an order-independent SUM of premultiplied flat colours (Metal blends the
+        // accum target additively because within-section draw order is arbitrary). Subtracting the
+        // front layer leaves sum(behind flats); attenuating once by (1 - frontAlpha) is exact for
+        // two layers in any order and mildly overestimates the deepest layers beyond that.
         vec3 bRgb = max(accum.rgb - frontPremul, vec3(0.0));
         vec3 behindLit = bRgb * light.rgb * (1.0 - frontAlpha);
 
