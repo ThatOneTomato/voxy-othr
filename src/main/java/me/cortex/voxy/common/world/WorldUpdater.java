@@ -2,9 +2,9 @@ package me.cortex.voxy.common.world;
 
 import me.cortex.voxy.common.voxelization.VoxelizedSection;
 import me.cortex.voxy.common.world.other.Mapper;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 
 import static me.cortex.voxy.common.world.WorldEngine.*;
+import me.cortex.voxy.common.VoxyFlags;
 
 public class WorldUpdater {
     //Executes an update to the world and automatically updates all the parent mip layers up to level 4 (e.g. where 1 chunk section is 1 block big)
@@ -13,7 +13,7 @@ public class WorldUpdater {
     public static void insertUpdate(WorldEngine into, VoxelizedSection section) {//TODO: add a bitset of levels to update and if it should force update
 
         //Do some very cheeky stuff for MiB
-        if (VoxyCommon.IS_MINE_IN_ABYSS) {
+        if (VoxyFlags.IS_MINE_IN_ABYSS) {
             int sector = (section.x+512)>>10;
             section.setPosition(section.x-(sector<<10), section.y+16+(256-32-sector*30), section.z);//Note sector size mult is 30 because the top chunk is replicated (and so is bottom chunk)
         }

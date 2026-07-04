@@ -15,9 +15,6 @@ public interface PlatformUtil {
     /** Returns the mod version string, or null if unavailable. */
     String getModVersion(String modId);
 
-    /** Returns the Flashback replay storage path, or null if unavailable. */
-    Path getReplayStoragePath(boolean flashbackInstalled);
-
     /** Returns the config directory path for the current runtime, used for config file placement. */
     Path getConfigDir();
 

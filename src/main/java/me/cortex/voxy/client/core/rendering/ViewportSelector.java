@@ -1,7 +1,6 @@
 package me.cortex.voxy.client.core.rendering;
 
 import me.cortex.voxy.client.core.util.IrisUtil;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 import org.vivecraft.api.client.VRRenderingAPI;
 
 import java.util.HashMap;
@@ -9,9 +8,10 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import static org.vivecraft.api.client.data.RenderPass.VANILLA;
+import me.cortex.voxy.common.platform.PlatformAccess;
 
 public class ViewportSelector <T extends Viewport<?>> {
-    public static final boolean VIVECRAFT_INSTALLED = VoxyCommon.getPlatformUtil().isModLoaded("vivecraft");
+    public static final boolean VIVECRAFT_INSTALLED = PlatformAccess.get().isModLoaded("vivecraft");
 
     private final Supplier<T> creator;
     private final T defaultViewport;

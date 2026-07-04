@@ -10,10 +10,10 @@ import me.cortex.voxy.common.util.UnsafeUtil;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.common.world.WorldSection;
 import me.cortex.voxy.common.world.other.Mapper;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 import org.lwjgl.system.MemoryUtil;
 
 import java.util.Arrays;
+import me.cortex.voxy.common.VoxyFlags;
 
 
 public class RenderDataFactory {
@@ -22,7 +22,7 @@ public class RenderDataFactory {
     private static final boolean CHECK_NEIGHBOR_FACE_OCCLUSION = true;
     private static final boolean DISABLE_CULL_SAME_OCCLUDES = false;//TODO: FIX TRANSLUCENTS (e.g. stained glass) breaking on chunk boarders with this set to false (it might be something else????)
 
-    private static final boolean VERIFY_MESHING = VoxyCommon.isVerificationFlagOn("verifyMeshing");
+    private static final boolean VERIFY_MESHING = VoxyFlags.isVerificationFlagOn("verifyMeshing");
 
     // DIVERGENCE FROM voxy-fabric: bridge walls for horizontally-adjacent fluids of different surface
     // heights. The shared fluid<->fluid boundary face is normally culled (XOR of two set fluid bits),

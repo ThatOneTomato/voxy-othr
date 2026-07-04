@@ -19,6 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.ArrayList;
 import java.util.List;
+import me.cortex.voxy.common.platform.PlatformAccess;
 
 @Mixin(DebugScreenOverlay.class)
 public abstract class MixinDebugScreenOverlay {
@@ -46,12 +47,12 @@ public abstract class MixinDebugScreenOverlay {
         List<String> voxyLines = new ArrayList<>();
 
         if (!VoxyCommon.isAvailable()) {
-            voxyLines.add(ChatFormatting.RED + "voxy-"+VoxyCommon.MOD_VERSION);//Voxy installed, not avalible
+            voxyLines.add(ChatFormatting.RED + "voxy-"+PlatformAccess.MOD_VERSION);//Voxy installed, not avalible
             return;
         }
         var instance = VoxyCommon.getInstance();
         if (instance == null) {
-            voxyLines.add(ChatFormatting.YELLOW + "voxy-" + VoxyCommon.MOD_VERSION);//Voxy avalible, no instance active
+            voxyLines.add(ChatFormatting.YELLOW + "voxy-" + PlatformAccess.MOD_VERSION);//Voxy avalible, no instance active
             return;
         }
         VoxyRenderSystem vrs = null;
@@ -59,7 +60,7 @@ public abstract class MixinDebugScreenOverlay {
         if (wr != null) vrs = ((IGetVoxyRenderSystem) wr).voxy$getRenderSystem();
 
         //Voxy instance active
-        voxyLines.add((vrs==null?ChatFormatting.DARK_GREEN:ChatFormatting.GREEN)+"voxy-"+VoxyCommon.MOD_VERSION);
+        voxyLines.add((vrs==null?ChatFormatting.DARK_GREEN:ChatFormatting.GREEN)+"voxy-"+PlatformAccess.MOD_VERSION);
 
         //lines.addLineToSection();
         List<String> instanceLines = new ArrayList<>();

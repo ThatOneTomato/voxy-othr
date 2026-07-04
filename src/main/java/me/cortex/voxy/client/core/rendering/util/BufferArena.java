@@ -5,12 +5,12 @@ import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.common.util.AllocationArena;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import me.cortex.voxy.common.util.UnsafeUtil;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 
 import java.util.function.Consumer;
+import me.cortex.voxy.common.VoxyFlags;
 
 public class BufferArena {
-    private static final boolean CHECK_SSBO_MAX_SIZE_CHECK = VoxyCommon.isVerificationFlagOn("checkSSBOMaxSize");
+    private static final boolean CHECK_SSBO_MAX_SIZE_CHECK = VoxyFlags.isVerificationFlagOn("checkSSBOMaxSize");
 
     private final long size;
     private final int elementSize;

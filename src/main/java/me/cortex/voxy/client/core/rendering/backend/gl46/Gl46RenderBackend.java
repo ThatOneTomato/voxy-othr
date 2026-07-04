@@ -40,7 +40,6 @@ import me.cortex.voxy.client.core.util.GPUTiming;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.world.WorldEngine;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import org.joml.Matrix4f;
@@ -62,6 +61,7 @@ import static org.lwjgl.opengl.GL30C.*;
 import static org.lwjgl.opengl.GL33.glBindSampler;
 import static org.lwjgl.opengl.GL43.GL_SHADER_STORAGE_BUFFER;
 import static org.lwjgl.opengl.GL43C.GL_SHADER_STORAGE_BUFFER_BINDING;
+import me.cortex.voxy.common.VoxyFlags;
 
 // Mechanical relocation of the pre-abstraction VoxyRenderSystem rendering core (this repository's
 // MDIC implementation). Behaviour is intentionally kept identical to the current branch, including
@@ -148,7 +148,7 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
             int maxSec = (Minecraft.getInstance().level.getMaxSection() - 1) >> 5;
 
             //Do some very cheeky stuff for MiB
-            if (VoxyCommon.IS_MINE_IN_ABYSS) {//TODO: make this somehow configurable
+            if (VoxyFlags.IS_MINE_IN_ABYSS) {//TODO: make this somehow configurable
                 minSec = -8;
                 maxSec = 7;
             }
@@ -222,7 +222,7 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
         double cameraZ = context.cameraZ();
 
         //Do some very cheeky stuff for MiB
-        if (VoxyCommon.IS_MINE_IN_ABYSS) {
+        if (VoxyFlags.IS_MINE_IN_ABYSS) {
             int sector = (((int)Math.floor(cameraX)>>4)+512)>>10;
             cameraX -= sector<<14;//10+4
             cameraY += (16+(256-32-sector*30))*16;

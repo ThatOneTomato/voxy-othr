@@ -38,12 +38,6 @@ public class PlatformUtilImpl implements PlatformUtil {
     }
 
     @Override
-    public Path getReplayStoragePath(boolean flashbackInstalled) {
-        // Flashback is fabric-only
-        return null;
-    }
-
-    @Override
     public Path getConfigDir() {
         return FMLPaths.CONFIGDIR.get();
     }

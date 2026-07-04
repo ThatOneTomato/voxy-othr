@@ -16,6 +16,7 @@ import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import me.cortex.voxy.common.platform.PlatformAccess;
 
 public class VoxyConfig implements OptionStorage<VoxyConfig> {
     private static final Gson GSON = new GsonBuilder()
@@ -105,7 +106,7 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
     }
 
     private static Path getConfigPath() {
-        return VoxyCommon.getPlatformUtil()
+        return PlatformAccess.get()
                 .getConfigDir()
                 .resolve("voxy-config.json");
     }

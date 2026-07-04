@@ -5,14 +5,12 @@ import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
 import me.cortex.voxy.client.core.VoxyRenderSystem;
 import me.cortex.voxy.common.world.service.VoxelIngestService;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.caffeinemc.mods.sodium.client.gl.device.CommandList;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
 import net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager;
 import net.caffeinemc.mods.sodium.client.render.chunk.compile.executor.ChunkBuilder;
 import net.caffeinemc.mods.sodium.client.render.chunk.data.BuiltSectionInfo;
 import net.caffeinemc.mods.sodium.client.render.chunk.map.ChunkTrackerHolder;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
@@ -26,11 +24,13 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import me.cortex.voxy.common.VoxyFlags;
+import me.cortex.voxy.common.platform.PlatformAccess;
 
 @Mixin(value = RenderSectionManager.class, remap = false)
 public class MixinRenderSectionManager {
     @Unique
-    private static final boolean BOBBY_INSTALLED = VoxyCommon.getPlatformUtil().isModLoaded("bobby");
+    private static final boolean BOBBY_INSTALLED = PlatformAccess.get().isModLoaded("bobby");
 
     @Shadow @Final private ClientLevel level;
 
@@ -142,7 +142,7 @@ public class MixinRenderSectionManager {
         }
 
         //Do some very cheeky stuff for MiB
-        if (VoxyCommon.IS_MINE_IN_ABYSS) {
+        if (VoxyFlags.IS_MINE_IN_ABYSS) {
             int sector = (x+512)>>10;
             x-=sector<<10;
             y+=16+(256-32-sector*30);

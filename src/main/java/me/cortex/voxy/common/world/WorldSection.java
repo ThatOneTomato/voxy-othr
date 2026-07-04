@@ -1,19 +1,19 @@
 package me.cortex.voxy.common.world;
 
 
-import me.cortex.voxy.commonImpl.VoxyCommon;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Arrays;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
+import me.cortex.voxy.common.VoxyFlags;
 
 //Represents a loaded world section at a specific detail level
 // holds a 32x32x32 region of detail
 public final class WorldSection {
     public static final int SECTION_VOLUME = 32*32*32;
-    public static final boolean VERIFY_WORLD_SECTION_EXECUTION = VoxyCommon.isVerificationFlagOn("verifyWorldSectionExecution");
+    public static final boolean VERIFY_WORLD_SECTION_EXECUTION = VoxyFlags.isVerificationFlagOn("verifyWorldSectionExecution");
 
 
     static final VarHandle ATOMIC_STATE_HANDLE;

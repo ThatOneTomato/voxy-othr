@@ -5,7 +5,6 @@ import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import me.cortex.voxy.common.Logger;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -18,6 +17,7 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import me.cortex.voxy.common.platform.PlatformAccess;
 
 public class Serialization {
     public static final Set<Class<?>> CONFIG_TYPES = new HashSet<>();
@@ -95,7 +95,7 @@ public class Serialization {
         Map<Class<?>, GsonConfigSerialization<?>> serializers = new HashMap<>();
 
         Set<String> clazzs = new LinkedHashSet<>();
-        var path = VoxyCommon.getPlatformUtil().getModRootPath("voxy");
+        var path = PlatformAccess.get().getModRootPath("voxy");
         if (path != null) {
             clazzs.addAll(collectAllClasses(path, BASE_SEARCH_PACKAGE));
         }
@@ -103,7 +103,7 @@ public class Serialization {
         int count = 0;
         outer:
         for (var clzName : clazzs) {
-            if (VoxyCommon.IS_DEDICATED_SERVER&&clzName.startsWith("me.cortex.voxy.client")) {
+            if (PlatformAccess.IS_DEDICATED_SERVER&&clzName.startsWith("me.cortex.voxy.client")) {
                 continue;//Dont load stuff from client path when were on a dedicated server
             }
             if (!clzName.toLowerCase(Locale.ROOT).contains("config")) {

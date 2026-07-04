@@ -21,6 +21,7 @@ import java.util.List;
 
 import static me.cortex.voxy.common.world.WorldEngine.MAX_LOD_LAYER;
 import static me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_BLOCK_BIT;
+import me.cortex.voxy.common.VoxyFlags;
 
 
 //TODO FIXME: CIRTICAL ISSUE: if a node is a top level section and is empty, when a child is tried to be made it explodes
@@ -30,7 +31,7 @@ import static me.cortex.voxy.common.world.WorldEngine.UPDATE_TYPE_BLOCK_BIT;
 
 
 public class NodeManager {
-    private static final boolean VERIFY_NODE_MANAGER_OPERATIONS = true;//VoxyCommon.isVerificationFlagOn("nodeManager");
+    private static final boolean VERIFY_NODE_MANAGER_OPERATIONS = true;//VoxyFlags.isVerificationFlagOn("nodeManager");
     //Assumptions:
     // all nodes have children (i.e. all nodes have at least one child existence bit set at all times)
     // leaf nodes always contain geometry (empty geometry counts as geometry (it just doesnt take any memory to store))

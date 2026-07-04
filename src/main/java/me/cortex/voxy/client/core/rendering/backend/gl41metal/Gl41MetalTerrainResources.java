@@ -13,9 +13,9 @@ import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.common.world.WorldSection;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.block.state.BlockState;
+import me.cortex.voxy.common.VoxyFlags;
 
 final class Gl41MetalTerrainResources implements AutoCloseable {
   private static final int MAX_RESIDENT_SECTIONS =
@@ -75,7 +75,7 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
       minSec = level.getMinSection() >> 5;
       maxSec = (level.getMaxSection() - 1) >> 5;
     }
-    if (VoxyCommon.IS_MINE_IN_ABYSS) {
+    if (VoxyFlags.IS_MINE_IN_ABYSS) {
       minSec = -8;
       maxSec = 7;
     }

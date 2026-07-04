@@ -1,13 +1,13 @@
 package me.cortex.voxy.client.core.rendering.building;
 
 import me.cortex.voxy.common.util.MemoryBuffer;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 
 import java.util.Arrays;
+import me.cortex.voxy.common.VoxyFlags;
 
 //TODO: also have an AABB size stored
 public final class BuiltSection {
-    public static final boolean VERIFY_BUILT_SECTION_OFFSETS = VoxyCommon.isVerificationFlagOn("verifyBuiltSectionOffsets");
+    public static final boolean VERIFY_BUILT_SECTION_OFFSETS = VoxyFlags.isVerificationFlagOn("verifyBuiltSectionOffsets");
     public final long position;
     public final byte childExistence;
     public final int aabb;

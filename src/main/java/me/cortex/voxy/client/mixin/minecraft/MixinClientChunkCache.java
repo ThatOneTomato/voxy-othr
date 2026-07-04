@@ -3,7 +3,6 @@ package me.cortex.voxy.client.mixin.minecraft;
 import me.cortex.voxy.client.ICheekyClientChunkCache;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.common.world.service.VoxelIngestService;
-import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -16,11 +15,12 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import me.cortex.voxy.common.platform.PlatformAccess;
 
 @Mixin(ClientChunkCache.class)
 public class MixinClientChunkCache implements ICheekyClientChunkCache {
     @Unique
-    private static final boolean BOBBY_INSTALLED = VoxyCommon.getPlatformUtil().isModLoaded("bobby");
+    private static final boolean BOBBY_INSTALLED = PlatformAccess.get().isModLoaded("bobby");
 
     @Shadow
     private volatile ClientChunkCache.Storage storage;

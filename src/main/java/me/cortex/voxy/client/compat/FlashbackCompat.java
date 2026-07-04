@@ -1,14 +1,17 @@
 package me.cortex.voxy.client.compat;
 
-import me.cortex.voxy.commonImpl.VoxyCommon;
-
 import java.nio.file.Path;
+import me.cortex.voxy.common.platform.PlatformAccess;
 
 public class FlashbackCompat {
-    public static final boolean FLASHBACK_INSTALLED = VoxyCommon.getPlatformUtil().isModLoaded("flashback");
+    public static final boolean FLASHBACK_INSTALLED = PlatformAccess.get().isModLoaded("flashback");
 
     public static Path getReplayStoragePath() {
-        // Flashback is fabric-only; the platform implementation returns null elsewhere.
-        return VoxyCommon.getPlatformUtil().getReplayStoragePath(FLASHBACK_INSTALLED);
+        // FlashbackCompatImpl is a same-FQN dual implementation per loader source set;
+        // flashback is fabric-only so the neoforge implementation always returns null.
+        if (!FLASHBACK_INSTALLED) {
+            return null;
+        }
+        return FlashbackCompatImpl.getReplayStoragePath();
     }
 }
