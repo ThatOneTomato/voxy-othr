@@ -1,0 +1,245 @@
+plugins {
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+
+def isInGHA = rootProject.ext.isInGHA
+def isMacOsHost = rootProject.ext.isMacOsHost
+
+version = "${project.mod_version}+${project.minecraft_version}-neoforge"
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
+    maven { url = "https://maven.shedaniel.me/" }
+    maven { url = "https://maven.terraformersmc.com/releases/" }
+
+    exclusiveContent {
+        forRepository {
+            ivy {
+                name = "github"
+                url = "https://github.com/"
+                patternLayout {
+                    artifact '/[organisation]/[module]/releases/download/[revision]/[module]-[revision]-[classifier].[ext]'
+                }
+                metadataSources {
+                    artifact()
+                }
+            }
+        }
+        filter {
+            includeModuleByRegex("[^\\.]+", "nvidium")
+        }
+    }
+}
+
+// Shared core lives in the repository root; loader glue lives in src/neoforge.
+sourceSets {
+    main {
+        java {
+            srcDir rootProject.file('src/main/java')
+            srcDir rootProject.file('src/neoforge/java')
+        }
+        resources {
+            srcDir rootProject.file('src/main/resources')
+            srcDir rootProject.file('src/neoforge/resources')
+        }
+    }
+}
+
+def buildtime = {System.currentTimeSeconds()}
+
+processResources {
+    def time = buildtime()
+    def hash = rootProject.ext.gitCommitHash()
+    def version = project.version
+
+    inputs.properties("version": version, "commit": hash, "buildtime": time)
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand "version": version, "commit": hash, "buildtime": time, "minecraft": project.minecraft_version
+    }
+
+    if (isMacOsHost) {
+        dependsOn rootProject.tasks.named('compileGl41MetalNative')
+        dependsOn rootProject.tasks.named('compileGl41MetalShaders')
+
+        from(rootProject.ext.gl41MetalNativeDir) {
+            include 'libvoxy_gl41metal.dylib'
+            into 'natives/macos'
+        }
+        from(rootProject.ext.gl41MetalShaderDir) {
+            include 'voxy_gl41metal.metallib'
+            into 'natives/macos/gl41metal'
+        }
+    }
+}
+
+neoForge {
+    version = project.neoforge_version
+
+    accessTransformers.from(rootProject.file('src/neoforge/resources/META-INF/accesstransformer.cfg'))
+    validateAccessTransformers = true
+
+    runs {
+        client {
+            client()
+            gameDirectory = rootProject.file('run')
+
+            rootProject.ext.voxyRunProperties().each { key, value ->
+                systemProperty key, value
+            }
+        }
+        server {
+            server()
+            gameDirectory = rootProject.file('run')
+        }
+    }
+
+    mods {
+        voxy {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+// Dependencies that are bundled into the released jar via jarJar and are needed at dev runtime.
+def shadedDependenciesConfig = configurations.create('shadedDependencies') {
+    canBeConsumed = false
+    canBeResolved = true
+    transitive = false
+}
+
+project.ext.lwjglVersion = "3.3.3"
+
+dependencies {
+    // Sodium 0.6.13 ships a normal neoforge mod jar on Modrinth with classes at the root,
+    // so it is usable both for compiling and as a dev runtime mod.
+    implementation "maven.modrinth:sodium:mc1.21.1-0.6.13-neoforge"
+
+    implementation "maven.modrinth:lithium:mc1.21.1-0.15.0-neoforge"
+
+    compileOnly "drouarb:nvidium:0.4.1-beta9:1.21-1.21.1@jar"
+
+    compileOnly "maven.modrinth:iris:1.8.8+1.21.1-neoforge"
+    if (!isInGHA) {
+        runtimeOnly "maven.modrinth:iris:1.8.8+1.21.1-neoforge"
+        runtimeOnly "io.github.douira:glsl-transformer:2.0.1"
+        runtimeOnly "org.anarres:jcpp:1.4.14"
+    }
+
+    compileOnly "maven.modrinth:sodium-extra:mc1.21.1-0.6.0+neoforge"
+
+    compileOnly "maven.modrinth:chunky:1.4.23-neoforge"
+
+    compileOnly "maven.modrinth:vivecraft:1.21.9-1.3.2-neoforge"
+
+    // Flashback is fabric-only; shared compat code compiles against its classes but only
+    // touches them behind isModLoaded("flashback") checks.
+    compileOnly "maven.modrinth:flashback:rNCr1Rbs"
+
+    implementation platform("org.lwjgl:lwjgl-bom:$lwjglVersion")
+    implementation "org.lwjgl:lwjgl"
+    implementation "org.lwjgl:lwjgl-lmdb:$lwjglVersion"
+    implementation "org.lwjgl:lwjgl-zstd:$lwjglVersion"
+    runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-windows"
+    runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-linux"
+    runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-macos"
+    runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-macos-arm64"
+
+    implementation 'redis.clients:jedis:5.1.0'
+    implementation 'org.rocksdb:rocksdbjni:10.2.1'
+    implementation 'org.apache.commons:commons-pool2:2.12.0'
+    implementation 'org.lz4:lz4-java:1.8.0'
+    implementation 'org.tukaani:xz:1.10'
+    runtimeOnly 'org.xerial:sqlite-jdbc:3.49.1.0'
+
+    jarJar 'redis.clients:jedis:5.1.0'
+    jarJar 'org.rocksdb:rocksdbjni:10.2.1'
+    jarJar 'org.apache.commons:commons-pool2:2.12.0'
+    jarJar 'org.lz4:lz4-java:1.8.0'
+    jarJar 'org.tukaani:xz:1.10'
+    jarJar 'org.xerial:sqlite-jdbc:3.49.1.0'
+
+    // lmdb/zstd LWJGL extensions are not part of the vanilla LWJGL distribution, so shade
+    // their classes and natives directly into the jar (mirrors the fabric include() set).
+    shadedDependencies "org.lwjgl:lwjgl-lmdb:$lwjglVersion"
+    shadedDependencies "org.lwjgl:lwjgl-zstd:$lwjglVersion"
+    shadedDependencies "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-windows"
+    shadedDependencies "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-windows"
+    shadedDependencies "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-linux"
+    shadedDependencies "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-linux"
+    shadedDependencies "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-macos"
+    shadedDependencies "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-macos"
+    shadedDependencies "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-macos-arm64"
+    shadedDependencies "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-macos-arm64"
+}
+
+// Dev runs don't receive the shaded libraries on their classpath; the moddev
+// `additionalRuntimeClasspath` configuration is created when runs are registered.
+afterEvaluate {
+    [
+        'redis.clients:jedis:5.1.0',
+        'org.rocksdb:rocksdbjni:10.2.1',
+        'org.apache.commons:commons-pool2:2.12.0',
+        'org.lz4:lz4-java:1.8.0',
+        'org.tukaani:xz:1.10',
+        'org.xerial:sqlite-jdbc:3.49.1.0',
+        "org.lwjgl:lwjgl-lmdb:$lwjglVersion",
+        "org.lwjgl:lwjgl-zstd:$lwjglVersion",
+        "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-macos",
+        "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-macos",
+        "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-macos-arm64",
+        "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-macos-arm64",
+        "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-linux",
+        "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-linux",
+        "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-windows",
+        "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-windows",
+    ].each { dependencies.add('additionalRuntimeClasspath', it) }
+}
+
+def targetJavaVersion = 21
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = "UTF-8"
+    it.options.release = targetJavaVersion
+    it.options.deprecation = true
+}
+
+java {
+    def javaVersion = JavaVersion.toVersion(targetJavaVersion)
+    if (JavaVersion.current() < javaVersion) {
+        toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+    }
+}
+
+jar {
+    from(rootProject.file("LICENSE.md")) {
+        rename { "${it}_${project.archives_base_name}"}
+    }
+
+    from(shadedDependenciesConfig.collect { it.isDirectory() ? it : zipTree(it) }) {
+        exclude "**/module-info.class", "META-INF/MANIFEST.MF", "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA"
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    if (!isInGHA) {
+        def hash = rootProject.ext.gitCommitHash();
+        if (!hash.equals("<UnknownCommit>")) {
+            archiveClassifier.set(hash);
+        }
+    }
+}

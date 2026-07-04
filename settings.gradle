@@ -4,6 +4,23 @@ pluginManagement {
             name = 'Fabric'
             url = 'https://maven.fabricmc.net/'
         }
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = 'NeoForged'
+                    url = 'https://maven.neoforged.net/releases/'
+                }
+            }
+            filter {
+                includeGroupByRegex 'net\\.neoforged($|\\..*)'
+            }
+        }
         gradlePluginPortal()
+        mavenCentral()
     }
 }
+
+rootProject.name = 'voxy'
+
+include 'fabric'
+include 'neoforge'

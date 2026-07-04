@@ -1,54 +1,16 @@
-plugins {
-    id 'fabric-loom' version "1.11-SNAPSHOT"
-    id 'maven-publish'
-}
+// Root project: shared configuration and the gl41metal native/shader build tasks.
+// The actual mod jars are produced by the :fabric and :neoforge subprojects.
 
 def isInGHA = System.getenv("GITHUB_ACTIONS") == "true"
 def isMacOsHost = System.getProperty("os.name").toLowerCase().contains("mac")
 
+ext.isInGHA = isInGHA
+ext.isMacOsHost = isMacOsHost
+
 version = project.mod_version
 group = project.maven_group
 
-base {
-    archivesName = project.archives_base_name
-}
-
-repositories {
-    exclusiveContent {
-        forRepository {
-            maven {
-                name = "Modrinth"
-                url = "https://api.modrinth.com/maven"
-            }
-        }
-        filter {
-            includeGroup "maven.modrinth"
-        }
-    }
-    maven { url = "https://maven.shedaniel.me/" }
-    maven { url = "https://maven.terraformersmc.com/releases/" }
-
-    exclusiveContent {
-        forRepository {
-            ivy {
-                name = "github"
-                url = "https://github.com/"
-                patternLayout {
-                    artifact '/[organisation]/[module]/releases/download/[revision]/[module]-[revision]-[classifier].[ext]'
-                }
-                metadataSources {
-                    artifact()
-                }
-            }
-        }
-        filter {
-            includeModuleByRegex("[^\\.]+", "nvidium")
-        }
-    }
-}
-
-
-def gitCommitHash = { ->
+ext.gitCommitHash = { ->
     try {
         ExecOutput result = providers.exec {
             commandLine = ['git', 'rev-parse', 'HEAD']
@@ -66,147 +28,11 @@ def gitCommitHash = { ->
     }
 }
 
-def buildtime = {System.currentTimeSeconds()}
-
-processResources {
-    def time = buildtime()
-    def hash = gitCommitHash()
-    def version = project.version
-
-    inputs.properties("version": version, "commit": hash, "buildtime": time)
-    filesMatching("fabric.mod.json") {
-        expand "version": version, "commit": hash, "buildtime": time
-    }
-}
-
-loom {
-    accessWidenerPath = file("src/main/resources/voxy.accesswidener")
-
-    runs {
-        client {
-            // Pass the render backend selection through to the game JVM (auto/gl46/gl41metal)
-            property 'voxy.renderBackend', System.getProperty('voxy.renderBackend', 'auto')
-
-            // GL41Metal backend tunables/debug switches (see Gl41MetalConfig)
-            [
-                'voxy.gl41metal.slotCount'            : '3',
-                'voxy.gl41metal.waitTimeoutMs'        : '0',
-                'voxy.gl41metal.visibleComposite'     : 'true',
-                'voxy.gl41metal.residencyMaxSections' : '262144',
-                'voxy.gl41metal.geometryCapacityMb'   : '256',
-                'voxy.gl41metal.uploadModelAtlas'     : 'true',
-                'voxy.gl41metal.maxNodes'             : '2097152',
-                'voxy.gl41metal.maxTraversalQueue'    : '200000',
-                'voxy.gl41metal.maxTraversalRequests' : '1024',
-                'voxy.gl41metal.maxWorklistItems'     : '400000',
-                'voxy.gl41metal.dumpShaders'          : 'false',
-                'voxy.gl41metal.manualDepthMask'      : 'true',
-                'voxy.gl41metal.boundVerticalMargin'  : '1',
-                'voxy.gl41metal.boundHorizontalMargin': '0',
-                'voxy.gl41metal.boundAddDelayFrames'  : '1',
-                'voxy.gl41metal.meshBatchSize'        : '32',
-                'voxy.fluidBridgeWalls'               : 'true',
-            ].each { key, defaultValue ->
-                property key, System.getProperty(key, defaultValue)
-            }
-        }
-    }
-}
-
-def modRuntimeOnlyMsk = {arg->}
-if (!isInGHA) {
-    modRuntimeOnlyMsk = { arg ->
-        dependencies {
-            modRuntimeOnly(arg)
-        }
-    }
-}
-
-dependencies {
-    // To change the versions see the gradle.properties file
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-
-    modRuntimeOnlyMsk(fabricApi.module("fabric-api-base", project.fabric_api_version))
-    modRuntimeOnlyMsk(fabricApi.module("fabric-rendering-fluids-v1", project.fabric_api_version))
-    modRuntimeOnlyMsk(fabricApi.module("fabric-resource-loader-v0", project.fabric_api_version))
-    modRuntimeOnlyMsk(fabricApi.module("fabric-command-api-v2", project.fabric_api_version))
-
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-
-    //TODO: this is to eventually not need sodium installed as atm its just used for parsing shaders
-    modRuntimeOnlyMsk "maven.modrinth:sodium:mc1.21.1-0.6.13-fabric"
-    modCompileOnly "maven.modrinth:sodium:mc1.21.1-0.6.13-fabric"
-
-    modImplementation("maven.modrinth:lithium:mc1.21.1-0.15.0-fabric")
-
-    modRuntimeOnlyMsk "drouarb:nvidium:0.4.1-beta9:1.21-1.21.1@jar"
-    modCompileOnly "drouarb:nvidium:0.4.1-beta9:1.21-1.21.1@jar"
-
-    modCompileOnly("maven.modrinth:modmenu:11.0.3")
-    modRuntimeOnlyMsk("maven.modrinth:modmenu:11.0.3")
-
-    // Note: no 1.8.12 fabric build exists (reference used 1.8.12 neoforge); 1.8.8 is the newest
-    // fabric release compatible with Sodium 0.6.x.
-    modCompileOnly("maven.modrinth:iris:1.8.8+1.21.1-fabric")
-    modRuntimeOnlyMsk("maven.modrinth:iris:1.8.8+1.21.1-fabric")
-    // iris needs these for some reason
-    modRuntimeOnlyMsk("io.github.douira:glsl-transformer:2.0.1")
-    modRuntimeOnlyMsk("org.anarres:jcpp:1.4.14")
-
-    //modCompileOnly("maven.modrinth:starlight:1.1.3+1.20.4")
-
-    //modCompileOnly("maven.modrinth:immersiveportals:v5.1.7-mc1.20.4")
-
-    modCompileOnly("maven.modrinth:sodium-extra:mc1.21.1-0.6.0+fabric")
-    modRuntimeOnlyMsk("maven.modrinth:sodium-extra:mc1.21.1-0.6.0+fabric")
-
-    modCompileOnly("maven.modrinth:chunky:1.4.23-fabric")
-    modRuntimeOnlyMsk("maven.modrinth:chunky:1.4.23-fabric")
-
-    modRuntimeOnlyMsk("maven.modrinth:spark:1.10.152-fabric")
-    modRuntimeOnlyMsk("maven.modrinth:fabric-permissions-api:0.3.3")
-    //modRuntimeOnly("maven.modrinth:nsight-loader:1.2.0")
-
-    //modImplementation('io.github.douira:glsl-transformer:2.0.1')
-
-    modCompileOnly("maven.modrinth:vivecraft:1.21.9-1.3.2-fabric")
-
-    modCompileOnly("maven.modrinth:flashback:rNCr1Rbs")
-}
-
-
-def targetJavaVersion = 21
-tasks.withType(JavaCompile).configureEach {
-    it.options.encoding = "UTF-8"
-    it.options.release = targetJavaVersion
-    it.options.deprecation = true
-}
-
-java {
-    def javaVersion = JavaVersion.toVersion(targetJavaVersion)
-    if (JavaVersion.current() < javaVersion) {
-        toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
-    }
-
-    // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-    // if it is present.
-    // If you remove this line, sources will not be generated.
-
-
-    //withSourcesJar()
-}
-
-jar {
-    from("LICENSE") {
-        rename { "${it}_${project.archives_base_name}"}
-    }
-}
-
 def gl41MetalNativeDir = layout.buildDirectory.dir("gl41metal-native")
 def gl41MetalShaderDir = layout.buildDirectory.dir("gl41metal-shaders")
+
+ext.gl41MetalNativeDir = gl41MetalNativeDir
+ext.gl41MetalShaderDir = gl41MetalShaderDir
 
 tasks.register('compileGl41MetalNative', Exec) {
     description = 'Compiles the macOS GL41Metal JNI library'
@@ -277,137 +103,32 @@ tasks.register('compileGl41MetalShaders', Exec) {
     }
 }
 
-processResources {
-    if (isMacOsHost) {
-        dependsOn 'compileGl41MetalNative'
-        dependsOn 'compileGl41MetalShaders'
-
-        from(gl41MetalNativeDir) {
-            include 'libvoxy_gl41metal.dylib'
-            into 'natives/macos'
-        }
-        from(gl41MetalShaderDir) {
-            include 'voxy_gl41metal.metallib'
-            into 'natives/macos/gl41metal'
-        }
+// Shared JVM system properties for dev runs (render backend selection + gl41metal tunables,
+// see Gl41MetalConfig). Consumed by both loader subprojects' run configurations.
+ext.voxyRunProperties = {
+    def props = [
+        'voxy.renderBackend': System.getProperty('voxy.renderBackend', 'auto'),
+    ]
+    [
+        'voxy.gl41metal.slotCount'            : '3',
+        'voxy.gl41metal.waitTimeoutMs'        : '0',
+        'voxy.gl41metal.visibleComposite'     : 'true',
+        'voxy.gl41metal.residencyMaxSections' : '262144',
+        'voxy.gl41metal.geometryCapacityMb'   : '256',
+        'voxy.gl41metal.uploadModelAtlas'     : 'true',
+        'voxy.gl41metal.maxNodes'             : '2097152',
+        'voxy.gl41metal.maxTraversalQueue'    : '200000',
+        'voxy.gl41metal.maxTraversalRequests' : '1024',
+        'voxy.gl41metal.maxWorklistItems'     : '400000',
+        'voxy.gl41metal.dumpShaders'          : 'false',
+        'voxy.gl41metal.manualDepthMask'      : 'true',
+        'voxy.gl41metal.boundVerticalMargin'  : '1',
+        'voxy.gl41metal.boundHorizontalMargin': '0',
+        'voxy.gl41metal.boundAddDelayFrames'  : '1',
+        'voxy.gl41metal.meshBatchSize'        : '32',
+        'voxy.fluidBridgeWalls'               : 'true',
+    ].each { key, defaultValue ->
+        props[key] = System.getProperty(key, defaultValue)
     }
-}
-
-tasks.matching { it.name == 'runClient' }.configureEach {
-    if (isMacOsHost) {
-        dependsOn 'compileGl41MetalNative'
-        dependsOn 'compileGl41MetalShaders'
-    }
-}
-
-
-
-tasks.register('makeExcludedRocksDB', Zip) {
-    archiveExtension.set("jar")
-    entryCompression = ZipEntryCompression.STORED
-    destinationDirectory.set temporaryDir
-
-    dependsOn configurations.includeInternal
-
-    def files = configurations.includeInternal.incoming.getArtifacts().getArtifactFiles().filter {
-        it.name.startsWith('rocksdb')
-    }
-    
-    from {->zipTree(files.first())}
-    archiveFileName.set(providers.provider{files.first().name})
-
-    exclude {
-        def file = it.name
-        // Keep the Apple-silicon macOS native: this fork's gl41metal backend targets arm64 Macs,
-        // and RocksDB's NativeLibraryLoader hard-fails when its platform jnilib is missing.
-        if (file.contains("osx-arm64")) {
-            return false
-        }
-        if (file.endsWith(".jnilib")) {
-            return true
-        }
-        if (!file.endsWith(".so")) {
-            return false
-        }
-        return ["osx", "linux32", "musl", "s390x", "riscv64", "ppc64le", "aarch64"].any(file::contains)
-    }
-}
-
-processIncludeJars {
-    outputs.cacheIf {true}
-
-    dependsOn makeExcludedRocksDB
-    jars = jars.filter {!it.name.startsWith('rocksdb')}
-    jars.from(makeExcludedRocksDB)
-}
-
-remapJar {
-    doFirst {
-        delete fileTree(getDestinationDirectory().get())
-    }
-
-    if (!isInGHA) {
-        def hash = gitCommitHash();
-        if (!hash.equals("<UnknownCommit>")) {
-            archiveClassifier.set(hash);
-        }
-    }
-}
-
-project.ext.lwjglVersion = "3.3.3"
-project.ext.lwjglNatives = "natives-windows"
-
-repositories {
-    mavenCentral()
-}
-
-
-dependencies {
-    implementation platform("org.lwjgl:lwjgl-bom:$lwjglVersion")
-
-    implementation "org.lwjgl:lwjgl"
-    include(implementation "org.lwjgl:lwjgl-lmdb")
-    include(implementation "org.lwjgl:lwjgl-zstd")
-    runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-windows"
-    runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-linux"
-    runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-macos"
-    runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-macos-arm64"
-    include(runtimeOnly "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-windows")
-    include(runtimeOnly "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-windows")
-    include(runtimeOnly "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-linux")
-    include(runtimeOnly "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-linux")
-    include(runtimeOnly "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-macos")
-    include(runtimeOnly "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-macos")
-    include(runtimeOnly "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-macos-arm64")
-    include(runtimeOnly "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-macos-arm64")
-
-    include(implementation 'redis.clients:jedis:5.1.0')
-    include(implementation('org.rocksdb:rocksdbjni:10.2.1'))
-    include(implementation 'org.apache.commons:commons-pool2:2.12.0')
-    include(implementation 'org.lz4:lz4-java:1.8.0')
-    include(implementation('org.tukaani:xz:1.10'))
-
-    if (true) {
-        if (!isInGHA) {
-            minecraftRuntimeLibraries('org.xerial:sqlite-jdbc:3.49.1.0')
-        }
-    } else {
-        include(implementation('org.xerial:sqlite-jdbc:3.49.1.0'))
-    }
-    //implementation 'org.rocksdb:rocksdbjni:8.10.0'
-    //implementation 'redis.clients:jedis:5.1.0'
-}
-
-if (!isInGHA) {
-    repositories {
-        maven {
-            url = "https://pkgs.dev.azure.com/djtheredstoner/DevAuth/_packaging/public/maven/v1"
-        }
-    }
-
-    dependencies {
-        modRuntimeOnly('me.djtheredstoner:DevAuth-fabric:1.1.0') {
-            exclude group: 'net.fabricmc', module: 'fabric-loader'
-        }
-    }
+    return props
 }
