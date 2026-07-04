@@ -1,4 +1,6 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain;
+
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import java.util.Arrays;
@@ -17,7 +19,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.block.state.BlockState;
 import me.cortex.voxy.common.VoxyFlags;
 
-final class Gl41MetalTerrainResources implements AutoCloseable {
+public final class TerrainResources implements AutoCloseable {
   private static final int MAX_RESIDENT_SECTIONS =
       readInt("voxy.gl41metal.residencyMaxSections", 1 << 18, 1024, 1 << 20);
   private static final long GEOMETRY_CAPACITY_BYTES =
@@ -36,7 +38,7 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
       readInt("voxy.gl41metal.meshBatchSize", 32, 16, 64);
 
   private final WorldEngine world;
-  private final Gl41MetalMaterialStore materialStore;
+  private final MaterialStore materialStore;
   private final ModelBakerySubsystem modelService;
   private final RenderGenerationService renderGen;
   private final CpuNodeSyncHost nodeSyncHost;
@@ -46,13 +48,13 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
   private boolean nativeResourcesCreated;
   private boolean closed;
   private long validationRuns;
-  private Gl41MetalTerrainStats lastStats = Gl41MetalTerrainStats.fromNative(new long[0]);
+  private TerrainStats lastStats = TerrainStats.fromNative(new long[0]);
   private Object2IntMap<BlockState> irisBlockStateMapping;
   private boolean loggedFirstValidation;
 
-  Gl41MetalTerrainResources(BackendContext context) {
+  public TerrainResources(BackendContext context) {
     this.world = context.world();
-    this.materialStore = new Gl41MetalMaterialStore();
+    this.materialStore = new MaterialStore();
     this.modelService = new ModelBakerySubsystem(this.world.getMapper(), this.materialStore);
     this.renderGen =
         new RenderGenerationService(
@@ -87,17 +89,17 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
     Logger.info("Created GL41Metal Metal LOD/culling worklist resources");
   }
 
-  void tick(RenderFrameContext frameContext, long nativeHandle) {
+  public void tick(RenderFrameContext frameContext, long nativeHandle) {
     this.syncIrisBlockStateMapping();
     this.ensureNativeResources(nativeHandle);
     this.renderDistanceTracker.setCenterAndProcess(frameContext.cameraX(), frameContext.cameraZ());
     this.modelService.tick(100_000_000L);
     this.materialStore.drainUploads(nativeHandle);
-    this.nodeSyncHost.drain(Gl41MetalNative.pollTraversalRequests(nativeHandle), this.nativeSink);
+    this.nodeSyncHost.drain(NativeBindings.pollTraversalRequests(nativeHandle), this.nativeSink);
     this.runValidation(nativeHandle);
   }
 
-  void onChunkTrackerReset() {
+  public void onChunkTrackerReset() {
     // Sodium rebuilds its RenderSectionManager (firing this hook) on world load AND on every
     // vanilla render-distance change. GL41Metal distant residency is keyed by Voxy 32-block
     // WorldSection ids and driven entirely by WorldEngine dirty events plus the Metal request
@@ -109,7 +111,7 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
     // recreate the whole backend, which provides a genuine fresh start.
   }
 
-  void onSectionRenderStateChanged(long sectionPos, boolean present) {
+  public void onSectionRenderStateChanged(long sectionPos, boolean present) {
     // Sodium reports vanilla 16-block render-section lifecycle here. GL41Metal
     // terrain residency is keyed by Voxy 32-block WorldSection ids and is driven
     // by WorldEngine dirty events plus the Metal request queue. Clearing Metal
@@ -117,7 +119,7 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
     // empty distant gbuffer when chunks cross the vanilla render boundary.
   }
 
-  void addDebugInfo(java.util.List<String> debug) {
+  public void addDebugInfo(java.util.List<String> debug) {
     debug.add("Voxy GL41Metal terrain residency: " + this.lastStats.compact());
     debug.add(
         "Voxy GL41Metal terrain queues: models="
@@ -150,7 +152,7 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
       this.resetJavaResidencyState();
     }
     this.nativeHandle = handle;
-    Gl41MetalNative.createTerrainResources(
+    NativeBindings.createTerrainResources(
         handle,
         MAX_RESIDENT_SECTIONS,
         GEOMETRY_CAPACITY_BYTES,
@@ -159,9 +161,9 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
         MAX_TRAVERSAL_REQUESTS,
         MAX_WORKLIST_ITEMS,
         MAX_RASTER_QUADS,
-        Gl41MetalMaterialStore.FULL_ATLAS_UPLOADS ? Gl41MetalMaterialStore.ATLAS_WIDTH : 0,
-        Gl41MetalMaterialStore.FULL_ATLAS_UPLOADS ? Gl41MetalMaterialStore.ATLAS_HEIGHT : 0,
-        Gl41MetalMaterialStore.FULL_ATLAS_UPLOADS ? Gl41MetalMaterialStore.ATLAS_MIP_LEVELS : 0,
+        MaterialStore.FULL_ATLAS_UPLOADS ? MaterialStore.ATLAS_WIDTH : 0,
+        MaterialStore.FULL_ATLAS_UPLOADS ? MaterialStore.ATLAS_HEIGHT : 0,
+        MaterialStore.FULL_ATLAS_UPLOADS ? MaterialStore.ATLAS_MIP_LEVELS : 0,
         MESH_BATCH_SIZE);
     this.nativeResourcesCreated = true;
     Logger.info(
@@ -180,13 +182,13 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
             + ", rasterQuads="
             + MAX_RASTER_QUADS
             + ", atlas="
-            + Gl41MetalMaterialStore.ATLAS_WIDTH
+            + MaterialStore.ATLAS_WIDTH
             + "x"
-            + Gl41MetalMaterialStore.ATLAS_HEIGHT
+            + MaterialStore.ATLAS_HEIGHT
             + " mips="
-            + Gl41MetalMaterialStore.ATLAS_MIP_LEVELS
+            + MaterialStore.ATLAS_MIP_LEVELS
             + ", atlasUploads="
-            + (Gl41MetalMaterialStore.FULL_ATLAS_UPLOADS
+            + (MaterialStore.FULL_ATLAS_UPLOADS
                 ? "enabled"
                 : "disabled; textured quad raster will use material/debug colors only"));
   }
@@ -194,13 +196,13 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
   private void resetJavaResidencyState() {
     this.validationRuns = 0;
     this.loggedFirstValidation = false;
-    this.lastStats = Gl41MetalTerrainStats.fromNative(new long[0]);
+    this.lastStats = TerrainStats.fromNative(new long[0]);
   }
 
   private void runValidation(long handle) {
-    Gl41MetalNative.validateTerrainResources(handle);
+    NativeBindings.validateTerrainResources(handle);
     this.validationRuns++;
-    this.lastStats = Gl41MetalTerrainStats.fromNative(Gl41MetalNative.getTerrainStats(handle));
+    this.lastStats = TerrainStats.fromNative(NativeBindings.getTerrainStats(handle));
     if (!this.loggedFirstValidation && this.lastStats.validationResidentSections() > 0) {
       this.loggedFirstValidation = true;
       Logger.info("GL41Metal terrain Metal validation passed: " + this.lastStats.compact());
@@ -234,7 +236,7 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
     this.irisBlockStateMapping = mapping;
   }
 
-  void setRenderDistance(float renderDistance) {
+  public void setRenderDistance(float renderDistance) {
     // Reference passes the raw section render distance (no +1 ring, unlike Gl46RenderBackend);
     // ceil only converts this branch's fractional RD to the tracker's int domain.
     this.renderDistanceTracker.setRenderDistance((int) Math.ceil(renderDistance));
@@ -279,20 +281,20 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
   private final class NativeSyncSink implements CpuNodeSyncHost.Sink {
     @Override
     public void uploadNode(int nodeId, long nodeAddress) {
-      Gl41MetalNative.uploadNode(Gl41MetalTerrainResources.this.nativeHandle, nodeId, nodeAddress);
+      NativeBindings.uploadNode(TerrainResources.this.nativeHandle, nodeId, nodeAddress);
     }
 
     @Override
     public void uploadSectionMetadata(int sectionId, long metadataAddress) {
-      Gl41MetalNative.uploadSectionMetadata(
-          Gl41MetalTerrainResources.this.nativeHandle, sectionId, metadataAddress);
+      NativeBindings.uploadSectionMetadata(
+          TerrainResources.this.nativeHandle, sectionId, metadataAddress);
     }
 
     @Override
     public void uploadGeometry(
         int geometryElementOffset, long geometryAddress, long geometryBytes) {
-      Gl41MetalNative.uploadGeometry(
-          Gl41MetalTerrainResources.this.nativeHandle,
+      NativeBindings.uploadGeometry(
+          TerrainResources.this.nativeHandle,
           geometryElementOffset,
           geometryAddress,
           geometryBytes);
@@ -300,17 +302,17 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
 
     @Override
     public void removeSection(int sectionId) {
-      Gl41MetalNative.removeSection(Gl41MetalTerrainResources.this.nativeHandle, sectionId);
+      NativeBindings.removeSection(TerrainResources.this.nativeHandle, sectionId);
     }
 
     @Override
     public void addTopNode(int nodeId) {
-      Gl41MetalNative.addTopNode(Gl41MetalTerrainResources.this.nativeHandle, nodeId);
+      NativeBindings.addTopNode(TerrainResources.this.nativeHandle, nodeId);
     }
 
     @Override
     public void removeTopNode(int nodeId) {
-      Gl41MetalNative.removeTopNode(Gl41MetalTerrainResources.this.nativeHandle, nodeId);
+      NativeBindings.removeTopNode(TerrainResources.this.nativeHandle, nodeId);
     }
   }
 }

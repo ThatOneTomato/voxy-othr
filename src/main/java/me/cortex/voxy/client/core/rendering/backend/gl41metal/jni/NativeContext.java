@@ -1,6 +1,6 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.jni;
 
-final class Gl41MetalNativeContext implements AutoCloseable {
+public final class NativeContext implements AutoCloseable {
   private final long handle;
   private final int slotCount;
   private int width;
@@ -9,47 +9,47 @@ final class Gl41MetalNativeContext implements AutoCloseable {
   private final String deviceName;
   private boolean closed;
 
-  Gl41MetalNativeContext(int slotCount, int width, int height) {
-    this.handle = Gl41MetalNative.createContext(slotCount, width, height);
+  public NativeContext(int slotCount, int width, int height) {
+    this.handle = NativeBindings.createContext(slotCount, width, height);
     this.slotCount = slotCount;
     this.width = width;
     this.height = height;
-    this.textureTarget = Gl41MetalNative.getTextureTarget(this.handle);
-    this.deviceName = Gl41MetalNative.getDeviceName(this.handle);
+    this.textureTarget = NativeBindings.getTextureTarget(this.handle);
+    this.deviceName = NativeBindings.getDeviceName(this.handle);
   }
 
-  long handle() {
+  public long handle() {
     return this.handle;
   }
 
-  int slotCount() {
+  public int slotCount() {
     return this.slotCount;
   }
 
-  int width() {
+  public int width() {
     return this.width;
   }
 
-  int height() {
+  public int height() {
     return this.height;
   }
 
   // Resizes the screen-sized gbuffer/depth textures in place; the handle and all terrain resources
   // are preserved.
-  void resize(int width, int height) {
+  public void resize(int width, int height) {
     if (this.closed) {
       throw new IllegalStateException("Cannot resize a closed GL41Metal native context");
     }
-    Gl41MetalNative.resizeContext(this.handle, width, height);
+    NativeBindings.resizeContext(this.handle, width, height);
     this.width = width;
     this.height = height;
   }
 
-  int textureTarget() {
+  public int textureTarget() {
     return this.textureTarget;
   }
 
-  String deviceName() {
+  public String deviceName() {
     return this.deviceName;
   }
 
@@ -57,7 +57,7 @@ final class Gl41MetalNativeContext implements AutoCloseable {
   public void close() {
     if (!this.closed) {
       this.closed = true;
-      Gl41MetalNative.destroyContext(this.handle);
+      NativeBindings.destroyContext(this.handle);
     }
   }
 }

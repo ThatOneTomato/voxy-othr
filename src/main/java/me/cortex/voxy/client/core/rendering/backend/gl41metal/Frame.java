@@ -5,7 +5,7 @@ import me.cortex.voxy.client.core.rendering.backend.RenderFrame;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameContext;
 import org.joml.Matrix4f;
 
-record Gl41MetalFrame(
+public record Frame(
     RenderFrameContext context,
     long frameId,
     int writeSlot,

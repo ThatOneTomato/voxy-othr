@@ -1,5 +1,7 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal;
 
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
+
 import org.lwjgl.system.Platform;
 
 public final class Gl41MetalSupport {
@@ -9,10 +11,10 @@ public final class Gl41MetalSupport {
     if (Platform.get() != Platform.MACOSX) {
       return "macOS is required";
     }
-    if (!Gl41MetalNative.isLoaded()) {
-      return "native library unavailable: " + Gl41MetalNative.loadFailure();
+    if (!NativeBindings.isLoaded()) {
+      return "native library unavailable: " + NativeBindings.loadFailure();
     }
-    String nativeReason = Gl41MetalNative.getUnsupportedReason();
+    String nativeReason = NativeBindings.getUnsupportedReason();
     if (nativeReason != null && !nativeReason.isBlank()) {
       return nativeReason;
     }

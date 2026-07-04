@@ -1,5 +1,14 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal;
 
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantChunkBoundRenderer;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantGbufferSlot;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantTerrainBridge;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SharedDistantGbuffer;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SlotScheduler;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.TerrainResources;
+
 import java.util.List;
 import me.cortex.voxy.client.core.rendering.backend.BackendContext;
 import me.cortex.voxy.client.core.rendering.backend.RenderBackendId;
@@ -16,23 +25,23 @@ import org.joml.Matrix4f;
 
 public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   private final BackendContext context;
-  private final Gl41MetalConfig config;
-  private final MetalDistantRenderer metalRenderer;
-  private final Gl41MetalSlotScheduler slotScheduler;
-  private final GlDistantTerrainBridge bridge;
-  private final Gl41MetalFrameProfiler profiler = new Gl41MetalFrameProfiler();
+  private final Config config;
+  private final DistantRenderer metalRenderer;
+  private final SlotScheduler slotScheduler;
+  private final DistantTerrainBridge bridge;
+  private final FrameProfiler profiler = new FrameProfiler();
   // GL-only loaded-volume bound (P1): tracks the Sodium-loaded 16-block render sections and
   // produces
   // the per-frame far-boundary depth the bridge clips distant LOD against. Driven purely by
   // Sodium's
   // 16-block near-scene section signals; it changes NO Metal traversal/residency state (per
   // AGENTS.md).
-  private final Gl41MetalChunkBoundRenderer boundRenderer = new Gl41MetalChunkBoundRenderer();
+  private final DistantChunkBoundRenderer boundRenderer = new DistantChunkBoundRenderer();
   // The loaded-volume bound rasterized at the start of the current frame's sampleFrame, reused by
   // the held-slot translucent pass (sampleTranslucent) which runs later in the SAME frame with the
   // same camera/matrices.
   private LoadedVolumeBound currentBound = LoadedVolumeBound.DISABLED;
-  private final Gl41MetalTerrainResources terrainResources;
+  private final TerrainResources terrainResources;
   private RenderFrameMatrices lastFrameMatrices = RenderFrameMatrices.identity();
   private SharedDistantGbuffer gbuffer;
   private long nextFrameId;
@@ -46,16 +55,16 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   // matrix/uniform publishing), so holding it for the extra deferred passes is safe; we never call
   // waitCurrent twice on the same slot. -1 means nothing held.
   private int heldTranslucentSlot = -1;
-  private Gl41MetalFrame heldTranslucentFrame;
+  private Frame heldTranslucentFrame;
   private RenderFrameContext heldTranslucentContext;
 
   public Gl41MetalRenderBackend(BackendContext context) {
     this.context = context;
-    this.config = Gl41MetalConfig.fromSystemProperties();
-    this.metalRenderer = new MetalDistantRenderer();
-    this.slotScheduler = new Gl41MetalSlotScheduler(this.config.waitTimeoutMs());
-    this.bridge = new GlDistantTerrainBridge();
-    this.terrainResources = new Gl41MetalTerrainResources(context);
+    this.config = Config.fromSystemProperties();
+    this.metalRenderer = new DistantRenderer();
+    this.slotScheduler = new SlotScheduler(this.config.waitTimeoutMs());
+    this.bridge = new DistantTerrainBridge();
+    this.terrainResources = new TerrainResources(context);
     Logger.info(
         "Created Voxy GL41Metal shared texture backend with Metal LOD/culling and quad raster.");
   }
@@ -133,7 +142,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     this.profiler.recordTick(tTick);
 
     if (this.gbuffer != null) {
-      double metalGpuMs = Gl41MetalNative.getLastMetalGpuTimeMs(this.gbuffer.nativeHandle());
+      double metalGpuMs = NativeBindings.getLastMetalGpuTimeMs(this.gbuffer.nativeHandle());
       if (metalGpuMs > 0) {
         this.profiler.recordMetalGpuMs(metalGpuMs);
       }
@@ -145,10 +154,10 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
         this.loggedMissingMatrices = true;
         Logger.warn("GL41Metal skipped Metal submit because real frame matrices were unavailable");
       }
-      return new Gl41MetalFrame(context, this.nextFrameId++, -1, new Matrix4f(), new Matrix4f());
+      return new Frame(context, this.nextFrameId++, -1, new Matrix4f(), new Matrix4f());
     }
-    MetalDistantRenderer.FrameMatrices frameMatrices =
-        MetalDistantRenderer.computeFrameMatrices(context);
+    DistantRenderer.FrameMatrices frameMatrices =
+        DistantRenderer.computeFrameMatrices(context);
     this.lastFrameMatrices =
         new RenderFrameMatrices(
             frameMatrices.traversalMvp(),
@@ -173,7 +182,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     }
     this.profiler.recordMetalSubmit(tSubmit);
 
-    return new Gl41MetalFrame(
+    return new Frame(
         context, frameId, writeSlot, frameMatrices.drawMvp(), frameMatrices.vanillaDrawMvp());
   }
 
@@ -203,7 +212,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     if (frame == null) {
       return;
     }
-    if (!(frame instanceof Gl41MetalFrame gl41MetalFrame)) {
+    if (!(frame instanceof Frame gl41MetalFrame)) {
       throw new IllegalArgumentException(
           "Cannot render frame for backend " + frame.backendId() + " with GL41Metal backend");
     }
@@ -253,7 +262,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
               this.bridge.render(
                   renderContext,
                   slot,
-                  GlDistantTerrainBridge.irisJob(bridgePayload),
+                  DistantTerrainBridge.irisJob(bridgePayload),
                   gl41MetalFrame.drawMvp(),
                   gl41MetalFrame.vanillaDrawMvp());
           this.profiler.recordBridgeOpaque(tBridge);
@@ -282,13 +291,13 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       this.bridge.render(
           renderContext,
           slot,
-          GlDistantTerrainBridge.vanillaJob(renderContext, this.config.visibleComposite()),
+          DistantTerrainBridge.vanillaJob(renderContext, this.config.visibleComposite()),
           gl41MetalFrame.drawMvp(),
           gl41MetalFrame.vanillaDrawMvp());
       this.bridge.renderTranslucent(
           renderContext,
           slot,
-          GlDistantTerrainBridge.vanillaTranslucentJob(
+          DistantTerrainBridge.vanillaTranslucentJob(
               renderContext, this.config.visibleComposite()),
           gl41MetalFrame.drawMvp(),
           gl41MetalFrame.vanillaDrawMvp(),
@@ -322,7 +331,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
         this.bridge.renderTranslucent(
             renderContext,
             this.gbuffer.slot(slot),
-            GlDistantTerrainBridge.translucentJob(payload),
+            DistantTerrainBridge.translucentJob(payload),
             this.heldTranslucentFrame.drawMvp(),
             this.heldTranslucentFrame.vanillaDrawMvp(),
             this.currentBound);

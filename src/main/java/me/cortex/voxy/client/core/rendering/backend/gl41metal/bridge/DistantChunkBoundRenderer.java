@@ -1,4 +1,6 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge;
+
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
 
 import static org.lwjgl.opengl.GL11C.GL_BLEND;
 import static org.lwjgl.opengl.GL11C.GL_COLOR_WRITEMASK;
@@ -142,7 +144,7 @@ import org.lwjgl.system.MemoryUtil;
  *       vertex attribute ({@code aSectionCoord}) rather than fabric's SSBO; the unit cube corners
  *       are derived from {@code gl_VertexID} exactly like fabric's outline.vsh.
  *   <li>This renderer ONLY produces the shared bound texture. How the bound is CONSUMED rides the
- *       single existing occlusion divergence in {@link GlDistantTerrainBridge} (vanilla samples it
+ *       single existing occlusion divergence in {@link DistantTerrainBridge} (vanilla samples it
  *       in-shader; the strict Iris path feeds it into the stencil-mask pass), so the bound clip
  *       never adds a sampler to the budgeted Iris colour program.
  * </ul>
@@ -150,7 +152,7 @@ import org.lwjgl.system.MemoryUtil;
  * <p>Per AGENTS.md these 16-block Sodium signals must NOT touch Metal traversal/residency; this
  * renderer is purely a GL near-scene volume and changes no Metal state.
  */
-final class Gl41MetalChunkBoundRenderer implements AutoCloseable {
+public final class DistantChunkBoundRenderer implements AutoCloseable {
   // Unit cube corners are derived from gl_VertexID like voxy-fabric outline.vsh:
   //   corner = ivec3(id & 1, (id >> 2) & 1, (id >> 1) & 1) * 16
   // The 36 indices below (12 triangles) reference corners 0..7 of that mapping. Winding is
@@ -216,7 +218,7 @@ final class Gl41MetalChunkBoundRenderer implements AutoCloseable {
         }
         // aSectionCoord is the 16-block section position; only its XZ matters here (ensureInstanceData
         // collapses each loaded column to ONE instance, so the Y is a placeholder). uSecOrigin is the
-        // 32-block-aligned origin drawMvp projects relative to (see MetalDistantRenderer
+        // 32-block-aligned origin drawMvp projects relative to (see DistantRenderer
         // translateByNegativeCameraSubSection). The subtraction is exact in int and the result is a
         // small camera-relative value, so the float cast keeps full precision.
         ivec3 origin = aSectionCoord * 16 - uSecOrigin;
@@ -285,7 +287,7 @@ final class Gl41MetalChunkBoundRenderer implements AutoCloseable {
   // no voxy-fabric-style delayed REMOVAL here, on purpose. Fabric delays bound removal to mask its
   // on-demand GL46 LOD build window; gl41metal distant LOD is PERSISTENTLY resident (keyed by Voxy
   // 32-block WorldSection ids over the whole Voxy render distance, independent of the Sodium near
-  // distance - see Gl41MetalTerrainResources.onSectionRenderStateChanged). With distant already
+  // distance - see TerrainResources.onSectionRenderStateChanged). With distant already
   // resident, any removal delay would only keep the bound CLIPPING distant for ~200ms after Sodium
   // stopped drawing near water, opening a persistent gap band trailing the boundary while moving.
   // Mutated only on the render thread from the Sodium hooks; guarded for the rare off-thread
@@ -320,7 +322,7 @@ final class Gl41MetalChunkBoundRenderer implements AutoCloseable {
 
   private boolean initialised;
 
-  void addSection(long sectionPos) {
+  public void addSection(long sectionPos) {
     synchronized (this.sections) {
       if (this.sections.contains(sectionPos)) {
         return;
@@ -336,7 +338,7 @@ final class Gl41MetalChunkBoundRenderer implements AutoCloseable {
     }
   }
 
-  void removeSection(long sectionPos) {
+  public void removeSection(long sectionPos) {
     synchronized (this.sections) {
       this.pendingAdds.remove(sectionPos);
       if (this.sections.remove(sectionPos)) {
@@ -345,7 +347,7 @@ final class Gl41MetalChunkBoundRenderer implements AutoCloseable {
     }
   }
 
-  void reset() {
+  public void reset() {
     synchronized (this.sections) {
       this.pendingAdds.clear();
       if (!this.sections.isEmpty()) {
@@ -390,7 +392,7 @@ final class Gl41MetalChunkBoundRenderer implements AutoCloseable {
    * <p>Saves/restores the GL draw framebuffer, viewport and depth/cull/blend state it touches so
    * the caller's subsequent {@code StateSnapshot.capture()} still sees the host's depth func.
    */
-  LoadedVolumeBound render(
+  public LoadedVolumeBound render(
       Matrix4fc voxyMvp,
       double cameraX,
       double cameraY,

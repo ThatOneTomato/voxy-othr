@@ -1,7 +1,7 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain;
 
 /**
- * Per-frame result of {@link Gl41MetalChunkBoundRenderer}: a depth texture holding, per target
+ * Per-frame result of {@link DistantChunkBoundRenderer}: a depth texture holding, per target
  * pixel, the FAR boundary of the Sodium-loaded near-scene volume (vanilla NDC, produced by
  * rasterizing the loaded sections' AABBs with the farther-depth compare). The distant bridge clips
  * any distant fragment that lies NEARER than this boundary (i.e. inside the loaded volume), which
@@ -13,6 +13,6 @@ package me.cortex.voxy.client.core.rendering.backend.gl41metal;
  * texture is still a valid cleared depth attachment, but consumers skip the clip entirely so they
  * never sample a stale boundary.
  */
-record LoadedVolumeBound(int texture, int width, int height, boolean enabled) {
-  static final LoadedVolumeBound DISABLED = new LoadedVolumeBound(0, 0, 0, false);
+public record LoadedVolumeBound(int texture, int width, int height, boolean enabled) {
+  public static final LoadedVolumeBound DISABLED = new LoadedVolumeBound(0, 0, 0, false);
 }

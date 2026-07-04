@@ -5,7 +5,7 @@ using namespace gl41metal;
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_submitSynthetic(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_submitSynthetic(
     JNIEnv* env,
     jclass,
     jlong handle,

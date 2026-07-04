@@ -1,4 +1,4 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge;
 
 import java.util.Objects;
 import java.util.function.IntConsumer;
@@ -20,7 +20,7 @@ import java.util.function.LongConsumer;
  * and depth attachment it already has, and {@link #sourceDepthTextureId} is resolved from that
  * framebuffer at draw time.
  */
-record DistantBridgeJob(
+public record DistantBridgeJob(
     boolean ownFramebuffer,
     int sourceFramebuffer,
     int[] targetTextureIds,
@@ -46,13 +46,13 @@ record DistantBridgeJob(
     // this false; the translucent path samples the tgbuffer0/1 front-surface ABI and runs the
     // pack's
     // translucent patch into the translucent draw targets. See
-    // GlDistantTerrainBridge.renderTranslucent.
+    // DistantTerrainBridge.renderTranslucent.
     boolean translucent) {
   private static final Runnable NOOP = () -> {};
   private static final LongConsumer NOOP_UNIFORM_UPDATER = ptr -> {};
   private static final IntConsumer NOOP_PROGRAM_SETUP = program -> {};
 
-  DistantBridgeJob {
+  public DistantBridgeJob {
     targetTextureIds = targetTextureIds == null ? new int[0] : targetTextureIds.clone();
     shaderHeader = shaderHeader == null ? "" : shaderHeader;
     uniformUpdater = uniformUpdater == null ? NOOP_UNIFORM_UPDATER : uniformUpdater;

@@ -1,9 +1,9 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal;
 
-record Gl41MetalConfig(
+public record Config(
     int slotCount, int waitTimeoutMs, boolean visibleComposite, int meshBatchSize) {
-  static Gl41MetalConfig fromSystemProperties() {
-    return new Gl41MetalConfig(
+  static Config fromSystemProperties() {
+    return new Config(
         readInt("voxy.gl41metal.slotCount", 3, 2, 8),
         readInt("voxy.gl41metal.waitTimeoutMs", 0, 0, 100),
         readBoolean("voxy.gl41metal.visibleComposite", true),

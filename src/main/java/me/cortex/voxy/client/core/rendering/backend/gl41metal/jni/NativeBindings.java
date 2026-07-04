@@ -1,4 +1,4 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.jni;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -7,7 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import me.cortex.voxy.common.Logger;
 
-final class Gl41MetalNative {
+public final class NativeBindings {
   private static final String RESOURCE_PATH = "/natives/macos/libvoxy_gl41metal.dylib";
   private static final String SHADER_RESOURCE_PATH =
       "/natives/macos/gl41metal/voxy_gl41metal.metallib";
@@ -33,18 +33,18 @@ final class Gl41MetalNative {
     SHADER_LIBRARY_PATH = shaderLibraryPath;
   }
 
-  private Gl41MetalNative() {}
+  private NativeBindings() {}
 
-  static boolean isLoaded() {
+  public static boolean isLoaded() {
     return LOADED;
   }
 
-  static String loadFailure() {
+  public static String loadFailure() {
     return LOAD_FAILURE == null ? "none" : LOAD_FAILURE;
   }
 
   private static void loadLibrary() throws IOException {
-    try (InputStream stream = Gl41MetalNative.class.getResourceAsStream(RESOURCE_PATH)) {
+    try (InputStream stream = NativeBindings.class.getResourceAsStream(RESOURCE_PATH)) {
       if (stream != null) {
         Path extracted = Files.createTempFile("voxy_gl41metal", ".dylib");
         Files.copy(stream, extracted, StandardCopyOption.REPLACE_EXISTING);
@@ -66,7 +66,7 @@ final class Gl41MetalNative {
   }
 
   private static Path resolveShaderLibrary() throws IOException {
-    try (InputStream stream = Gl41MetalNative.class.getResourceAsStream(SHADER_RESOURCE_PATH)) {
+    try (InputStream stream = NativeBindings.class.getResourceAsStream(SHADER_RESOURCE_PATH)) {
       if (stream != null) {
         Path extracted = Files.createTempFile("voxy_gl41metal", ".metallib");
         Files.copy(stream, extracted, StandardCopyOption.REPLACE_EXISTING);
@@ -85,55 +85,55 @@ final class Gl41MetalNative {
     throw new IOException("missing " + SHADER_RESOURCE_PATH + " and " + DEV_SHADER_PATH);
   }
 
-  static native String getUnsupportedReason();
+  public static native String getUnsupportedReason();
 
-  static native long createContext(int slotCount, int width, int height, String shaderLibraryPath);
+  public static native long createContext(int slotCount, int width, int height, String shaderLibraryPath);
 
-  static long createContext(int slotCount, int width, int height) {
+  public static long createContext(int slotCount, int width, int height) {
     if (SHADER_LIBRARY_PATH == null) {
       throw new IllegalStateException("GL41Metal shader library was not loaded");
     }
     return createContext(slotCount, width, height, SHADER_LIBRARY_PATH.toString());
   }
 
-  static native void destroyContext(long handle);
+  public static native void destroyContext(long handle);
 
   // Resizes the per-slot screen-sized gbuffer/depth textures in place while preserving the same
   // context handle and all terrain/world/atlas resources. Used on viewport resize so distant LOD
   // residency is not wiped and re-streamed.
-  static native void resizeContext(long handle, int width, int height);
+  public static native void resizeContext(long handle, int width, int height);
 
-  static native String getDeviceName(long handle);
+  public static native String getDeviceName(long handle);
 
-  static native int getTextureTarget(long handle);
+  public static native int getTextureTarget(long handle);
 
-  static native double getLastMetalGpuTimeMs(long handle);
+  public static native double getLastMetalGpuTimeMs(long handle);
 
   // Distant gbuffer is 3 shared RGBA32F textures (see quad_raster.metal QuadFragmentOut):
   // gbuffer0 = uv/tile, gbuffer1 = depth/modelId/customId, gbuffer2 = packed albedo/light/tint
   // and face/flags/coverage. Three is the sampler-budget limit for the Iris bridge program.
-  static native int getGbuffer0Texture(long handle, int slot);
+  public static native int getGbuffer0Texture(long handle, int slot);
 
-  static native int getGbuffer1Texture(long handle, int slot);
+  public static native int getGbuffer1Texture(long handle, int slot);
 
-  static native int getGbuffer2Texture(long handle, int slot);
+  public static native int getGbuffer2Texture(long handle, int slot);
 
   // Translucent distant gbuffer is 3 further shared RGBA32F textures (see quad_raster.metal
   // TranslucentFragmentOut): tgbuffer0/1 carry the front-most translucent surface for strict pack
   // water shading, tgbufferAccum carries the back->front over-blended flat colour + alpha.
-  static native int getTgbuffer0Texture(long handle, int slot);
+  public static native int getTgbuffer0Texture(long handle, int slot);
 
-  static native int getTgbuffer1Texture(long handle, int slot);
+  public static native int getTgbuffer1Texture(long handle, int slot);
 
-  static native int getTgbufferAccumTexture(long handle, int slot);
+  public static native int getTgbufferAccumTexture(long handle, int slot);
 
-  static native int acquireFreeSlot(long handle);
+  public static native int acquireFreeSlot(long handle);
 
-  static native void submitSynthetic(long handle, int slot, long frameId);
+  public static native void submitSynthetic(long handle, int slot, long frameId);
 
   // ssaoMatricesAddress points at 48 contiguous floats (proj, invProj, modelView in JOML
   // column-major order, see SsaoUniformHost); ssaoSteps == 0 disables the distant SSAO pass.
-  static native void submitTraversal(
+  public static native void submitTraversal(
       long handle,
       int slot,
       long frameId,
@@ -151,13 +151,13 @@ final class Gl41MetalNative {
       long ssaoMatricesAddress,
       int ssaoSteps);
 
-  static native int waitCurrent(long handle, int currentSlot, int timeoutMs);
+  public static native int waitCurrent(long handle, int currentSlot, int timeoutMs);
 
-  static native void discardCurrentSlot(long handle, int slot);
+  public static native void discardCurrentSlot(long handle, int slot);
 
-  static native void releaseSampledSlot(long handle, int slot);
+  public static native void releaseSampledSlot(long handle, int slot);
 
-  static native void createTerrainResources(
+  public static native void createTerrainResources(
       long handle,
       int maxSections,
       long geometryCapacityBytes,
@@ -171,9 +171,9 @@ final class Gl41MetalNative {
       int atlasMipLevels,
       int meshBatchSize);
 
-  static native void clearTerrainResources(long handle);
+  public static native void clearTerrainResources(long handle);
 
-  static native void uploadModel(
+  public static native void uploadModel(
       long handle,
       int modelId,
       long modelAddress,
@@ -183,14 +183,14 @@ final class Gl41MetalNative {
       int renderLayer,
       int fallbackReason);
 
-  static native void uploadBiomeData(
+  public static native void uploadBiomeData(
       long handle,
       long colourAddress,
       long colourBytes,
       long modelBiomePairsAddress,
       long modelBiomePairsBytes);
 
-  static native void uploadSection(
+  public static native void uploadSection(
       long handle,
       int sectionId,
       long sectionPos,
@@ -201,24 +201,24 @@ final class Gl41MetalNative {
       long geometryAddress,
       long geometryBytes);
 
-  static native void removeSection(long handle, int sectionId);
+  public static native void removeSection(long handle, int sectionId);
 
-  static native void uploadNode(long handle, int nodeId, long nodeAddress);
+  public static native void uploadNode(long handle, int nodeId, long nodeAddress);
 
-  static native void uploadSectionMetadata(long handle, int sectionId, long metadataAddress);
+  public static native void uploadSectionMetadata(long handle, int sectionId, long metadataAddress);
 
-  static native void uploadGeometry(
+  public static native void uploadGeometry(
       long handle, int geometryElementOffset, long geometryAddress, long geometryBytes);
 
-  static native void addTopNode(long handle, int nodeId);
+  public static native void addTopNode(long handle, int nodeId);
 
-  static native void removeTopNode(long handle, int nodeId);
+  public static native void removeTopNode(long handle, int nodeId);
 
-  static native long[] pollTraversalRequests(long handle);
+  public static native long[] pollTraversalRequests(long handle);
 
-  static native void clearTraversalWorklist(long handle);
+  public static native void clearTraversalWorklist(long handle);
 
-  static native void validateTerrainResources(long handle);
+  public static native void validateTerrainResources(long handle);
 
-  static native long[] getTerrainStats(long handle);
+  public static native long[] getTerrainStats(long handle);
 }

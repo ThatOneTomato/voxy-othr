@@ -1,4 +1,4 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge;
 
 /**
  * One slot of the shared distant gbuffer. Metal renders distant terrain into 3 packed textures (see
@@ -31,7 +31,7 @@ package me.cortex.voxy.client.core.rendering.backend.gl41metal;
  *       accumulated alpha
  * </ul>
  */
-record DistantGbufferSlot(
+public record DistantGbufferSlot(
     int index,
     int textureTarget,
     int gbuffer0Texture,

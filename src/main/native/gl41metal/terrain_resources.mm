@@ -250,7 +250,7 @@ void clearTraversalScratch(FrameResources* frame, TerrainResources* terrain) {
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_createTerrainResources(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_createTerrainResources(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -402,7 +402,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_crea
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_clearTerrainResources(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_clearTerrainResources(
     JNIEnv* env,
     jclass,
     jlong handle) {
@@ -431,7 +431,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_clea
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uploadModel(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_uploadModel(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -555,7 +555,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uplo
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uploadBiomeData(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_uploadBiomeData(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -604,7 +604,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uplo
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uploadSection(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_uploadSection(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -671,7 +671,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uplo
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_removeSection(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_removeSection(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -699,7 +699,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_remo
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uploadNode(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_uploadNode(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -725,7 +725,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uplo
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uploadSectionMetadata(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_uploadSectionMetadata(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -751,7 +751,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uplo
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uploadGeometry(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_uploadGeometry(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -782,7 +782,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_uplo
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_addTopNode(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_addTopNode(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -809,7 +809,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_addT
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_removeTopNode(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_removeTopNode(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -829,7 +829,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_remo
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_pollTraversalRequests(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_pollTraversalRequests(
     JNIEnv* env,
     jclass,
     jlong handle) {
@@ -851,7 +851,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_poll
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_clearTraversalWorklist(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_clearTraversalWorklist(
     JNIEnv* env,
     jclass,
     jlong handle) {
@@ -870,7 +870,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_clea
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getTerrainStats(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTerrainStats(
     JNIEnv* env,
     jclass,
     jlong handle) {

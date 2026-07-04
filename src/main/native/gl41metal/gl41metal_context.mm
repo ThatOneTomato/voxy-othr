@@ -90,7 +90,7 @@ static id<MTLLibrary> loadShaderLibrary(JNIEnv* env, id<MTLDevice> device, jstri
 extern "C" {
 
 JNIEXPORT jstring JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getUnsupportedReason(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getUnsupportedReason(
     JNIEnv* env,
     jclass) {
   @autoreleasepool {
@@ -106,7 +106,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getU
 }
 
 JNIEXPORT jlong JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_createContext(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_createContext(
     JNIEnv* env,
     jclass,
     jint slotCount,
@@ -160,7 +160,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_crea
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_destroyContext(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_destroyContext(
     JNIEnv* env,
     jclass,
     jlong handle) {
@@ -183,7 +183,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_dest
 // handle means GL41Metal terrain residency survives window resizes instead of being wiped and
 // re-streamed every time the user drags the window edge.
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_resizeContext(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_resizeContext(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -238,7 +238,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_resi
 }
 
 JNIEXPORT jstring JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getDeviceName(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getDeviceName(
     JNIEnv* env,
     jclass,
     jlong handle) {
@@ -250,7 +250,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getD
 }
 
 JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getTextureTarget(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTextureTarget(
     JNIEnv* env,
     jclass,
     jlong handle) {
@@ -259,7 +259,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getT
 }
 
 JNIEXPORT jdouble JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getLastMetalGpuTimeMs(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getLastMetalGpuTimeMs(
     JNIEnv* env,
     jclass,
     jlong handle) {
@@ -275,7 +275,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getL
 // getters return the imported GL texture name for each; the Java DistantGbufferSlot mirrors
 // the same order.
 JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getGbuffer0Texture(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getGbuffer0Texture(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -286,7 +286,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getG
 }
 
 JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getGbuffer1Texture(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getGbuffer1Texture(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -297,7 +297,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getG
 }
 
 JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getGbuffer2Texture(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getGbuffer2Texture(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -311,7 +311,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getG
 // TranslucentFragmentOut): tgbuffer0/1 carry the front-most translucent surface for strict pack
 // water shading, tgbufferAccum carries the back->front over-blended flat colour + alpha.
 JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getTgbuffer0Texture(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTgbuffer0Texture(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -322,7 +322,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getT
 }
 
 JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getTgbuffer1Texture(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTgbuffer1Texture(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -333,7 +333,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getT
 }
 
 JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_getTgbufferAccumTexture(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTgbufferAccumTexture(
     JNIEnv* env,
     jclass,
     jlong handle,

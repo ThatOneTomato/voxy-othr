@@ -1,6 +1,6 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain;
 
-record Gl41MetalTerrainStats(
+public record TerrainStats(
     int residentSections,
     long geometryBytes,
     long uploadedSections,
@@ -33,13 +33,13 @@ record Gl41MetalTerrainStats(
     int rasterMissingModels,
     int rasterClippedQuads,
     int rasterWorkItems) {
-  static Gl41MetalTerrainStats fromNative(long[] values) {
+  static TerrainStats fromNative(long[] values) {
     if (values.length < 32) {
-      return new Gl41MetalTerrainStats(
+      return new TerrainStats(
           0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
           0, 0);
     }
-    return new Gl41MetalTerrainStats(
+    return new TerrainStats(
         (int) values[0],
         values[1],
         values[2],

@@ -1,4 +1,6 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge;
+
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 
 import static org.lwjgl.opengl.GL32C.GL_ALREADY_SIGNALED;
 import static org.lwjgl.opengl.GL32C.GL_CONDITION_SATISFIED;
@@ -14,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 import me.cortex.voxy.common.Logger;
 
-final class Gl41MetalSlotScheduler {
+public final class SlotScheduler {
   private final int waitTimeoutMs;
   private final Map<Integer, Long> retiringFences = new HashMap<>();
   private int submitted;
@@ -26,20 +28,20 @@ final class Gl41MetalSlotScheduler {
   private boolean loggedNoFreeSlot;
   private boolean loggedCurrentTimeout;
 
-  Gl41MetalSlotScheduler(int waitTimeoutMs) {
+  public SlotScheduler(int waitTimeoutMs) {
     this.waitTimeoutMs = waitTimeoutMs;
   }
 
-  int acquireWriteSlot(SharedDistantGbuffer gbuffer) {
+  public int acquireWriteSlot(SharedDistantGbuffer gbuffer) {
     this.retireCompletedSlots(gbuffer);
-    return Gl41MetalNative.acquireFreeSlot(gbuffer.nativeHandle());
+    return NativeBindings.acquireFreeSlot(gbuffer.nativeHandle());
   }
 
-  void recordSubmitted() {
+  public void recordSubmitted() {
     this.submitted++;
   }
 
-  void recordNoFreeSlot() {
+  public void recordNoFreeSlot() {
     this.noFreeSlot++;
     if (!this.loggedNoFreeSlot) {
       this.loggedNoFreeSlot = true;
@@ -47,11 +49,11 @@ final class Gl41MetalSlotScheduler {
     }
   }
 
-  int selectSlotForSampling(SharedDistantGbuffer gbuffer, int currentSlot) {
+  public int selectSlotForSampling(SharedDistantGbuffer gbuffer, int currentSlot) {
     this.retireCompletedSlots(gbuffer);
     long waitStart = System.nanoTime();
     int selected =
-        Gl41MetalNative.waitCurrent(gbuffer.nativeHandle(), currentSlot, this.waitTimeoutMs);
+        NativeBindings.waitCurrent(gbuffer.nativeHandle(), currentSlot, this.waitTimeoutMs);
     this.maxWaitMs = Math.max(this.maxWaitMs, (System.nanoTime() - waitStart) / 1_000_000.0);
     if (currentSlot >= 0 && selected == currentSlot) {
       this.sampledCurrent++;
@@ -59,7 +61,7 @@ final class Gl41MetalSlotScheduler {
       this.skippedCurrent++;
       if (currentSlot >= 0) {
         this.timeouts++;
-        Gl41MetalNative.discardCurrentSlot(gbuffer.nativeHandle(), currentSlot);
+        NativeBindings.discardCurrentSlot(gbuffer.nativeHandle(), currentSlot);
       }
       if (currentSlot >= 0 && !this.loggedCurrentTimeout) {
         this.loggedCurrentTimeout = true;
@@ -69,29 +71,29 @@ final class Gl41MetalSlotScheduler {
     return selected;
   }
 
-  void queueSampledSlotRetirement(SharedDistantGbuffer gbuffer, int slot) {
+  public void queueSampledSlotRetirement(SharedDistantGbuffer gbuffer, int slot) {
     long fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     if (fence == 0) {
-      Gl41MetalNative.releaseSampledSlot(gbuffer.nativeHandle(), slot);
+      NativeBindings.releaseSampledSlot(gbuffer.nativeHandle(), slot);
       return;
     }
     Long previous = this.retiringFences.put(slot, fence);
     if (previous != null) {
       glDeleteSync(previous);
-      Gl41MetalNative.releaseSampledSlot(gbuffer.nativeHandle(), slot);
+      NativeBindings.releaseSampledSlot(gbuffer.nativeHandle(), slot);
     }
   }
 
-  void closeRetiringSlots(SharedDistantGbuffer gbuffer) {
+  public void closeRetiringSlots(SharedDistantGbuffer gbuffer) {
     for (Map.Entry<Integer, Long> entry : this.retiringFences.entrySet()) {
       glClientWaitSync(entry.getValue(), GL_SYNC_FLUSH_COMMANDS_BIT, 1_000_000_000L);
       glDeleteSync(entry.getValue());
-      Gl41MetalNative.releaseSampledSlot(gbuffer.nativeHandle(), entry.getKey());
+      NativeBindings.releaseSampledSlot(gbuffer.nativeHandle(), entry.getKey());
     }
     this.retiringFences.clear();
   }
 
-  void reset() {
+  public void reset() {
     for (long fence : this.retiringFences.values()) {
       glDeleteSync(fence);
     }
@@ -106,11 +108,11 @@ final class Gl41MetalSlotScheduler {
     this.loggedCurrentTimeout = false;
   }
 
-  void addDebugInfo(List<String> debug) {
+  public void addDebugInfo(List<String> debug) {
     debug.add("Voxy GL41Metal slots: " + this.summary());
   }
 
-  String summary() {
+  public String summary() {
     return "submitted="
         + this.submitted
         + ", sampledCurrent="
@@ -138,7 +140,7 @@ final class Gl41MetalSlotScheduler {
       int result = glClientWaitSync(entry.getValue(), 0, 0L);
       if (result == GL_ALREADY_SIGNALED || result == GL_CONDITION_SATISFIED) {
         glDeleteSync(entry.getValue());
-        Gl41MetalNative.releaseSampledSlot(gbuffer.nativeHandle(), entry.getKey());
+        NativeBindings.releaseSampledSlot(gbuffer.nativeHandle(), entry.getKey());
         iterator.remove();
       }
     }

@@ -76,7 +76,7 @@ public final class IrisBridgeShaderBindings {
   public static final int UNIFORM_BINDING_POINT = 5;
   public static final int SSBO_BINDING_BASE = 10;
   // The Iris bridge COLOUR program binds only the 3 reconstruction samplers gbuffer0-2 (units 0-2,
-  // see GlDistantTerrainBridge GBUFFER*_TEXTURE_UNIT), so shader-pack samplers start at unit 3. The
+  // see DistantTerrainBridge GBUFFER*_TEXTURE_UNIT), so shader-pack samplers start at unit 3. The
   // near-depth mask (unit 3) and MC lightmap (unit 4) are used by the vanilla single pass and the
   // separate Iris depth/coverage mask pass, neither of which binds any pack samplers, so they never
   // collide with the pack here. Base 3 leaves room for packs with up to GL_MAX_TEXTURE_IMAGE_UNITS

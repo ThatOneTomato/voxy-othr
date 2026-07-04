@@ -12,7 +12,7 @@ import me.cortex.voxy.common.Logger;
  * <p>Enable periodic log output with {@code -Dvoxy.gl41metal.profileLogIntervalMs=5000} (default
  * 5000 ms, 0 to disable).
  */
-final class Gl41MetalFrameProfiler {
+public final class FrameProfiler {
   private static final int WINDOW_SIZE =
       Math.max(
           10,
@@ -45,7 +45,7 @@ final class Gl41MetalFrameProfiler {
 
   private volatile ProfileSnapshot snapshot = ProfileSnapshot.EMPTY;
 
-  Gl41MetalFrameProfiler() {
+  FrameProfiler() {
     this.windowStartNanos = System.nanoTime();
     this.lastLogTimeMs = System.currentTimeMillis();
   }

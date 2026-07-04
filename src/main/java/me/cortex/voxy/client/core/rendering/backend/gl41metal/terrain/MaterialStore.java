@@ -1,4 +1,6 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain;
+
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 
 import java.util.ArrayDeque;
 import java.util.Queue;
@@ -10,7 +12,7 @@ import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import org.lwjgl.system.MemoryUtil;
 
-final class Gl41MetalMaterialStore implements ModelOutputSink {
+public final class MaterialStore implements ModelOutputSink {
   static final int MODEL_GRID_SIZE = 256;
   static final int ATLAS_WIDTH = ModelFactory.MODEL_TEXTURE_SIZE * 3 * MODEL_GRID_SIZE;
   static final int ATLAS_HEIGHT = ModelFactory.MODEL_TEXTURE_SIZE * 2 * MODEL_GRID_SIZE;
@@ -68,7 +70,7 @@ final class Gl41MetalMaterialStore implements ModelOutputSink {
       }
       try {
         int customId = upload.customId();
-        Gl41MetalNative.uploadModel(
+        NativeBindings.uploadModel(
             nativeHandle,
             upload.modelId,
             upload.model.address,
@@ -117,7 +119,7 @@ final class Gl41MetalMaterialStore implements ModelOutputSink {
         break;
       }
       try {
-        Gl41MetalNative.uploadBiomeData(
+        NativeBindings.uploadBiomeData(
             nativeHandle,
             upload.biomeColours.address,
             upload.biomeColours.size,

@@ -13,7 +13,7 @@ id<MTLComputePipelineState> createValidationPipeline(JNIEnv* env, NativeContext*
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_validateTerrainResources(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_validateTerrainResources(
     JNIEnv* env,
     jclass,
     jlong handle) {

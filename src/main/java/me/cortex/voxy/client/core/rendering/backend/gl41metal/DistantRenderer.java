@@ -1,5 +1,8 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal;
 
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SharedDistantGbuffer;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
+
 import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameContext;
@@ -9,9 +12,9 @@ import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.lwjgl.system.MemoryUtil;
 
-final class MetalDistantRenderer {
+public final class DistantRenderer {
   void submitSynthetic(SharedDistantGbuffer gbuffer, int slot, long frameId) {
-    Gl41MetalNative.submitSynthetic(gbuffer.nativeHandle(), slot, frameId);
+    NativeBindings.submitSynthetic(gbuffer.nativeHandle(), slot, frameId);
   }
 
   void submitTraversal(
@@ -36,7 +39,7 @@ final class MetalDistantRenderer {
         writeMatrix(ssaoMatricesAddress + 16L * Float.BYTES, projection.invert(new Matrix4f()));
         writeMatrix(ssaoMatricesAddress + 32L * Float.BYTES, context.matrices().modelView());
       }
-      Gl41MetalNative.submitTraversal(
+      NativeBindings.submitTraversal(
           gbuffer.nativeHandle(),
           slot,
           frameId,

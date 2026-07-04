@@ -1,4 +1,6 @@
-package me.cortex.voxy.client.core.rendering.backend.gl41metal;
+package me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge;
+
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
 
 import static org.lwjgl.opengl.GL11C.GL_ALWAYS;
 import static org.lwjgl.opengl.GL11C.GL_BLEND;
@@ -151,7 +153,7 @@ import org.lwjgl.system.MemoryUtil;
  * by the backend contract: the vanilla path must remain a specialization of the same distant output
  * the Iris path generalizes, not a parallel duplicate.
  */
-final class GlDistantTerrainBridge implements AutoCloseable {
+public final class DistantTerrainBridge implements AutoCloseable {
   // Word-boundary regex used by buildFragmentShader() to rewrite gl_FragCoord ->
   // voxy_OverrideFragCoord
   // in patched pack source. Apple's GL4.1 GLSL preprocessor silently refuses to redefine the
@@ -371,7 +373,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
   private int translucentMaskHeight;
   private boolean loggedFirstTranslucentBridge;
 
-  GlDistantTerrainBridge() {
+  public DistantTerrainBridge() {
     this.framebuffer = glGenFramebuffers();
     this.depthCopyFramebuffer = glGenFramebuffers();
     this.nearDepthFramebuffer = glGenFramebuffers();
@@ -379,7 +381,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
   }
 
   /** Iris strict shader-pack job: own FBO drawing into the Iris render targets. */
-  static DistantBridgeJob irisJob(ShaderPatchBridgePayload payload) {
+  public static DistantBridgeJob irisJob(ShaderPatchBridgePayload payload) {
     return new DistantBridgeJob(
         true,
         0,
@@ -408,7 +410,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
    * applies the pack's translucent blend. Routed through {@link #renderTranslucent}, which samples
    * the tgbuffer0/1 front-surface ABI and shades it with the pack's gbuffers_water patch.
    */
-  static DistantBridgeJob translucentJob(ShaderPatchBridgePayload payload) {
+  public static DistantBridgeJob translucentJob(ShaderPatchBridgePayload payload) {
     return new DistantBridgeJob(
         true,
         0,
@@ -434,7 +436,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
    * Vanilla job: draw straight into the source framebuffer with the built-in patch. The source
    * depth texture used for the near mask is resolved from that framebuffer at draw time.
    */
-  static DistantBridgeJob vanillaJob(RenderFrameContext context, boolean colorWriteEnabled) {
+  public static DistantBridgeJob vanillaJob(RenderFrameContext context, boolean colorWriteEnabled) {
     return new DistantBridgeJob(
         false,
         context.sourceFramebuffer(),
@@ -461,7 +463,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
    * built-in water shade. Routed through {@link #renderTranslucent}, which samples the tgbuffer0/1
    * front-surface ABI and depth-tests against the real scene depth.
    */
-  static DistantBridgeJob vanillaTranslucentJob(
+  public static DistantBridgeJob vanillaTranslucentJob(
       RenderFrameContext context, boolean colorWriteEnabled) {
     return new DistantBridgeJob(
         false,
@@ -484,7 +486,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
         true);
   }
 
-  boolean render(
+  public boolean render(
       RenderFrameContext context,
       DistantGbufferSlot slot,
       DistantBridgeJob job,
@@ -596,7 +598,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
    * over-blend is a documented follow-up (the dominant ocean-surface case is single-layer, where
    * front == the only layer).
    */
-  boolean renderTranslucent(
+  public boolean renderTranslucent(
       RenderFrameContext context,
       DistantGbufferSlot slot,
       DistantBridgeJob job,
@@ -1243,7 +1245,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
    * a voxy-only, Voxy-NDC depth (distant geometry depth where Voxy drew, far=1.0 elsewhere),
    * matching voxy-fabric's IrisVoxyRenderPipeline.fb.getDepthTex() after its shaderDepthHackFix.
    */
-  int voxyDistantDepthTextureId() {
+  public int voxyDistantDepthTextureId() {
     return this.irisPrivateDepthTexture;
   }
 
@@ -1612,7 +1614,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
 
   // Loaded-volume clip (P1), in-shader form for the vanilla/debug colour programs. Discards distant
   // fragments that lie INSIDE the Sodium near-scene volume (nearer than its far boundary, captured
-  // per pixel in uBoundDepthTex by Gl41MetalChunkBoundRenderer). This is what stops distant LOD
+  // per pixel in uBoundDepthTex by DistantChunkBoundRenderer). This is what stops distant LOD
   // water - which writes no opaque depth, so the near-depth mask cannot hide it - from overlapping
   // the near Sodium water in the transition band. Mirrors voxy-fabric quads.frag's
   // DEPTH_SCALAR_COMPARE(gl_FragCoord.z, depthTex) discard.

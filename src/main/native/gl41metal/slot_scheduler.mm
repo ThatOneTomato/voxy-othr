@@ -20,7 +20,7 @@ void resetSubmittedSlot(NativeContext* context, int slotIndex) {
 extern "C" {
 
 JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_acquireFreeSlot(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_acquireFreeSlot(
     JNIEnv* env,
     jclass,
     jlong handle) {
@@ -39,7 +39,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_acqu
 }
 
 JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_waitCurrent(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_waitCurrent(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -74,7 +74,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_wait
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_discardCurrentSlot(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_discardCurrentSlot(
     JNIEnv* env,
     jclass,
     jlong handle,
@@ -101,7 +101,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_disc
 }
 
 JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_releaseSampledSlot(
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_releaseSampledSlot(
     JNIEnv* env,
     jclass,
     jlong handle,
