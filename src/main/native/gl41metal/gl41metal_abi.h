@@ -42,4 +42,23 @@ static_assert(offsetof(SceneUniformHost, queueSizes) == 176);
 static_assert(offsetof(SceneUniformHost, viewport) == 192);
 static_assert(offsetof(SceneUniformHost, rasterLimits) == 208);
 
+// Uniforms for the distant SSAO pass; must match SsaoUniform in ssao.metal. proj/invProj are
+// the Voxy projection alone (view-space reconstruction), modelView rotates the world-space
+// face normal into view space. The Java side writes the 3 matrices contiguously (48 floats,
+// JOML column-major) at ssaoMatricesAddress; submitTraversal fills params.
+constexpr size_t SSAO_UNIFORM_BYTES = 208;
+
+struct alignas(16) SsaoUniformHost {
+  float proj[16];
+  float invProj[16];
+  float modelView[16];
+  uint32_t params[4];  // .x = sample steps, .yzw unused
+};
+
+static_assert(sizeof(SsaoUniformHost) == SSAO_UNIFORM_BYTES);
+static_assert(offsetof(SsaoUniformHost, proj) == 0);
+static_assert(offsetof(SsaoUniformHost, invProj) == 64);
+static_assert(offsetof(SsaoUniformHost, modelView) == 128);
+static_assert(offsetof(SsaoUniformHost, params) == 192);
+
 }  // namespace gl41metal

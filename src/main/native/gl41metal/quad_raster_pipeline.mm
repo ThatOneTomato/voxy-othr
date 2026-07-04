@@ -170,4 +170,41 @@ bool createTranslucentMeshPipeline(JNIEnv* env, NativeContext* context, TerrainR
   return true;
 }
 
+// Distant SSAO full-screen pass (ssao.metal). Non-fatal like the opaque mesh pipeline: on any
+// failure the pipeline stays nil and submitTraversal simply skips the pass (distant terrain
+// renders without AO, exactly the pre-SSAO behaviour).
+bool createSsaoPipeline(JNIEnv* env, NativeContext* context, TerrainResources* terrain) {
+  (void)env;
+  id<MTLFunction> vertex = [context->shaderLibrary newFunctionWithName:@"voxy_ssao_vertex"];
+  id<MTLFunction> fragment = [context->shaderLibrary newFunctionWithName:@"voxy_ssao_fragment"];
+  if (vertex == nil || fragment == nil) {
+    NSLog(@"GL41Metal SSAO shader functions unavailable, SSAO pass disabled");
+    return true;
+  }
+
+  MTLRenderPipelineDescriptor* descriptor = [[MTLRenderPipelineDescriptor alloc] init];
+  descriptor.label = @"Voxy GL41Metal distant SSAO";
+  descriptor.vertexFunction = vertex;
+  descriptor.fragmentFunction = fragment;
+  // gbuffer2 is both the framebuffer-fetch input and the output (read-modify-write in tile
+  // memory); blending stays off, the fragment returns the merged value verbatim.
+  descriptor.colorAttachments[0].pixelFormat = GBUFFER2_FORMAT.metalFormat;
+  descriptor.colorAttachments[0].blendingEnabled = NO;
+
+  NSError* error = nil;
+  terrain->ssaoPipeline = [context->device newRenderPipelineStateWithDescriptor:descriptor
+                                                                          error:&error];
+  if (terrain->ssaoPipeline == nil) {
+    std::string message = "GL41Metal SSAO pipeline creation failed";
+    if (error != nil) {
+      message += ": ";
+      message += [[error localizedDescription] UTF8String];
+    }
+    NSLog(@"%s", message.c_str());
+    return true;
+  }
+  NSLog(@"GL41Metal distant SSAO pipeline created");
+  return true;
+}
+
 }  // namespace gl41metal

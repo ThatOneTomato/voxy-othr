@@ -31,11 +31,22 @@ final class MetalDistantRenderer {
       RenderFrameContext context,
       Matrix4fc traversalMvp,
       Matrix4fc drawMvp,
+      Matrix4fc projection,
       boolean debugDumpWorklist) {
-    MemoryBuffer matrices = new MemoryBuffer(32L * Float.BYTES);
+    // Layout: [0..15] traversalMvp, [16..31] drawMvp, [32..79] SSAO matrices
+    // (proj, invProj, modelView - see SsaoUniformHost in gl41metal_abi.h).
+    MemoryBuffer matrices = new MemoryBuffer(80L * Float.BYTES);
     try {
       writeMatrix(matrices.address, traversalMvp);
       writeMatrix(matrices.address + 16L * Float.BYTES, drawMvp);
+      int ssaoSteps = computeSsaoSteps(context);
+      long ssaoMatricesAddress = 0;
+      if (ssaoSteps > 0) {
+        ssaoMatricesAddress = matrices.address + 32L * Float.BYTES;
+        writeMatrix(ssaoMatricesAddress, projection);
+        writeMatrix(ssaoMatricesAddress + 16L * Float.BYTES, projection.invert(new Matrix4f()));
+        writeMatrix(ssaoMatricesAddress + 32L * Float.BYTES, context.matrices().modelView());
+      }
       Gl41MetalNative.submitTraversal(
           gbuffer.nativeHandle(),
           slot,
@@ -51,10 +62,29 @@ final class MetalDistantRenderer {
           computeRenderDistanceSquared(),
           context.viewportWidth(),
           context.viewportHeight(),
+          ssaoMatricesAddress,
+          ssaoSteps,
           debugDumpWorklist);
     } finally {
       matrices.free();
     }
+  }
+
+  // Distant SSAO sample count for this frame; 0 disables the Metal pass. Runs for BOTH the
+  // vanilla and shader-pack paths: the bridge folds the factor into the distant ALBEDO (the
+  // analog of vanilla's per-vertex AO, which near terrain carries into a pack's gbuffers), so
+  // a pack's own screen-space AO stacks on it exactly like it stacks on near terrain.
+  private static int computeSsaoSteps(RenderFrameContext context) {
+    if (context.matrices() == null) {
+      return 0;
+    }
+    return switch (VoxyConfig.CONFIG.getSSAOMode()) {
+      case BASIC -> 8;
+      case BEST -> 24;
+      // GL46's AUTO probes dedicated VRAM to pick a tier; Apple silicon is unified-memory and
+      // the Metal pass is tile-local, so the mid tier is always affordable.
+      case AUTO, BETTER -> 12;
+    };
   }
 
   // Builds the Voxy distant projection from the current frame's MC projection.

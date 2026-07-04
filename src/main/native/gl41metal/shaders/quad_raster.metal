@@ -222,8 +222,12 @@ struct QuadVertexOut {
 //                     .y = lightPacked  = (lx12<<12)|ly12     (each 0..4095)
 //                     .z = tintPacked   = (tr<<16)|(tg<<8)|tb (each 0..255; tint alpha is opaque
 //                          here, a future translucent gbuffer carries it separately)
-//                     .w = (face<<9)|(flags<<1)|coverage   (face 0..7, flags 0..255, coverage 0/1;
-//                          coverage doubles as the "fragment ran" flag, 0 on cleared pixels)
+//                     .w = (ao8<<12)|(face<<9)|(flags<<1)|coverage
+//                          (face 0..7, flags 0..255, coverage 0/1; coverage doubles as the
+//                          "fragment ran" flag, 0 on cleared pixels. ao8 0..255 is the SSAO
+//                          factor baked by the ssao.metal pass AFTER this raster; this fragment
+//                          always writes ao8 == 0, meaning "no AO data", and the GL side falls
+//                          back to 1.0. Max value < 2^20, still float-exact.)
 struct QuadFragmentOut {
   float4 gbuffer0 [[color(0)]];
   float4 gbuffer1 [[color(1)]];

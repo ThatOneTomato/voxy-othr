@@ -133,6 +133,8 @@ final class Gl41MetalNative {
 
   static native void submitSynthetic(long handle, int slot, long frameId);
 
+  // ssaoMatricesAddress points at 48 contiguous floats (proj, invProj, modelView in JOML
+  // column-major order, see SsaoUniformHost); ssaoSteps == 0 disables the distant SSAO pass.
   static native void submitTraversal(
       long handle,
       int slot,
@@ -148,6 +150,8 @@ final class Gl41MetalNative {
       float renderDistanceSquared,
       int viewportWidth,
       int viewportHeight,
+      long ssaoMatricesAddress,
+      int ssaoSteps,
       boolean debugDumpWorklist);
 
   static native int waitCurrent(long handle, int currentSlot, int timeoutMs);

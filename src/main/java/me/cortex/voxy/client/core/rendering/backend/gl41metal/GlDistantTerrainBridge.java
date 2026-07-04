@@ -1473,6 +1473,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
         uint customId;
         uint face;
         uint flags;
+        float ao;
       };
 
       // Unpacks one RGB triple stored as (r<<16)|(g<<8)|b into a normalised vec3 (each 0..255/255).
@@ -1494,7 +1495,7 @@ final class GlDistantTerrainBridge implements AutoCloseable {
         t.modelId = decodePackedUint(g1.y);
         t.customId = decodePackedUint(g1.z) | (decodePackedUint(g1.w) << 24u);
         // gbuffer2: four packed integer channels (see quad_raster.metal). albedo/tint are 8-bit
-        // rgb; lightMap is two 12-bit coords; the last channel folds face/flags/coverage.
+        // rgb; lightMap is two 12-bit coords; the last channel folds ao/face/flags/coverage.
         t.colour = vec4(unpackRgb8(decodePackedUint(g2.x)), 1.0);
         uint lightPacked = decodePackedUint(g2.y);
         t.lightMap = vec2(float((lightPacked >> 12u) & 4095u), float(lightPacked & 4095u)) / 4095.0;
@@ -1502,7 +1503,16 @@ final class GlDistantTerrainBridge implements AutoCloseable {
         uint faceFlagsCoverage = decodePackedUint(g2.w);
         t.coverage = float(faceFlagsCoverage & 1u);
         t.flags = (faceFlagsCoverage >> 1u) & 255u;
-        t.face = faceFlagsCoverage >> 9u;
+        t.face = (faceFlagsCoverage >> 9u) & 7u;
+        // Bits 12-19: SSAO factor from the Metal ssao.metal pass. 0 = no AO data (pass skipped
+        // or pre-SSAO pixel) -> neutral 1.0. Folded straight into the albedo: near terrain
+        // carries vanilla's per-vertex AO in its vertex colour, which flows into shader-pack
+        // gbuffers the same way, so both the built-in VANILLA_PATCH and a pack's patched
+        // voxy_emitFragment see AO-darkened sampledColour without any patch-side changes
+        // (GL46's compute pass equivalently multiplies the lit colour post-opaque).
+        uint aoPacked = (faceFlagsCoverage >> 12u) & 255u;
+        t.ao = aoPacked == 0u ? 1.0 : float(aoPacked) / 255.0;
+        t.colour.rgb *= t.ao;
         return t;
       }
 

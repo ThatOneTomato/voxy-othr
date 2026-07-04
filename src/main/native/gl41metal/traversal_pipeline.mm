@@ -78,6 +78,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_subm
     jfloat renderDistanceSquared,
     jint viewportWidth,
     jint viewportHeight,
+    jlong ssaoMatricesAddress,
+    jint ssaoSteps,
     jboolean debugDumpWorklist) {
   @autoreleasepool {
     NativeContext* context = requireContext(env, handle);
@@ -320,6 +322,39 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_subm
                               threadsPerMeshThreadgroup:MTLSizeMake(64 * 4, 1, 1)];
 
       [quadEncoder endEncoding];
+    }
+
+    // Distant SSAO. Full-screen framebuffer-fetch read-modify-write of gbuffer2: bakes the AO
+    // factor into gbuffer2.w's spare bits (see ssao.metal) using the opaque depth stored by the
+    // raster pass above. Runs before the translucent raster only for encoder locality; it
+    // touches neither the depth attachment nor the translucent targets.
+    if (willOpaqueRaster && ssaoSteps > 0 && terrain->ssaoPipeline != nil &&
+        ssaoMatricesAddress != 0) {
+      MTLRenderPassDescriptor* ssaoPass = [MTLRenderPassDescriptor renderPassDescriptor];
+      ssaoPass.colorAttachments[0].texture = slot.gbuffer2->metalTexture;
+      ssaoPass.colorAttachments[0].loadAction = MTLLoadActionLoad;
+      ssaoPass.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+      id<MTLRenderCommandEncoder> ssaoEncoder =
+          [commandBuffer renderCommandEncoderWithDescriptor:ssaoPass];
+      if (ssaoEncoder == nil) {
+        resetSubmittedSlot(context, slotIndex);
+        throwJava(env, "GL41Metal SSAO render encoder returned nil");
+        return;
+      }
+      ssaoEncoder.label = @"Voxy Distant SSAO";
+      SsaoUniformHost ssaoUniform;
+      std::memcpy(&ssaoUniform, reinterpret_cast<const void*>(ssaoMatricesAddress),
+          48 * sizeof(float));
+      ssaoUniform.params[0] = static_cast<uint32_t>(ssaoSteps);
+      ssaoUniform.params[1] = 0;
+      ssaoUniform.params[2] = 0;
+      ssaoUniform.params[3] = 0;
+      [ssaoEncoder setRenderPipelineState:terrain->ssaoPipeline];
+      [ssaoEncoder setFragmentTexture:slot.renderDepth atIndex:0];
+      [ssaoEncoder setFragmentBytes:&ssaoUniform length:sizeof(ssaoUniform) atIndex:0];
+      [ssaoEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+      [ssaoEncoder endEncoding];
     }
 
     // Translucent (group 0) pass: sort the emitted translucent work items by section distance

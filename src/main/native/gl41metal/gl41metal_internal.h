@@ -163,6 +163,9 @@ struct TerrainResources {
   id<MTLComputePipelineState> meshArgsPipeline = nil;
   id<MTLRenderPipelineState> opaqueMeshPipeline = nil;
   id<MTLRenderPipelineState> translucentMeshPipeline = nil;
+  // Distant SSAO full-screen pass (ssao.metal): framebuffer-fetch RMW of gbuffer2 that bakes
+  // the AO factor into gbuffer2.w's spare bits for the GL vanilla composite. nil = disabled.
+  id<MTLRenderPipelineState> ssaoPipeline = nil;
   uint32_t meshBatchSize = 32;
 };
 
@@ -204,5 +207,6 @@ bool createTranslucentSortPipelines(JNIEnv* env, NativeContext* context, Terrain
 id<MTLComputePipelineState> createMeshArgsPipeline(JNIEnv* env, NativeContext* context);
 bool createOpaqueMeshPipeline(JNIEnv* env, NativeContext* context, TerrainResources* terrain);
 bool createTranslucentMeshPipeline(JNIEnv* env, NativeContext* context, TerrainResources* terrain);
+bool createSsaoPipeline(JNIEnv* env, NativeContext* context, TerrainResources* terrain);
 
 }  // namespace gl41metal

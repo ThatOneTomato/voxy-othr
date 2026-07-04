@@ -385,6 +385,9 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_Gl41MetalNative_crea
     if (!createTranslucentMeshPipeline(env, context, terrain.get())) {
       return;
     }
+    if (!createSsaoPipeline(env, context, terrain.get())) {
+      return;
+    }
 
     for (Slot& slot : context->slots) {
       std::string frameError;

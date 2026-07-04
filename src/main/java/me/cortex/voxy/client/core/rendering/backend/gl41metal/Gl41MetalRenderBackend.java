@@ -171,6 +171,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           context,
           frameMatrices.traversalMvp(),
           frameMatrices.drawMvp(),
+          frameMatrices.projection(),
           DEBUG_DUMP_WORKLIST);
       this.slotScheduler.recordSubmitted();
     } else {

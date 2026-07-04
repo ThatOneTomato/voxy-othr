@@ -168,7 +168,9 @@ bool createSlotTextures(Slot* slot, NativeContext* context, std::string* error) 
                                                          width:context->width
                                                         height:context->height
                                                      mipmapped:NO];
-  depthDescriptor.usage = MTLTextureUsageRenderTarget;
+  // ShaderRead: the SSAO pass (ssao.metal) samples this depth as a texture after the opaque
+  // raster stored it, in the same command buffer.
+  depthDescriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
   depthDescriptor.storageMode = MTLStorageModePrivate;
   slot->renderDepth = [context->device newTextureWithDescriptor:depthDescriptor];
   if (slot->renderDepth == nil) {
