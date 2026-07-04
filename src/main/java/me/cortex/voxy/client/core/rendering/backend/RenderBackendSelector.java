@@ -1,6 +1,7 @@
 package me.cortex.voxy.client.core.rendering.backend;
 
 import me.cortex.voxy.client.core.gl.Capabilities;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.Gl41MetalSupport;
 import me.cortex.voxy.common.Logger;
 
 import java.util.Locale;
@@ -132,9 +133,7 @@ public final class RenderBackendSelector {
         return null;
     }
 
-    // TODO(M2): route through Gl41MetalSupport.getUnsupportedReason() once the gl41metal backend
-    // is migrated.
     private static String getGl41MetalUnsupportedReason() {
-        return "gl41metal backend is not migrated yet (milestone 2)";
+        return Gl41MetalSupport.getUnsupportedReason();
     }
 }

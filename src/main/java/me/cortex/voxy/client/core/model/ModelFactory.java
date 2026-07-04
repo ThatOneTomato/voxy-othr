@@ -7,6 +7,7 @@ import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
 import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.gl.GlTexture;
+import me.cortex.voxy.client.core.model.bakery.Gl41OffscreenModelTextureBakery;
 import me.cortex.voxy.client.core.model.bakery.SoftwareModelTextureBakery;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.common.Logger;
@@ -16,6 +17,7 @@ import me.cortex.voxy.common.world.other.Mapper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockColor;
 import net.minecraft.client.color.block.BlockColors;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -42,6 +44,11 @@ import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static me.cortex.voxy.client.core.model.BakedModelPayload.FALLBACK_NONE;
+import static me.cortex.voxy.client.core.model.BakedModelPayload.RENDER_LAYER_CUTOUT;
+import static me.cortex.voxy.client.core.model.BakedModelPayload.RENDER_LAYER_FLUID;
+import static me.cortex.voxy.client.core.model.BakedModelPayload.RENDER_LAYER_OPAQUE;
+import static me.cortex.voxy.client.core.model.BakedModelPayload.RENDER_LAYER_TRANSLUCENT;
 import static me.cortex.voxy.client.core.model.ModelStore.MODEL_SIZE;
 import static org.lwjgl.opengl.ARBDirectStateAccess.nglTextureSubImage2D;
 import static org.lwjgl.opengl.GL11.*;
@@ -64,15 +71,16 @@ public class ModelFactory {
 
     //TODO: replace the fluid BlockState with a client model id integer of the fluidState, requires looking up
     // the fluid state in the mipper
-    private record ModelEntry(ColourDepthTextureData down, ColourDepthTextureData up, ColourDepthTextureData north, ColourDepthTextureData south, ColourDepthTextureData west, ColourDepthTextureData east, int fluidBlockStateId, int tintingColour) {
-        public ModelEntry(ColourDepthTextureData[] textures, int fluidBlockStateId, int tintingColour) {
-            this(textures[0], textures[1], textures[2], textures[3], textures[4], textures[5], fluidBlockStateId, tintingColour);
+    private record ModelEntry(ColourDepthTextureData down, ColourDepthTextureData up, ColourDepthTextureData north, ColourDepthTextureData south, ColourDepthTextureData west, ColourDepthTextureData east, int fluidBlockStateId, int tintingColour, int renderLayer, int fallbackReason, int customBlockStateId) {
+        public ModelEntry(ColourDepthTextureData[] textures, int fluidBlockStateId, int tintingColour, int renderLayer, int fallbackReason, int customBlockStateId) {
+            this(textures[0], textures[1], textures[2], textures[3], textures[4], textures[5], fluidBlockStateId, tintingColour, renderLayer, fallbackReason, customBlockStateId);
         }
     }
 
     private final Biome DEFAULT_BIOME = Minecraft.getInstance().level.registryAccess().lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.PLAINS).value();
 
     public final SoftwareModelTextureBakery bakery2;
+    private final Gl41OffscreenModelTextureBakery gl41OffscreenBakery;
     private final long bakeScratchBuffer = MemoryUtil.nmemAlloc(MODEL_TEXTURE_SIZE*MODEL_TEXTURE_SIZE*8*6);
 
 
@@ -122,6 +130,7 @@ public class ModelFactory {
 
     private final Mapper mapper;
     private final ModelStore storage;
+    private final ModelOutputSink outputSink;
 
     private final ConcurrentLinkedDeque<BlockBake> bakeQueue = new ConcurrentLinkedDeque<>();
 
@@ -132,10 +141,25 @@ public class ModelFactory {
     //TODO: NOTE!!! is it worth even uploading as a 16x16 texture, since automatic lod selection... doing 8x8 textures might be perfectly ok!!!
     // this _quarters_ the memory requirements for the texture atlas!!! WHICH IS HUGE saving
     public ModelFactory(Mapper mapper, ModelStore storage) {
+        this(mapper, storage, null);
+    }
+
+    public ModelFactory(Mapper mapper, ModelStore storage, ModelOutputSink outputSink) {
         this.mapper = mapper;
         this.storage = storage;
-        this.bakery2 = new SoftwareModelTextureBakery();
-        this.bakery2.setupTexture();
+        this.outputSink = outputSink;
+        if (storage != null) {
+            //gl46 path: software rasterizer bakery (this repo's baseline behaviour)
+            this.bakery2 = new SoftwareModelTextureBakery();
+            this.bakery2.setupTexture();
+            this.gl41OffscreenBakery = null;
+        } else if (outputSink != null) {
+            //gl41metal sink path: GL offscreen bakery (reference implementation)
+            this.bakery2 = null;
+            this.gl41OffscreenBakery = new Gl41OffscreenModelTextureBakery();
+        } else {
+            throw new IllegalStateException("ModelFactory requires either a ModelStore or a ModelOutputSink");
+        }
 
         this.metadataCache = new long[1<<16];
         this.fluidStateLUT = new int[1<<16];
@@ -151,10 +175,21 @@ public class ModelFactory {
         this.customBlockStateIdMapping = mapping;
     }
 
+    private int getCustomBlockStateId(BlockState blockState) {
+        if (this.customBlockStateIdMapping != null && this.customBlockStateIdMapping.containsKey(blockState)) {
+            return this.customBlockStateIdMapping.getInt(blockState);
+        }
+        return 0;
+    }
+
     private static final record BlockBake(int blockId, BlockState state) {
     }
 
     public boolean addEntry(int blockId) {
+        if (this.gl41OffscreenBakery != null) {
+            return this.addGl41OffscreenBakedEntry(blockId);
+        }
+
         if (this.idMappings[blockId] != -1) {
             return false;
         }
@@ -207,6 +242,52 @@ public class ModelFactory {
         return true;
     }
 
+    private boolean addGl41OffscreenBakedEntry(int blockId) {
+        if (this.idMappings[blockId] != -1) {
+            return false;
+        }
+
+        this.blockStatesInFlightLock.lock();
+        if (!this.blockStatesInFlight.add(blockId)) {
+            this.blockStatesInFlightLock.unlock();
+            return false;
+        }
+        this.blockStatesInFlightLock.unlock();
+
+        VarHandle.loadLoadFence();
+
+        if (this.idMappings[blockId] != -1) {
+            this.blockStatesInFlightLock.lock();
+            this.blockStatesInFlight.remove(blockId);
+            this.blockStatesInFlightLock.unlock();
+            return false;
+        }
+
+        var blockState = this.mapper.getBlockStateFromBlockId(blockId);
+        boolean isFluid = blockState.getBlock() instanceof LiquidBlock;
+        if ((!isFluid) && (!blockState.getFluidState().isEmpty())) {
+            var fluidState = blockState.getFluidState().createLegacyBlock();
+            int fluidStateId = this.mapper.getIdForBlockState(fluidState);
+            if (this.idMappings[fluidStateId] == -1) {
+                addEntry(fluidStateId);
+            }
+        }
+
+        var result = this.gl41OffscreenBakery.bake(blockState);
+        var upload = this.processTextureBakeResult(
+                blockId,
+                blockState,
+                result.faces(),
+                result.shaded(),
+                result.darkenedTextures(),
+                null,
+                result.fallbackReason());
+        if (upload != null) {
+            this.uploadResults.add(upload);
+        }
+        return true;
+    }
+
     private boolean processModelResult() {
         var bake = this.bakeQueue.poll();
         if (bake == null) return false;
@@ -250,7 +331,7 @@ public class ModelFactory {
             }
         }
 
-        var bakeResult = this.processTextureBakeResult(bake.blockId, bake.state, textureData, isShaded, hasDarkenedTextures, layer);
+        var bakeResult = this.processTextureBakeResult(bake.blockId, bake.state, textureData, isShaded, hasDarkenedTextures, layer, FALLBACK_NONE);
         if (bakeResult!=null) {
             this.uploadResults.add(bakeResult);
         }
@@ -284,20 +365,29 @@ public class ModelFactory {
         var upload = this.uploadResults.poll();
         if (upload==null) return;
 
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-        glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        if (this.storage != null) {
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+            glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        }
         do {
-            upload.upload(this.storage);
+            if (this.storage != null) {
+                upload.upload(this.storage);
+            } else {
+                upload.upload(this.outputSink);
+            }
             upload.free();
             upload = this.uploadResults.poll();
         } while (upload != null);
-        UploadStream.INSTANCE.commit();
+        if (this.storage != null) {
+            UploadStream.INSTANCE.commit();
+        }
     }
 
     private interface ResultUploader {
         void upload(ModelStore store);
+        void upload(ModelOutputSink sink);
         void free();
     }
 
@@ -306,12 +396,31 @@ public class ModelFactory {
         private final MemoryBuffer texture = new MemoryBuffer((2L*3*computeSizeWithMips(MODEL_TEXTURE_SIZE))*4);
 
         public int modelId = -1;
+        public int renderLayer = RENDER_LAYER_OPAQUE;
+        public int fallbackReason = FALLBACK_NONE;
+        public String sourceDescription = "";
 
         public int biomeUploadIndex = -1;
         public @Nullable MemoryBuffer biomeUpload;
 
         public void upload(ModelStore store) {//Uploads and resets for reuse
             this.upload(store.modelBuffer, store.modelColourBuffer, store.textures);
+        }
+
+        public void upload(ModelOutputSink sink) {
+            sink.uploadModel(new BakedModelPayload(
+                    this.modelId,
+                    this.model,
+                    this.texture,
+                    this.biomeUploadIndex,
+                    this.biomeUpload,
+                    this.renderLayer,
+                    this.fallbackReason,
+                    this.sourceDescription));
+            this.modelId = -1;
+            this.renderLayer = RENDER_LAYER_OPAQUE;
+            this.fallbackReason = FALLBACK_NONE;
+            this.sourceDescription = "";
         }
 
         public void upload(GlBuffer modelBuffer, GlBuffer colourBuffer, GlTexture atlas) {//Uploads and resets for reuse
@@ -344,7 +453,9 @@ public class ModelFactory {
         }
     }
 
-    private ModelBakeResultUpload processTextureBakeResult(int blockId, BlockState blockState, ColourDepthTextureData[] textureData, boolean isShaded, boolean darkenedTinting, RenderType layer) {
+    //layer == null means "recompute from ItemBlockRenderTypes" (sink/gl41metal path, matching the
+    // reference implementation); the gl46 path passes the layer derived from the software bakery.
+    private ModelBakeResultUpload processTextureBakeResult(int blockId, BlockState blockState, ColourDepthTextureData[] textureData, boolean isShaded, boolean darkenedTinting, RenderType layer, int fallbackReason) {
         if (this.idMappings[blockId] != -1) {
             //This should be impossible to reach as it means that multiple bakes for the same blockId happened and where inflight at the same time!
             throw new IllegalStateException("Block id already added: " + blockId + " for state: " + blockState);
@@ -377,16 +488,34 @@ public class ModelFactory {
             }
         }
 
+        if (layer == null) {
+            //Reference (sink path) render layer computation
+            if (blockState.getBlock() instanceof LiquidBlock) {
+                layer = ItemBlockRenderTypes.getRenderLayer(blockState.getFluidState());
+            } else if (blockState.getBlock() instanceof LeavesBlock) {
+                layer = RenderType.solid();
+            } else {
+                layer = ItemBlockRenderTypes.getChunkRenderType(blockState);
+            }
+        }
+        int renderLayer = classifyRenderLayer(blockState, layer, isFluid);
+
         var colourProvider = getColourProvider(blockState.getBlock());
 
         boolean isBiomeColourDependent = false;
         if (colourProvider != null) {
             isBiomeColourDependent = isBiomeDependentColour(colourProvider, blockState);
         }
+        int customBlockStateId = this.getCustomBlockStateId(blockState);
 
         ModelEntry entry;
         {//Deduplicate same entries
-            entry = new ModelEntry(textureData, clientFluidStateId, isBiomeColourDependent||colourProvider==null?-1:captureColourConstant(colourProvider, blockState, DEFAULT_BIOME)|0xFF000000);
+            //The extra dedupe key fields are neutralised on the gl46 path (outputSink == null) so the
+            // gl46 dedupe behaviour stays identical to the pre-migration implementation.
+            int dedupeRenderLayer = this.outputSink == null ? RENDER_LAYER_OPAQUE : renderLayer;
+            int dedupeFallbackReason = this.outputSink == null ? FALLBACK_NONE : fallbackReason;
+            int dedupeCustomBlockStateId = this.outputSink == null ? 0 : customBlockStateId;
+            entry = new ModelEntry(textureData, clientFluidStateId, isBiomeColourDependent||colourProvider==null?-1:captureColourConstant(colourProvider, blockState, DEFAULT_BIOME)|0xFF000000, dedupeRenderLayer, dedupeFallbackReason, dedupeCustomBlockStateId);
             int possibleDuplicate = this.modelTexture2id.getInt(entry);
             if (possibleDuplicate != -1) {//Duplicate found
                 this.idMappings[blockId] = possibleDuplicate;
@@ -421,6 +550,9 @@ public class ModelFactory {
 
         ModelBakeResultUpload uploadResult = new ModelBakeResultUpload();
         uploadResult.modelId = modelId;
+        uploadResult.renderLayer = renderLayer;
+        uploadResult.fallbackReason = fallbackReason;
+        uploadResult.sourceDescription = blockState.toString();
         long uploadPtr = uploadResult.model.address;
 
         //TODO: implement;
@@ -438,7 +570,11 @@ public class ModelFactory {
         //TODO: special case stuff like vines and glow lichen, where it can be represented by a single double sided quad
         // since that would help alot with perf of lots of vines, can be done by having one of the faces just not exist and the other be in no occlusion mode
 
-        var depths = computeModelDepth(textureData, checkMode, layer!=RenderType.solid()?TextureUtils.DEPTH_MODE_MIN:TextureUtils.DEPTH_MODE_AVG);
+        // Non-solid layers (translucent fluids, cutout) take the MIN per-face depth so the visible
+        // surface stays flush/forward; AVG recesses these faces into the voxel and opens see-through
+        // gaps at grazing angles. Lava renders on the SOLID layer, so key off isFluid too: EVERY
+        // fluid (water and lava) takes MIN and FLUID_BRIDGE_WALLS side walls stay flush at height steps.
+        var depths = computeModelDepth(textureData, checkMode, (isFluid || layer!=RenderType.solid())?TextureUtils.DEPTH_MODE_MIN:TextureUtils.DEPTH_MODE_AVG, this.gl41OffscreenBakery != null);
 
         //TODO: THIS, note this can be tested for in 2 ways, re render the model with quad culling disabled and see if the result
         // is the same, (if yes then needs double sided quads)
@@ -484,6 +620,7 @@ public class ModelFactory {
         metadata |= cullsSame?32:0;
 
         boolean fullyOpaque = true;
+        boolean anyFaceNeedsDiscard = false;
 
         //TODO: FIXME faces that have the same "alignment depth" e.g. (sizes[0]+sizes[1])~=1 can be merged into a double faced single quad
 
@@ -558,6 +695,7 @@ public class ModelFactory {
             needsAlphaDiscard |= layer != RenderType.solid();
             needsAlphaDiscard &= layer != RenderType.translucent();//Translucent doesnt have alpha discard
             faceModelData |= needsAlphaDiscard?1<<22:0;
+            anyFaceNeedsDiscard |= needsAlphaDiscard;
 
             faceModelData |= ((!faceCoversFullBlock)&&layer != RenderType.translucent())?1<<23:0;//Alpha discard override, translucency doesnt have alpha discard
 
@@ -575,6 +713,7 @@ public class ModelFactory {
         }
 
         metadata |= fullyOpaque?(1L<<(48+6)):0;
+        metadata |= anyFaceNeedsDiscard?(1L<<(48+7)):0;
 
         boolean canBeCorrectlyRendered = true;//This represents if a model can be correctly (perfectly) represented
         // i.e. no gaps
@@ -619,11 +758,8 @@ public class ModelFactory {
         //have 32 bytes of free space after here
 
         //install the custom mapping id if it exists
-        if (this.customBlockStateIdMapping != null && this.customBlockStateIdMapping.containsKey(blockState)) {
-            MemoryUtil.memPutInt(uploadPtr, this.customBlockStateIdMapping.getInt(blockState));
-        } else {
-            MemoryUtil.memPutInt(uploadPtr, 0);
-        } uploadPtr += 4;
+        MemoryUtil.memPutInt(uploadPtr, customBlockStateId);
+        uploadPtr += 4;
 
 
         //Note: if the layer isSolid then need to fill all the points in the texture where alpha == 0 with the average colour
@@ -649,6 +785,21 @@ public class ModelFactory {
         return uploadResult;
     }
 
+    private static int classifyRenderLayer(BlockState state, RenderType blockRenderLayer, boolean isFluid) {
+        if (isFluid || state.getBlock() instanceof LiquidBlock) {
+            return RENDER_LAYER_FLUID;
+        }
+        if (blockRenderLayer == RenderType.translucent()) {
+            return RENDER_LAYER_TRANSLUCENT;
+        }
+        if (blockRenderLayer == RenderType.cutout()
+                || blockRenderLayer == RenderType.cutoutMipped()
+                || blockRenderLayer == RenderType.tripwire()) {
+            return RENDER_LAYER_CUTOUT;
+        }
+        return RENDER_LAYER_OPAQUE;
+    }
+
     private static final class BiomeUploadResult implements ResultUploader {
         private final MemoryBuffer biomeColourBuffer;
         private final MemoryBuffer modelBiomeIndexPairs;
@@ -659,6 +810,10 @@ public class ModelFactory {
 
         public void upload(ModelStore store) {
             this.upload(store.modelBuffer, store.modelColourBuffer);
+        }
+
+        public void upload(ModelOutputSink sink) {
+            sink.uploadBiomeData(new BiomeModelPayload(this.biomeColourBuffer, this.modelBiomeIndexPairs));
         }
 
         public void upload(GlBuffer modelBuffer, GlBuffer modelColourBuffer) {
@@ -856,15 +1011,13 @@ public class ModelFactory {
         return biomeDependent[0];
     }
 
-    private static float[] computeModelDepth(ColourDepthTextureData[] textures, int checkMode) {
-        return computeModelDepth(textures, checkMode, TextureUtils.DEPTH_MODE_AVG);
-    }
-
-    private static float[] computeModelDepth(ColourDepthTextureData[] textures, int checkMode, int computeMode) {
+    // halfDepthRange: true when the textures came from the GL offscreen bakery (gl41metal path),
+    // whose captured depth spans [0, 0.5] and must be doubled; false for the software bakery (gl46).
+    private static float[] computeModelDepth(ColourDepthTextureData[] textures, int checkMode, int computeMode, boolean halfDepthRange) {
         float[] res = new float[6];
         for (var dir : Direction.values()) {
             var data = textures[dir.get3DDataValue()];
-            float fd = TextureUtils.computeDepth(data, computeMode, checkMode);//Compute the min float depth, smaller means closer to the camera, range 0-1
+            float fd = TextureUtils.computeDepth(data, computeMode, checkMode, halfDepthRange);//Compute the min float depth, smaller means closer to the camera, range 0-1
             //int depth = Math.round(fd * MODEL_TEXTURE_SIZE);
             //If fd is -1, it means that there was nothing rendered on that face and it should be discarded
             if (fd < -0.1) {
@@ -906,7 +1059,12 @@ public class ModelFactory {
 
 
     public void free() {
-        this.bakery2.free();
+        if (this.bakery2 != null) {
+            this.bakery2.free();
+        }
+        if (this.gl41OffscreenBakery != null) {
+            this.gl41OffscreenBakery.close();
+        }
         MemoryUtil.nmemFree(this.bakeScratchBuffer);
         while (!this.uploadResults.isEmpty()) {
             this.uploadResults.poll().free();
@@ -924,6 +1082,16 @@ public class ModelFactory {
         size += this.biomeQueue.size();
         size += this.bakeQueue.size();
         return size;
+    }
+
+    public String getBakeryMode() {
+        if (this.gl41OffscreenBakery != null) {
+            return this.gl41OffscreenBakery.modeName();
+        }
+        if (this.bakery2 != null) {
+            return "software";
+        }
+        return "none";
     }
 
 

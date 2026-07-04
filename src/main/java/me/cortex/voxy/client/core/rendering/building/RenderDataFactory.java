@@ -24,6 +24,20 @@ public class RenderDataFactory {
 
     private static final boolean VERIFY_MESHING = VoxyCommon.isVerificationFlagOn("verifyMeshing");
 
+    // DIVERGENCE FROM voxy-fabric: bridge walls for horizontally-adjacent fluids of different surface
+    // heights. The shared fluid<->fluid boundary face is normally culled (XOR of two set fluid bits),
+    // which is correct for equal-height water but leaves a see-through gap in the [shorterH, tallerH]
+    // band where two flowing-water columns of different heights meet. Fabric ships with this gap (only
+    // visible up close; voxy renders distant terrain where it is sub-pixel). When enabled, we re-add
+    // that boundary face on the HORIZONTAL passes only (X- and Z-normal). Every fluid voxel bakes
+    // full-height side walls (upper neighbour always reports fluid), and the Metal translucent raster
+    // is double-sided (MTLCullModeNone), so a single re-added face fills the gap from both views. The
+    // trade-off is a ~1/8-block "lip" above the taller surface at the step, consistent with the
+    // existing water-air "cup" rim. Y-normal (top/bottom) faces are never bridged: that would insert a
+    // horizontal sheet inside a flowing-water column. Toggle with -Dvoxy.fluidBridgeWalls=false.
+    private static final boolean FLUID_BRIDGE_WALLS =
+            Boolean.parseBoolean(System.getProperty("voxy.fluidBridgeWalls", "true"));
+
     //TODO: MAKE a render cache that caches each WorldSection directional face generation, cause then can just pull that directly
     // instead of needing to regen the entire thing
 
@@ -48,6 +62,7 @@ public class RenderDataFactory {
     //TODO: emit directly to memory buffer instead of long arrays
 
     //Each axis gets a max quad count of 2^16 (65536 quads) since that is the max the basic geometry manager can handle
+    //TEMP DIAGNOSTIC switch
     private final MemoryBuffer quadBuffer = new MemoryBuffer(8*(8*(1<<16)));//6 faces + dual direction + translucents
     private final long quadBufferPtr = this.quadBuffer.address;
     private final int[] quadCounters = new int[8];
@@ -61,6 +76,7 @@ public class RenderDataFactory {
     private int maxZ;
 
     private int quadCount = 0;
+    private boolean hasCutout = false;
 
     private final OccupancySet occupancy;
 
@@ -249,6 +265,7 @@ public class RenderDataFactory {
                         opaque |= ModelQueries._isFullyOpaque(modelMetadata)<<j;
                         pureFluid |= ModelQueries._isFluid(modelMetadata)<<j;
                         partialFluid |= ModelQueries._containsFluid(modelMetadata)<<j;
+                        this.hasCutout |= !ModelQueries.isTranslucent(modelMetadata) && ModelQueries.needsAlphaDiscard(modelMetadata);
                     }
                 }
             }
@@ -509,6 +526,52 @@ public class RenderDataFactory {
         this.blockMesher.doAuxiliaryFaceOffset = true;
     }
 
+    // True when the two fluid voxels (given by their sectionData base indices, already *2) resolve to
+    // different fluid client-state models, i.e. different baked surface heights/types. Used to decide
+    // whether a culled fluid<->fluid boundary needs a bridge wall. Only call on bits already known to
+    // be fluid on both sides.
+    private boolean fluidModelsDiffer(int aData, int bData) {
+        int aModel = (int) ((this.sectionData[aData] >> 26) & 0xFFFF);
+        int bModel = (int) ((this.sectionData[bData] >> 26) & 0xFFFF);
+        return this.modelMan.getFluidClientStateId(aModel) != this.modelMan.getFluidClientStateId(bModel);
+    }
+
+    // Bridge bits for a YZ boundary between slice pidx and pidx+skipAmount: both sides fluid and the
+    // two fluid models differ. See FLUID_BRIDGE_WALLS. Opaque fluids (e.g. lava source blocks) must
+    // NOT be excluded: a full-height opaque source next to a shorter flowing block still needs a
+    // bridge wall because the normal XOR culls the boundary (both sides set) but the heights differ.
+    private int computeFluidBridgeMaskYZ(int pidx, int skipAmount) {
+        int both = this.fluidMasks[pidx] & this.fluidMasks[pidx + skipAmount];
+        int bridge = 0;
+        while (both != 0) {
+            int index = Integer.numberOfTrailingZeros(both);
+            both &= both - 1;
+            int idx = index + (pidx * 32);
+            if (this.fluidModelsDiffer(idx * 2, (idx + skipAmount * 32) * 2)) {
+                bridge |= 1 << index;
+            }
+        }
+        return bridge;
+    }
+
+    // Bridge bits for the X pass at row (y,z): bit index set when x=index and x=index+1 are both
+    // fluid and their fluid models differ. See FLUID_BRIDGE_WALLS. Opaque fluids are included (same
+    // reasoning as computeFluidBridgeMaskYZ).
+    private int computeFluidBridgeMaskX(int y, int z) {
+        int fMsk = this.fluidMasks[y * 32 + z];
+        int both = fMsk & (fMsk >>> 1);
+        int bridge = 0;
+        while (both != 0) {
+            int index = Integer.numberOfTrailingZeros(both);
+            both &= both - 1;
+            int idx = index + (z * 32) + (y * 32 * 32);
+            if (this.fluidModelsDiffer(idx * 2, (idx + 1) * 2)) {
+                bridge |= 1 << index;
+            }
+        }
+        return bridge;
+    }
+
     private void generateYZFluidInnerGeometry(int axis) {
         for (int layer = 0; layer < 31; layer++) {
             this.blockMesher.auxiliaryPosition = layer;
@@ -523,6 +586,15 @@ public class RenderDataFactory {
 
                 int msk = (current | this.opaqueMasks[pidx]) ^ (next | this.opaqueMasks[pidx + skipAmount]);
                 msk &= current|next;
+                // axis 0 is the Y (top/bottom) normal; axis 1 is the Z (horizontal side) normal. Only
+                // bridge the horizontal pass so a flowing-water step does not leave a see-through side
+                // gap. The re-added boundary face emits the current voxel's full-height side wall
+                // (double-sided in the Metal translucent raster), filling the [shorterH, tallerH] band.
+                int bridgeMsk = 0;
+                if (FLUID_BRIDGE_WALLS && axis == 1) {
+                    bridgeMsk = this.computeFluidBridgeMaskYZ(pidx, skipAmount);
+                    msk |= bridgeMsk;
+                }
                 if (msk == 0) {
                     cSkip += 32;
                     continue;
@@ -552,8 +624,11 @@ public class RenderDataFactory {
                         int ai = facingForward == 1 ? a : b;
                         int bi = facingForward == 1 ? b : a;
 
-                        //TODO: check if must cull against next entries face
-                        if (CHECK_NEIGHBOR_FACE_OCCLUSION) {//TODO:SELF OCCLUSION
+                        // Bridge wall faces must skip the occlusion check: the two fluid models have different
+                        // surface heights but both bake full-height side walls (bakery leaves the upper
+                        // neighbour as fluid), so per-face occlusion is true on both sides even though the
+                        // visual gap exists.
+                        if (CHECK_NEIGHBOR_FACE_OCCLUSION && ((bridgeMsk >> index) & 1) == 0) {//TODO:SELF OCCLUSION
                             if (ModelQueries.faceOccludes(this.sectionData[bi + 1], (axis << 1) | (1 - facingForward))) {
                                 this.blockMesher.skip(1);
                                 continue;
@@ -589,6 +664,54 @@ public class RenderDataFactory {
                 this.blockMesher.endRow();
             }
             this.blockMesher.finish();
+
+            // Second pass: backward-facing bridge wall faces. The first pass always emits bridge walls
+            // with facingForward=1 (because faceForwardMsk = msk & current, and both sides are fluid).
+            // This second pass emits the same bridge walls with facingForward=0 so the face is visible
+            // from the opposite viewing direction.
+            if (FLUID_BRIDGE_WALLS && axis == 1) {
+                this.blockMesher.auxiliaryPosition = layer;
+                cSkip = 0;
+                for (int other = 0; other < 32; other++) {
+                    int pidx = other * 32 + layer;
+                    int skipAmount = 1;
+                    int backBridgeMsk = this.computeFluidBridgeMaskYZ(pidx, skipAmount);
+                    if (backBridgeMsk == 0) {
+                        cSkip += 32;
+                        continue;
+                    }
+                    this.blockMesher.skip(cSkip);
+                    cSkip = 0;
+                    int cIdx2 = -1;
+                    while (backBridgeMsk != 0) {
+                        int index = Integer.numberOfTrailingZeros(backBridgeMsk);
+                        int delta = index - cIdx2 - 1;
+                        cIdx2 = index;
+                        if (delta != 0) this.blockMesher.skip(delta);
+                        backBridgeMsk &= ~Integer.lowestOneBit(backBridgeMsk);
+
+                        int idx = index + (pidx * 32);
+                        int a = idx * 2;
+                        int b = (idx + skipAmount * 32) * 2;
+
+                        long A = this.sectionData[b];
+                        long Am = this.sectionData[b + 1];
+                        if (ModelQueries.containsFluid(Am)) {
+                            int modelId = (int) ((A >> 26) & 0xFFFF);
+                            A &= ~(0xFFFFL << 26);
+                            int fluidId = this.modelMan.getFluidClientStateId(modelId);
+                            A |= Integer.toUnsignedLong(fluidId) << 26;
+                            Am = this.modelMan.getModelMetadataFromClientId(fluidId);
+                            A &= ~0b110L;
+                            A |= getQuadTyping(Am);
+                        }
+                        long lighter = this.sectionData[a];
+                        this.blockMesher.putNext((A & ~LM) | (lighter & LM));
+                    }
+                    this.blockMesher.endRow();
+                }
+                this.blockMesher.finish();
+            }
         }
     }
 
@@ -1089,6 +1212,15 @@ public class RenderDataFactory {
                 //Dont generate geometry for opaque faces
                 msk &= fMsk|(fMsk>>1);
 
+                // Re-add culled fluid<->fluid X boundaries where the two fluid models differ (different
+                // surface heights) so the step does not leave a see-through side gap. Must be folded into
+                // msk before the sum/partialHasCount bookkeeping below so the skip counters stay consistent.
+                int bridgeMskX = 0;
+                if (FLUID_BRIDGE_WALLS) {
+                    bridgeMskX = this.computeFluidBridgeMaskX(y, z);
+                    msk |= bridgeMskX;
+                }
+
                 //Always increment cause can do funny trick (i.e. -1 on skip amount)
                 sumA += X_I_MSK;
                 sumB += X_I_MSK;
@@ -1151,7 +1283,9 @@ public class RenderDataFactory {
                         int ai = (idx+(1-facingForward))*2;
                         int bi = (idx+facingForward)*2;
 
-                        if (CHECK_NEIGHBOR_FACE_OCCLUSION) {
+                        // Bridge wall faces skip occlusion: both sides bake full-height walls but the actual
+                        // fluid surface heights differ, so the gap is real despite per-face occlusion.
+                        if (CHECK_NEIGHBOR_FACE_OCCLUSION && ((bridgeMskX >> index) & 1) == 0) {
                             if (ModelQueries.faceOccludes(this.sectionData[bi + 1], (2 << 1) | (1 - facingForward))) {
                                 //TODO check self occlsion
                                 mesher.skip(1);
@@ -1207,6 +1341,58 @@ public class RenderDataFactory {
                     if (skipCount != 0) {
                         this.xAxisMeshers[index].skip(skipCount);
                     }
+                }
+            }
+        }
+    }
+
+    // Second pass for X-axis bridge walls with the opposite facing direction. The main X pass always
+    // emits bridge walls with facingForward determined by faceForwardMsk = msk & lMsk, which for
+    // fluid-fluid boundaries is always 1 (toward +X). This pass emits the opposite direction so
+    // bridge walls are visible from both sides.
+    private void generateXBackwardBridgeWalls() {
+        int[] meshLastPos = new int[32];
+        java.util.Arrays.fill(meshLastPos, -1);
+        int pos = 0;
+        for (int y = 0; y < 32; y++) {
+            for (int z = 0; z < 32; z++, pos++) {
+                int bridgeMskX = this.computeFluidBridgeMaskX(y, z);
+                if (bridgeMskX == 0) continue;
+
+                int fMsk = this.fluidMasks[y * 32 + z];
+                int oMsk = this.opaqueMasks[y * 32 + z];
+                int lMsk = oMsk | fMsk;
+
+                int iter = bridgeMskX;
+                while (iter != 0) {
+                    int x = Integer.numberOfTrailingZeros(iter);
+                    iter &= iter - 1;
+
+                    int skip = pos - meshLastPos[x] - 1;
+                    if (skip > 0) this.xAxisMeshers[x].skip(skip);
+                    meshLastPos[x] = pos;
+
+                    int origFacingForward = ((lMsk >> x) & 1);
+                    int facingForward = 1 - origFacingForward;
+
+                    int idx = x + (z * 32) + (y * 32 * 32);
+                    int ai = (idx + (1 - facingForward)) * 2;
+                    int bi = (idx + facingForward) * 2;
+
+                    long A = this.sectionData[ai];
+                    long Am = this.sectionData[ai + 1];
+                    if (ModelQueries.containsFluid(Am)) {
+                        int modelId = (int) ((A >> 26) & 0xFFFF);
+                        A &= ~(0xFFFFL << 26);
+                        int fluidId = this.modelMan.getFluidClientStateId(modelId);
+                        A |= Integer.toUnsignedLong(fluidId) << 26;
+                        Am = this.modelMan.getModelMetadataFromClientId(fluidId);
+                        A &= ~0b110L;
+                        A |= getQuadTyping(Am);
+                    }
+                    long lighter = this.sectionData[bi];
+                    this.xAxisMeshers[x].putNext(
+                            ((long) facingForward) | (A & ~LM) | (lighter & LM));
                 }
             }
         }
@@ -1566,6 +1752,14 @@ public class RenderDataFactory {
         for (var mesher : this.xAxisMeshers) {
             mesher.finish();
         }
+
+        if (FLUID_BRIDGE_WALLS) {
+            this.generateXBackwardBridgeWalls();
+            for (var mesher : this.xAxisMeshers) {
+                mesher.finish();
+            }
+        }
+
         if (CHECK_NEIGHBOR_FACE_OCCLUSION) {
             this.generateXNonOpaqueInnerGeometry();
             this.generateXNonOpaqueOuterGeometry();
@@ -1614,6 +1808,7 @@ public class RenderDataFactory {
         //We must reset _everything_ that could have changed as we dont exactly know the state due to how the model id exception
         // throwing system works
         this.quadCount = 0;
+        this.hasCutout = false;
 
         {//Reset all the block meshes
             this.blockMesher.reset();
@@ -1705,6 +1900,7 @@ public class RenderDataFactory {
         aabb |= (this.maxX-this.minX-1)<<15;
         aabb |= (this.maxY-this.minY-1)<<20;
         aabb |= (this.maxZ-this.minZ-1)<<25;
+        aabb |= this.hasCutout ? (1 << 30) : 0;
 
         MemoryBuffer occupancy = null;
         if (this.occupancy != null && !this.occupancy.isEmpty()) {

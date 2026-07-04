@@ -11,6 +11,7 @@ import me.cortex.voxy.client.core.rendering.backend.RenderFrameStageState;
 import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import me.cortex.voxy.client.core.rendering.backend.RenderStageContext;
 import me.cortex.voxy.client.core.rendering.backend.VoxyRenderBackend;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.Gl41MetalRenderBackend;
 import me.cortex.voxy.client.core.rendering.backend.gl46.Gl46RenderBackend;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.thread.ServiceManager;
@@ -59,8 +60,7 @@ public class VoxyRenderSystem {
     private VoxyRenderBackend createBackend(BackendContext context) {
         return switch (context.selection().id()) {
             case GL46 -> new Gl46RenderBackend(context);
-            case GL41METAL -> throw new IllegalStateException(
-                    "GL41Metal backend is not migrated yet (milestone 2)");
+            case GL41METAL -> new Gl41MetalRenderBackend(context);
             case DISABLED -> throw new IllegalStateException(
                     "Cannot create Voxy render system for disabled backend: "
                             + context.selection().reason());

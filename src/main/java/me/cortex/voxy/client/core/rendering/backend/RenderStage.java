@@ -9,6 +9,10 @@ public enum RenderStage {
     SODIUM_SOLID_SYNC,
     SODIUM_CUTOUT_SYNC,
     PRE_TRANSLUCENT,
+    // The host reached the start of translucent rendering (Iris beginTranslucents RETURN, before
+    // near Sodium/vanilla translucent geometry draws). gl41metal composites its distant translucent
+    // gbuffer here so near-scene translucents blend over the already-composited distant water.
+    TRANSLUCENT,
     LEGACY_OPAQUE,
     FRAME_END
 }

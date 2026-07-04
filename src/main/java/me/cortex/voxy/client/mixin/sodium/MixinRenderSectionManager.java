@@ -94,7 +94,9 @@ public class MixinRenderSectionManager {
     private boolean voxy$updateOnUpload(RenderSection instance, BuiltSectionInfo info) {
         boolean wasBuilt = instance.getFlags()!=0;
         int flags = instance.getFlags();
-        instance.setInfo(info);
+        if (!instance.setInfo(info)) {
+            return false;
+        }
         if (wasBuilt == (instance.getFlags()!=0)) {//Only want to do stuff on change
             return true;
         }

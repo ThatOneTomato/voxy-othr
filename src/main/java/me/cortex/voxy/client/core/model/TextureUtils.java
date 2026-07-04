@@ -79,6 +79,14 @@ public class TextureUtils {
 
     //Computes depth info based on written pixel data
     public static float computeDepth(ColourDepthTextureData texture, int mode, int checkMode) {
+        return computeDepth(texture, mode, checkMode, false);
+    }
+
+    // halfDepthRange: the GL offscreen bakery (gl41metal path) renders with a projection that maps
+    // model z [0,1] to NDC [-1,0], i.e. window depth [0,0.5], so its captured depth must be doubled
+    // to recover full-range model depth (this is the reference's original u2fdepth *2 behaviour).
+    // The software rasterizer bakery (gl46 path) writes full-range depth and must NOT be doubled.
+    public static float computeDepth(ColourDepthTextureData texture, int mode, int checkMode, boolean halfDepthRange) {
         final var colourData = texture.colour();
         final var depthData = texture.depth();
         long a = 0;
@@ -108,32 +116,32 @@ public class TextureUtils {
             if (a == 0) {
                 return -1;
             }
-            return u2fdepth((int) (b / a));
+            return u2fdepth((int) (b / a), halfDepthRange);
         } else if (mode == DEPTH_MODE_MAX) {
             if (a == Long.MIN_VALUE) {
                 return -1;
             }
-            return u2fdepth((int) a);
+            return u2fdepth((int) a, halfDepthRange);
         } else if (mode == DEPTH_MODE_MIN) {
             if (a == Long.MAX_VALUE) {
                 return -1;
             }
-            return u2fdepth((int) a);
+            return u2fdepth((int) a, halfDepthRange);
         }
         throw new IllegalArgumentException();
     }
 
-    private static float u2fdepth(int depth) {
+    private static float u2fdepth(int depth, boolean halfDepthRange) {
         float depthF = (float) ((double) depth / ((1 << 24) - 1));
         //https://registry.khronos.org/OpenGL-Refpages/gl4/html/glDepthRange.xhtml
-        // due to this and the unsigned bullshit, believe the depth value needs to get multiplied by 2
-
-        ////Shouldent be needed due to the compute bake copy
-        //depthF *= 2;
-        //if (depthF > 1.00001f) {//Basicly only happens when a model goes out of bounds (thing)
-        //    //System.err.println("Warning: Depth greater than 1");
-        //    depthF = 1.0f;
-        //}
+        // due to this and the unsigned bullshit, the GL-baked depth value needs to get multiplied
+        // by 2 (see computeDepth). The software bakery writes full-range depth and skips this.
+        if (halfDepthRange) {
+            depthF *= 2;
+            if (depthF > 1.00001f) {//Basicly only happens when a model goes out of bounds (thing)
+                depthF = 1.0f;
+            }
+        }
         return depthF;
     }
 

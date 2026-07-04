@@ -4,6 +4,7 @@ plugins {
 }
 
 def isInGHA = System.getenv("GITHUB_ACTIONS") == "true"
+def isMacOsHost = System.getProperty("os.name").toLowerCase().contains("mac")
 
 version = project.mod_version
 group = project.maven_group
@@ -85,6 +86,38 @@ loom {
         client {
             // Pass the render backend selection through to the game JVM (auto/gl46/gl41metal)
             property 'voxy.renderBackend', System.getProperty('voxy.renderBackend', 'auto')
+
+            // GL41Metal backend tunables/debug switches (see Gl41MetalConfig)
+            [
+                'voxy.gl41metal.slotCount'              : '3',
+                'voxy.gl41metal.waitTimeoutMs'          : '0',
+                'voxy.gl41metal.visibleComposite'       : 'true',
+                'voxy.gl41metal.debugCompletionDelayMs' : '0',
+                'voxy.gl41metal.residencyMaxSections'   : '262144',
+                'voxy.gl41metal.geometryCapacityMb'     : '256',
+                'voxy.gl41metal.uploadModelAtlas'       : 'true',
+                'voxy.gl41metal.maxNodes'               : '2097152',
+                'voxy.gl41metal.maxTraversalQueue'      : '200000',
+                'voxy.gl41metal.maxTraversalRequests'   : '1024',
+                'voxy.gl41metal.maxWorklistItems'       : '400000',
+                'voxy.gl41metal.debugDumpWorklist'      : 'false',
+                'voxy.gl41metal.hizCulling'             : 'false',
+                'voxy.gl41metal.dumpShaders'            : 'false',
+                'voxy.gl41metal.bridgeDebugMode'        : 'none',
+                'voxy.gl41metal.manualDepthMask'        : 'true',
+                'voxy.gl41metal.debugMatrices'          : 'false',
+                'voxy.gl41metal.debugDepthReadback'     : 'false',
+                'voxy.gl41metal.debugStrictAlbedo'      : 'false',
+                'voxy.gl41metal.debugStrictAlbedoSource': 'albedoTint',
+                'voxy.gl41metal.debugTranslucent'       : 'false',
+                'voxy.gl41metal.boundVerticalMargin'    : '1',
+                'voxy.gl41metal.boundHorizontalMargin'  : '0',
+                'voxy.gl41metal.boundAddDelayFrames'    : '1',
+                'voxy.gl41metal.meshBatchSize'          : '32',
+                'voxy.fluidBridgeWalls'                 : 'true',
+            ].each { key, defaultValue ->
+                property key, System.getProperty(key, defaultValue)
+            }
         }
     }
 }
@@ -124,6 +157,8 @@ dependencies {
     modCompileOnly("maven.modrinth:modmenu:11.0.3")
     modRuntimeOnlyMsk("maven.modrinth:modmenu:11.0.3")
 
+    // Note: no 1.8.12 fabric build exists (reference used 1.8.12 neoforge); 1.8.8 is the newest
+    // fabric release compatible with Sodium 0.6.x.
     modCompileOnly("maven.modrinth:iris:1.8.8+1.21.1-fabric")
     modRuntimeOnlyMsk("maven.modrinth:iris:1.8.8+1.21.1-fabric")
     // iris needs these for some reason
@@ -176,6 +211,101 @@ java {
 jar {
     from("LICENSE") {
         rename { "${it}_${project.archives_base_name}"}
+    }
+}
+
+def gl41MetalNativeDir = layout.buildDirectory.dir("gl41metal-native")
+def gl41MetalShaderDir = layout.buildDirectory.dir("gl41metal-shaders")
+
+tasks.register('compileGl41MetalNative', Exec) {
+    description = 'Compiles the macOS GL41Metal JNI library'
+    group = 'build'
+    onlyIf { isMacOsHost }
+
+    def outputDir = gl41MetalNativeDir.get().asFile
+    def outputLib = new File(outputDir, 'libvoxy_gl41metal.dylib')
+    def javaHome = System.getProperty('java.home')
+    def nativeSources = fileTree('src/main/native/gl41metal') {
+        include '**/*.mm'
+    }
+    def nativeHeaders = fileTree('src/main/native/gl41metal') {
+        include '**/*.h'
+    }
+
+    inputs.files(nativeSources)
+    inputs.files(nativeHeaders)
+    outputs.file(outputLib)
+
+    doFirst {
+        outputDir.mkdirs()
+        def sources = nativeSources.files.sort { it.path }.collect { it.path }
+        commandLine(
+                ['clang++',
+                 '-std=c++17',
+                 '-ObjC++',
+                 '-fobjc-arc',
+                 '-Wall',
+                 '-Wextra',
+                 '-Werror',
+                 '-Wno-deprecated-declarations',
+                 '-dynamiclib',
+                 '-I', "${javaHome}/include",
+                 '-I', "${javaHome}/include/darwin",
+                 '-I', 'src/main/native/gl41metal'] +
+                        sources +
+                        ['-framework', 'Foundation',
+                         '-framework', 'Metal',
+                         '-framework', 'IOSurface',
+                         '-framework', 'OpenGL',
+                         '-framework', 'CoreVideo',
+                         '-o', outputLib.absolutePath])
+    }
+}
+
+tasks.register('compileGl41MetalShaders', Exec) {
+    description = 'Compiles GL41Metal Metal shaders into a build-time library'
+    group = 'build'
+    onlyIf { isMacOsHost }
+
+    def outputDir = gl41MetalShaderDir.get().asFile
+    def outputLibrary = new File(outputDir, 'voxy_gl41metal.metallib')
+    def shaderSources = fileTree('src/main/native/gl41metal/shaders') {
+        include '**/*.metal'
+    }
+
+    inputs.files(shaderSources)
+    outputs.file(outputLibrary)
+
+    doFirst {
+        outputDir.mkdirs()
+        def sources = shaderSources.files.sort { it.path }.collect { it.path }
+        if (sources.isEmpty()) {
+            throw new GradleException('No GL41Metal shader sources found')
+        }
+        commandLine(['xcrun', 'metal', '-std=metal3.0'] + sources + ['-o', outputLibrary.absolutePath])
+    }
+}
+
+processResources {
+    if (isMacOsHost) {
+        dependsOn 'compileGl41MetalNative'
+        dependsOn 'compileGl41MetalShaders'
+
+        from(gl41MetalNativeDir) {
+            include 'libvoxy_gl41metal.dylib'
+            into 'natives/macos'
+        }
+        from(gl41MetalShaderDir) {
+            include 'voxy_gl41metal.metallib'
+            into 'natives/macos/gl41metal'
+        }
+    }
+}
+
+tasks.matching { it.name == 'runClient' }.configureEach {
+    if (isMacOsHost) {
+        dependsOn 'compileGl41MetalNative'
+        dependsOn 'compileGl41MetalShaders'
     }
 }
 

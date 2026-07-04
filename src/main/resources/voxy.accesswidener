@@ -27,4 +27,5 @@ accessible method net/minecraft/client/multiplayer/ClientChunkCache$Storage getI
 accessible field net/minecraft/world/level/block/StairBlock baseState Lnet/minecraft/world/level/block/state/BlockState;
 
 accessible field net/minecraft/client/renderer/LightTexture lightTexture Lnet/minecraft/client/renderer/texture/DynamicTexture;
+accessible field net/minecraft/client/renderer/texture/SpriteContents originalImage Lcom/mojang/blaze3d/platform/NativeImage;
 accessible field com/mojang/blaze3d/systems/RenderSystem$AutoStorageIndexBuffer name I

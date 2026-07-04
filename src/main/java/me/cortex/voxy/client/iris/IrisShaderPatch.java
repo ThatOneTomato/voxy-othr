@@ -27,6 +27,15 @@ public class IrisShaderPatch {
     public static final int VERSION = ((IntSupplier)()->1).getAsInt();
     public static final int SHADER_DEFINE_VERSION = 2;
 
+    public static final boolean IMPERSONATE_DISTANT_HORIZONS =
+            System.getProperty("voxy.impersonateDHShader", "false").equalsIgnoreCase("true");
+
+    // Set during an IrisRenderingPipeline constructor (HEAD) and cleared at its RETURN. The pipeline's
+    // own patchData field is only assigned mid-constructor, but the pipeline builds every
+    // program's samplers (MixinIrisSamplers) DURING construction, so MixinIrisSamplers reads this
+    // thread-local to know whether the pack is Voxy-patched at sampler-build time. Render-thread only.
+    public static final ThreadLocal<IrisShaderPatch> CONSTRUCTING_PIPELINE_PATCH = new ThreadLocal<>();
+
 
     private static final class SSBODeserializer implements JsonDeserializer<Int2ObjectOpenHashMap<String>> {
         @Override
@@ -240,7 +249,7 @@ public class IrisShaderPatch {
         return this.patchData.translucentPatchData;
     }
     public String getTAAShift() {
-        return this.patchData.taaOffset;// == null?"{return vec2(0.0);}":this.patchData.taaOffset;
+        return this.patchData.taaOffset == null ? "{return vec2(0.0);}" : this.patchData.taaOffset;
     }
     public String[] getUniformList() {
         return this.patchData.uniforms;

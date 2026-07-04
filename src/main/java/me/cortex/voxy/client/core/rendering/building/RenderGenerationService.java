@@ -25,6 +25,11 @@ import java.util.function.Consumer;
 public class RenderGenerationService {
     private static final int MAX_HOLDING_SECTION_COUNT = 1000;
 
+    public enum TaskPriorityMode {
+        COARSE_LOD_FIRST,
+        FINE_LOD_FIRST
+    }
+
     public static final AtomicInteger MESH_FAILED_COUNTER = new AtomicInteger();
     private static final AtomicInteger COUNTER = new AtomicInteger();
     private static final class BuildTask {
@@ -38,10 +43,15 @@ public class RenderGenerationService {
         private BuildTask(long position) {
             this.position = position;
         }
-        private void updatePriority() {
+        private void updatePriority(TaskPriorityMode priorityMode) {
             int unique = COUNTER.incrementAndGet();
-            int lvl = WorldEngine.MAX_LOD_LAYER-WorldEngine.getLevel(this.position);
-            lvl = Math.min(lvl, 3);//Make the 2 highest quality have equal priority
+            int lvl;
+            if (priorityMode == TaskPriorityMode.FINE_LOD_FIRST) {
+                lvl = WorldEngine.getLevel(this.position);
+            } else {
+                lvl = WorldEngine.MAX_LOD_LAYER-WorldEngine.getLevel(this.position);
+            }
+            lvl = Math.min(lvl, 3);//Keep adjacent extreme quality levels in the same priority bucket.
             this.priority = (((lvl*3L + Math.min(this.attempts, 3))*2 + this.addin) <<32) + Integer.toUnsignedLong(unique);
             this.addin = 0;
         }
@@ -58,19 +68,20 @@ public class RenderGenerationService {
     private final ModelBakerySubsystem modelBakery;
     private Consumer<BuiltSection> resultConsumer;
     private final boolean emitMeshlets;
+    private final TaskPriorityMode priorityMode;
 
     private final Service service;
 
 
-    /*
     public RenderGenerationService(WorldEngine world, ModelBakerySubsystem modelBakery, ServiceManager sm, boolean emitMeshlets) {
-        this(world, modelBakery, sm, emitMeshlets, ()->true);
-    }*/
+        this(world, modelBakery, sm, emitMeshlets, TaskPriorityMode.COARSE_LOD_FIRST);
+    }
 
-    public RenderGenerationService(WorldEngine world, ModelBakerySubsystem modelBakery, ServiceManager sm, boolean emitMeshlets) {
+    public RenderGenerationService(WorldEngine world, ModelBakerySubsystem modelBakery, ServiceManager sm, boolean emitMeshlets, TaskPriorityMode priorityMode) {
         this.emitMeshlets = emitMeshlets;
         this.world = world;
         this.modelBakery = modelBakery;
+        this.priorityMode = priorityMode;
 
         this.service = sm.createService(()->{
             //Thread local instance of the factory
@@ -79,7 +90,12 @@ public class RenderGenerationService {
             return new Pair<>(() -> {
                 this.processJob(factory, seenMissed);
             }, factory::free);
-        }, 10, "Section mesh generation service");
+        }, 10, "Section mesh generation service",
+                // Throttle workers when the model bakery is backed up AND tasks are failing in bulk
+                // (each failure re-enqueues); without this the workers busy-spin re-processing tasks
+                // that only fail because their block models haven't been baked yet (gl41metal's bakery
+                // runs on the render thread, so workers can massively outpace it).
+                () -> modelBakery.getProcessingCount() < 400 || RenderGenerationService.MESH_FAILED_COUNTER.get() < 500);
     }
 
     public void setResultConsumer(Consumer<BuiltSection> consumer) {
@@ -214,6 +230,12 @@ public class RenderGenerationService {
 
                 if (task.hasDoneModelRequestInner && task.hasDoneModelRequestOuter) {
                     task.attempts++;
+                    try {
+                        // Back off instead of busy-retrying while waiting on the model bakery
+                        Thread.sleep(1);
+                    } catch (InterruptedException ex) {
+                        throw new RuntimeException(ex);
+                    }
                 } else {
                     if (task.hasDoneModelRequestInner) {
                         task.attempts++;//This is because it can be baking and just model thing isnt keeping up
@@ -249,7 +271,7 @@ public class RenderGenerationService {
                     shouldFreeSection = false;
                 }
 
-                task.updatePriority();
+                task.updatePriority(this.priorityMode);
                 this.taskQueue.add(task);
                 this.taskQueueCount.incrementAndGet();
 
@@ -290,7 +312,7 @@ public class RenderGenerationService {
 
         if (isOurs[0]) {//If its not ours we dont care about it
             //Set priority and insert into queue and execute
-            task.updatePriority();
+            task.updatePriority(this.priorityMode);
             this.taskQueue.add(task);
             this.taskQueueCount.incrementAndGet();
             this.service.execute();

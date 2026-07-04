@@ -41,6 +41,16 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
     public int cloudDistance = 0;
     public boolean dontUseSodiumBuilderThreads = false;
 
+    // LOD boundary buffer (gl41metal): safety margin between vanilla chunks and LOD rendering.
+    // Higher values = more overlap, prevents pop-in at chunk boundaries when flying.
+    // Range: 0-4 blocks, default 1 (original Voxy behavior)
+    public int lodBoundaryBuffer = 1;
+
+    // World curvature (gl41metal): simulates standing on a spherical planet.
+    // 0 = disabled (flat world), 1 = real Earth curvature (6371km radius),
+    // higher values = more extreme curvature. Range: 0, or 50-5000.
+    public int earthCurveRatio = 0;
+
     public String ssaoMode;
 
     public SSAO.SSAOMode getSSAOMode() {

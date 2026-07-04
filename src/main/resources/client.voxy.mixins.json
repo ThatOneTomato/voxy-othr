@@ -17,6 +17,8 @@
     "iris.MixinProgramSet",
     "iris.MixinShaderPackSourceNames",
     "iris.MixinStandardMacros",
+    "minecraft.AccessorLightTexture",
+    "minecraft.AccessorTextureAtlas",
     // "minecraft.MixinBlockableEventLoop",
     "minecraft.MixinClientChunkCache",
     "minecraft.MixinClientCommonPacketListenerImpl",

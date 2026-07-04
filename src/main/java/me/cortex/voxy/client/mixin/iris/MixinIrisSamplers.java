@@ -19,7 +19,7 @@ public class MixinIrisSamplers {
     @Inject(method = "addRenderTargetSamplers", at = @At("TAIL"))
     private static void voxy$injectSamplers(SamplerHolder samplers, Supplier<ImmutableSet<Integer>> flipped, RenderTargets renderTargets, boolean isFullscreenPass, WorldRenderingPipeline pipeline, CallbackInfo ci) {
         if (pipeline instanceof IrisRenderingPipeline ipipe) {
-            VoxySamplers.addSamplers(ipipe, samplers);
+            VoxySamplers.addSamplers(ipipe, samplers, renderTargets);
         }
     }
 }
