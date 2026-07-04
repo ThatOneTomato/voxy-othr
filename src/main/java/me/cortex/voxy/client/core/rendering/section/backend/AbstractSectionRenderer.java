@@ -1,7 +1,7 @@
 package me.cortex.voxy.client.core.rendering.section.backend;
 
 
-import me.cortex.voxy.client.core.AbstractRenderPipeline;
+import me.cortex.voxy.client.core.rendering.backend.gl46.pipeline.AbstractRenderPipeline;
 import me.cortex.voxy.client.core.gl.shader.Shader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
 import me.cortex.voxy.client.core.model.ModelStore;

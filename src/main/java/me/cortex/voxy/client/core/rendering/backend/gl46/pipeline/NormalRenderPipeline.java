@@ -1,7 +1,9 @@
-package me.cortex.voxy.client.core;
+package me.cortex.voxy.client.core.rendering.backend.gl46.pipeline;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import me.cortex.voxy.client.config.VoxyConfig;
+import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.SSAO;
 import me.cortex.voxy.client.core.gl.GlFramebuffer;
 import me.cortex.voxy.client.core.gl.GlTexture;
 import me.cortex.voxy.client.core.rendering.Viewport;

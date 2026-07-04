@@ -5,8 +5,8 @@ import com.mojang.blaze3d.platform.GlStateManager;
 import me.cortex.voxy.client.TimingStatistics;
 import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.config.VoxyConfig;
-import me.cortex.voxy.client.core.AbstractRenderPipeline;
-import me.cortex.voxy.client.core.RenderPipelineFactory;
+import me.cortex.voxy.client.core.rendering.backend.gl46.pipeline.AbstractRenderPipeline;
+import me.cortex.voxy.client.core.rendering.backend.gl46.pipeline.RenderPipelineFactory;
 import me.cortex.voxy.client.core.RenderResourceReuse;
 import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.gl.GlTexture;
@@ -26,6 +26,7 @@ import me.cortex.voxy.client.core.rendering.backend.RenderStageContext;
 import me.cortex.voxy.client.core.rendering.backend.VoxyRenderBackend;
 import me.cortex.voxy.client.core.rendering.building.RenderGenerationService;
 import me.cortex.voxy.client.core.rendering.hierachical.AsyncNodeManager;
+import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.client.core.rendering.hierachical.HierarchicalOcclusionTraverser;
 import me.cortex.voxy.client.core.rendering.hierachical.NodeCleaner;
 import me.cortex.voxy.client.core.rendering.section.IUsesMeshlets;
@@ -93,6 +94,9 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
     public Gl46RenderBackend(BackendContext context) {
         WorldEngine world = context.world();
         Logger.info("Creating Voxy GL46 render backend");
+
+        // Warm the shared quad index buffer up front (previously done at client init).
+        SharedIndexBuffer.INSTANCE.id();
 
         if (Minecraft.getInstance().options.renderDistance().get()<3) {
             String msg = "Voxy: Having a vanilla render distance of 2 can cause rare culling near the edge of your screen issues, please use 3 or more";

@@ -3,7 +3,7 @@ package me.cortex.voxy.client.core.rendering.section.backend.mdic;
 
 import me.cortex.voxy.client.RenderStatistics;
 import me.cortex.voxy.client.VoxyClient;
-import me.cortex.voxy.client.core.AbstractRenderPipeline;
+import me.cortex.voxy.client.core.rendering.backend.gl46.pipeline.AbstractRenderPipeline;
 import me.cortex.voxy.client.core.gl.Capabilities;
 import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.gl.GlVertexArray;

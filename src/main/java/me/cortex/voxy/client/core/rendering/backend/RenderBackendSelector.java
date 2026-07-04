@@ -2,6 +2,7 @@ package me.cortex.voxy.client.core.rendering.backend;
 
 import me.cortex.voxy.client.core.gl.Capabilities;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.Gl41MetalSupport;
+import me.cortex.voxy.client.core.rendering.backend.gl46.Gl46Support;
 import me.cortex.voxy.common.Logger;
 
 import java.util.Locale;
@@ -121,16 +122,7 @@ public final class RenderBackendSelector {
     }
 
     private static String getGl46UnsupportedReason(Capabilities capabilities) {
-        if (capabilities.hasBrokenDepthSampler) {
-            return "AMD broken depth sampler detected";
-        }
-        if (!capabilities.compute || !capabilities.indirectParameters) {
-            return "compute="
-                    + capabilities.compute
-                    + ", indirectParameters="
-                    + capabilities.indirectParameters;
-        }
-        return null;
+        return Gl46Support.getUnsupportedReason(capabilities);
     }
 
     private static String getGl41MetalUnsupportedReason() {

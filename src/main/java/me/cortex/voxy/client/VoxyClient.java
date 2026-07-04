@@ -4,7 +4,6 @@ import me.cortex.voxy.client.core.gl.Capabilities;
 import me.cortex.voxy.client.core.rendering.backend.RenderBackendId;
 import me.cortex.voxy.client.core.rendering.backend.RenderBackendSelection;
 import me.cortex.voxy.client.core.rendering.backend.RenderBackendSelector;
-import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.impl.VoxyCommon;
 import net.minecraft.client.Minecraft;
@@ -53,9 +52,6 @@ public abstract class VoxyClient {
         }
 
         if (renderBackendSelection.id() == RenderBackendId.GL46) {
-
-            SharedIndexBuffer.INSTANCE.id();
-
             VoxyCommon.setInstanceFactory(VoxyClientInstance::new);
 
             if (!Capabilities.INSTANCE.subgroup) {

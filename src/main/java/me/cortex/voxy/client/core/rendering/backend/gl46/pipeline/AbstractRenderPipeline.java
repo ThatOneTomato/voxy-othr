@@ -1,4 +1,4 @@
-package me.cortex.voxy.client.core;
+package me.cortex.voxy.client.core.rendering.backend.gl46.pipeline;
 
 import me.cortex.voxy.client.RenderStatistics;
 import me.cortex.voxy.client.TimingStatistics;
