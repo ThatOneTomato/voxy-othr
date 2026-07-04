@@ -9,7 +9,7 @@ import me.cortex.voxy.client.core.rendering.section.geometry.IGeometryData;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.ThreadUtils;
 import me.cortex.voxy.common.util.TrackedObject;
-import me.cortex.voxy.commonImpl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyCommon;
 
 import java.util.ArrayList;
 

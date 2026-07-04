@@ -2,9 +2,9 @@ package me.cortex.voxy.client.mixin.minecraft;
 
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.common.world.service.VoxelIngestService;
-import me.cortex.voxy.commonImpl.VoxyCommon;
-import me.cortex.voxy.commonImpl.VoxyInstance;
-import me.cortex.voxy.commonImpl.WorldIdentifier;
+import me.cortex.voxy.impl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyInstance;
+import me.cortex.voxy.impl.WorldIdentifier;
 import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;

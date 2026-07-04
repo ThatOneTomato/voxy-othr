@@ -1,7 +1,7 @@
 package me.cortex.voxy.client;
 
 import me.cortex.voxy.client.config.VoxyConfig;
-import me.cortex.voxy.commonImpl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyCommon;
 
 public class ClientSessionEvents {
     public static boolean inSession = false;

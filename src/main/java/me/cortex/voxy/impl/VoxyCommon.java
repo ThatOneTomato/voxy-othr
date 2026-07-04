@@ -1,4 +1,4 @@
-package me.cortex.voxy.commonImpl;
+package me.cortex.voxy.impl;
 
 public class VoxyCommon {
     public interface IInstanceFactory {VoxyInstance create();}

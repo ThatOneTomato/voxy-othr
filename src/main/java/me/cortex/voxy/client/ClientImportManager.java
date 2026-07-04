@@ -1,8 +1,8 @@
 package me.cortex.voxy.client;
 
 import me.cortex.voxy.common.Logger;
-import me.cortex.voxy.commonImpl.ImportManager;
-import me.cortex.voxy.commonImpl.importers.IDataImporter;
+import me.cortex.voxy.impl.ImportManager;
+import me.cortex.voxy.impl.importers.IDataImporter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.LerpingBossEvent;
 import net.minecraft.network.chat.Component;

@@ -1,7 +1,7 @@
 package me.cortex.voxy.client.config;
 
 import me.cortex.voxy.common.Logger;
-import me.cortex.voxy.commonImpl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyCommon;
 import net.caffeinemc.mods.sodium.client.gui.SodiumOptionsGUI;
 import net.minecraft.client.gui.screens.Screen;
 

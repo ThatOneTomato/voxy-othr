@@ -4,7 +4,7 @@ import me.cortex.voxy.client.RenderStatistics;
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
 import me.cortex.voxy.client.core.VoxyRenderSystem;
 import me.cortex.voxy.client.core.util.GPUTiming;
-import me.cortex.voxy.commonImpl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyCommon;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;

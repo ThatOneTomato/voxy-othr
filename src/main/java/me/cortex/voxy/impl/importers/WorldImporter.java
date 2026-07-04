@@ -1,4 +1,4 @@
-package me.cortex.voxy.commonImpl.importers;
+package me.cortex.voxy.impl.importers;
 
 import com.mojang.serialization.Codec;
 import me.cortex.voxy.common.Logger;
@@ -63,8 +63,8 @@ import me.cortex.voxy.common.voxelization.VoxelizedSection;
 import me.cortex.voxy.common.voxelization.WorldConversionFactory;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.common.world.WorldUpdater;
-import me.cortex.voxy.commonImpl.importers.IDataImporter.ICompletionCallback;
-import me.cortex.voxy.commonImpl.importers.IDataImporter.IUpdateCallback;
+import me.cortex.voxy.impl.importers.IDataImporter.ICompletionCallback;
+import me.cortex.voxy.impl.importers.IDataImporter.IUpdateCallback;
 import net.minecraft.core.Holder;
 import net.minecraft.core.IdMap;
 import net.minecraft.core.registries.Registries;

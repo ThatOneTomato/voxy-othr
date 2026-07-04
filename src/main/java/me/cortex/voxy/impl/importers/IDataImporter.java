@@ -1,4 +1,4 @@
-package me.cortex.voxy.commonImpl.importers;
+package me.cortex.voxy.impl.importers;
 
 import me.cortex.voxy.common.world.WorldEngine;
 

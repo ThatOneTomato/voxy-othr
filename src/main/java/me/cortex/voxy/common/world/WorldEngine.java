@@ -4,7 +4,7 @@ import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.config.section.SectionStorage;
 import me.cortex.voxy.common.util.TrackedObject;
 import me.cortex.voxy.common.world.other.Mapper;
-import me.cortex.voxy.commonImpl.VoxyInstance;
+import me.cortex.voxy.impl.VoxyInstance;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.invoke.VarHandle;

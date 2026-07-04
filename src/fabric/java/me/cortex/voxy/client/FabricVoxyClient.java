@@ -1,7 +1,7 @@
 package me.cortex.voxy.client;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import me.cortex.voxy.commonImpl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyCommon;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;

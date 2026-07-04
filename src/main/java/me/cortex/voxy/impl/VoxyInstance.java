@@ -1,4 +1,4 @@
-package me.cortex.voxy.commonImpl;
+package me.cortex.voxy.impl;
 
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.config.section.SectionStorage;

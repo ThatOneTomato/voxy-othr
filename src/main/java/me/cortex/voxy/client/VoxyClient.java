@@ -6,7 +6,7 @@ import me.cortex.voxy.client.core.rendering.backend.RenderBackendSelection;
 import me.cortex.voxy.client.core.rendering.backend.RenderBackendSelector;
 import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.common.Logger;
-import me.cortex.voxy.commonImpl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyCommon;
 import net.minecraft.client.Minecraft;
 
 import java.io.FileOutputStream;

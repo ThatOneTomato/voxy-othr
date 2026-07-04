@@ -1,7 +1,7 @@
 package me.cortex.voxy.client.mixin.sodium;
 
 import me.cortex.voxy.client.config.VoxyConfigScreenPages;
-import me.cortex.voxy.commonImpl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyCommon;
 import net.caffeinemc.mods.sodium.client.gui.SodiumOptionsGUI;
 import net.caffeinemc.mods.sodium.client.gui.options.OptionPage;
 import net.minecraft.client.gui.screens.Screen;

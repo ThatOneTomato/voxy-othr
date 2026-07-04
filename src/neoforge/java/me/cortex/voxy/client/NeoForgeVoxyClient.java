@@ -1,7 +1,7 @@
 package me.cortex.voxy.client;
 
 import me.cortex.voxy.client.config.VoxyConfigScreenFactory;
-import me.cortex.voxy.commonImpl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyCommon;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;

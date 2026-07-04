@@ -1,7 +1,7 @@
-package me.cortex.voxy.commonImpl;
+package me.cortex.voxy.impl;
 
 import me.cortex.voxy.common.world.WorldEngine;
-import me.cortex.voxy.commonImpl.importers.IDataImporter;
+import me.cortex.voxy.impl.importers.IDataImporter;
 
 import java.util.HashMap;
 import java.util.Map;

@@ -1,7 +1,7 @@
-package me.cortex.voxy.commonImpl.mixin.minecraft;
+package me.cortex.voxy.impl.mixin.minecraft;
 
-import me.cortex.voxy.commonImpl.IWorldGetIdentifier;
-import me.cortex.voxy.commonImpl.WorldIdentifier;
+import me.cortex.voxy.impl.IWorldGetIdentifier;
+import me.cortex.voxy.impl.WorldIdentifier;
 import net.minecraft.core.Holder;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceKey;

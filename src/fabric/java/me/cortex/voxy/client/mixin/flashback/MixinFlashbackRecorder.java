@@ -4,7 +4,7 @@ import com.moulberry.flashback.record.FlashbackMeta;
 import com.moulberry.flashback.record.Recorder;
 import me.cortex.voxy.client.VoxyClientInstance;
 import me.cortex.voxy.client.compat.IFlashbackMeta;
-import me.cortex.voxy.commonImpl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyCommon;
 import net.minecraft.core.RegistryAccess;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;

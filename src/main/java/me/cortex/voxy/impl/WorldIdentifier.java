@@ -1,4 +1,4 @@
-package me.cortex.voxy.commonImpl;
+package me.cortex.voxy.impl;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;

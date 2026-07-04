@@ -7,7 +7,7 @@ import com.google.gson.GsonBuilder;
 import me.cortex.voxy.client.core.SSAO;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.cpu.CpuLayout;
-import me.cortex.voxy.commonImpl.VoxyCommon;
+import me.cortex.voxy.impl.VoxyCommon;
 import net.caffeinemc.mods.sodium.client.gui.options.storage.OptionStorage;
 
 import java.io.FileReader;
