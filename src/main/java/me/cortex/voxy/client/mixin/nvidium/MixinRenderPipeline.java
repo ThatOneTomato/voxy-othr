@@ -17,7 +17,7 @@ public class MixinRenderPipeline {
     private void voxy$injectRender(Viewport frustum, ChunkRenderMatrices crm, double px, double py, double pz, CallbackInfo ci) {
         var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
         if (renderer != null) {
-            renderer.renderOpaque(renderer.setupViewport(crm, px, py, pz));
+            renderer.renderOpaque(renderer.setupFrame(crm, px, py, pz));
         }
     }
 }

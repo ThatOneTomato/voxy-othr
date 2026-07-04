@@ -1,6 +1,9 @@
 package me.cortex.voxy.client;
 
 import me.cortex.voxy.client.core.gl.Capabilities;
+import me.cortex.voxy.client.core.rendering.backend.RenderBackendId;
+import me.cortex.voxy.client.core.rendering.backend.RenderBackendSelection;
+import me.cortex.voxy.client.core.rendering.backend.RenderBackendSelector;
 import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.commonImpl.VoxyCommon;
@@ -21,17 +24,18 @@ import java.util.function.Function;
 public class VoxyClient implements ClientModInitializer {
     private static final HashSet<String> FREX = new HashSet<>();
     private static FileLock EXCLUSIVE_LOCK;
+    private static RenderBackendSelection renderBackendSelection =
+            new RenderBackendSelection(
+                    RenderBackendId.DISABLED,
+                    "uninitialized",
+                    "Voxy client has not initialized render backend selection yet",
+                    false);
+
     public static void initVoxyClient() {
         Capabilities.init();//Ensure clinit is called
 
-        if (Capabilities.INSTANCE.hasBrokenDepthSampler) {
-            Logger.error("AMD broken depth sampler detected, voxy does not work correctly and has been disabled, this will hopefully be fixed in the future");
-        }
-
-        boolean systemSupported = Capabilities.INSTANCE.compute && Capabilities.INSTANCE.indirectParameters && !Capabilities.INSTANCE.hasBrokenDepthSampler;
-        if (!systemSupported) {
-             Logger.error("Voxy is unsupported on your system.");
-        }
+        renderBackendSelection = RenderBackendSelector.select(Capabilities.INSTANCE);
+        boolean systemSupported = renderBackendSelection.id() != RenderBackendId.DISABLED;
 
         if (systemSupported && System.getProperty("voxy.exclusiveLock", "false").equalsIgnoreCase("true")) {
             //Try acquire the lock file
@@ -45,12 +49,16 @@ public class VoxyClient implements ClientModInitializer {
             } catch (NonWritableChannelException | IOException e) {
                 //If some error write to log and unsupport
                 Logger.error("Failed to acquire exclusive voxy lock file, mod will be disabled");
-                systemSupported = false;
+                renderBackendSelection = new RenderBackendSelection(
+                        RenderBackendId.DISABLED,
+                        renderBackendSelection.requested(),
+                        "Failed to acquire exclusive voxy lock file",
+                        renderBackendSelection.forced());
             }
 
         }
 
-        if (systemSupported) {
+        if (renderBackendSelection.id() == RenderBackendId.GL46) {
 
             SharedIndexBuffer.INSTANCE.id();
 
@@ -60,7 +68,24 @@ public class VoxyClient implements ClientModInitializer {
                 Logger.warn("GPU does not support subgroup operations, expect some performance degradation");
             }
 
+        } else if (renderBackendSelection.id() == RenderBackendId.GL41METAL) {
+            Logger.warn("Voxy GL41Metal backend selected.");
+            VoxyCommon.setInstanceFactory(VoxyClientInstance::new);
+        } else {
+            Logger.error(
+                    "Voxy is unsupported on your system. Selected backend: "
+                            + renderBackendSelection.id()
+                            + ", reason: "
+                            + renderBackendSelection.reason());
         }
+    }
+
+    public static RenderBackendSelection getRenderBackendSelection() {
+        return renderBackendSelection;
+    }
+
+    public static RenderBackendId getRenderBackendId() {
+        return renderBackendSelection.id();
     }
 
     @Override

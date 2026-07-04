@@ -45,6 +45,7 @@ public class Capabilities {
     public final boolean isIntel;
     public final boolean subgroup;
     public final boolean sparseBuffer;
+    public final boolean openGl41;
     public final boolean isNvidia;
     public final boolean isAmd;
     public final boolean nvBarryCoords;
@@ -52,6 +53,7 @@ public class Capabilities {
 
     public Capabilities() {
         var cap = GL.getCapabilities();
+        this.openGl41 = cap.OpenGL41;
         this.sparseBuffer = cap.GL_ARB_sparse_buffer;
         this.compute = cap.glDispatchComputeIndirect != 0;
         this.indirectParameters = cap.glMultiDrawElementsIndirectCountARB != 0;
@@ -60,7 +62,9 @@ public class Capabilities {
         this.canQueryGpuMemory = cap.GL_NVX_gpu_memory_info;
         //this.INT64_t = cap.GL_ARB_gpu_shader_int64 || cap.GL_AMD_gpu_shader_int64;
         //The only reliable way to test for int64 support is to try compile a shader
-        this.INT64_t = testShaderCompilesOk(ShaderType.COMPUTE, """
+        // (compute-only probes are gated on compute support so this class can be constructed on
+        // OpenGL 4.1-only systems, e.g. macOS, for the gl41metal backend)
+        this.INT64_t = this.compute && testShaderCompilesOk(ShaderType.COMPUTE, """
                 #version 430
                 #extension GL_ARB_gpu_shader_int64 : require
                 layout(local_size_x=32) in;
@@ -68,7 +72,7 @@ public class Capabilities {
                     uint64_t a = 1234;
                 }
                 """);
-        if (cap.GL_KHR_shader_subgroup) {
+        if (this.compute && cap.GL_KHR_shader_subgroup) {
             this.subgroup = testShaderCompilesOk(ShaderType.COMPUTE, """
                 #version 430
                 #extension GL_KHR_shader_subgroup_basic : require
@@ -82,8 +86,8 @@ public class Capabilities {
             this.subgroup = false;
         }
 
-        this.ssboMaxSize = glGetInteger64(GL_MAX_SHADER_STORAGE_BLOCK_SIZE);
-        this.ssboBindingAlignment = glGetInteger(GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
+        this.ssboMaxSize = this.compute ? glGetInteger64(GL_MAX_SHADER_STORAGE_BLOCK_SIZE) : 0;
+        this.ssboBindingAlignment = this.compute ? glGetInteger(GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT) : 0;
 
         this.isMesa = glGetString(GL_VERSION).toLowerCase(Locale.ROOT).contains("mesa");
         var vendor = glGetString(GL_VENDOR).toLowerCase(Locale.ROOT);
@@ -103,9 +107,8 @@ public class Capabilities {
 
         if (this.compute&&this.isAmd) {
             this.hasBrokenDepthSampler = testDepthSampler();
-            if (this.hasBrokenDepthSampler) {
-                throw new IllegalStateException("it bork, amd is bork");
-            }
+            // Boolean flag is sufficient for graceful degradation in the RenderBackendSelector;
+            // throwing here would bypass the graceful error handling
         } else {
             this.hasBrokenDepthSampler = false;
         }

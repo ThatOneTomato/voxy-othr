@@ -1,7 +1,8 @@
 package me.cortex.voxy.client.core.util;
 
 import me.cortex.voxy.client.core.VoxyRenderSystem;
-import me.cortex.voxy.client.core.rendering.Viewport;
+import me.cortex.voxy.client.core.rendering.backend.RenderFrame;
+import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import net.caffeinemc.mods.sodium.client.render.chunk.ChunkRenderMatrices;
 import net.fabricmc.loader.api.FabricLoader;
 import net.irisshaders.iris.Iris;
@@ -13,8 +14,25 @@ import java.io.IOException;
 
 public class IrisUtil {
     public record CapturedViewportParameters(ChunkRenderMatrices matrices, double x, double y, double z) {
-        public Viewport<?> apply(VoxyRenderSystem vrs) {
-            return vrs.setupViewport(this.matrices, this.x, this.y, this.z);
+        public RenderFrame apply(VoxyRenderSystem vrs) {
+            return vrs.setupFrame(this.matrices, this.x, this.y, this.z);
+        }
+
+        public RenderFrame runStage(VoxyRenderSystem vrs, RenderStage stage, RenderFrame frame) {
+            return this.runStage(vrs, stage, frame, null);
+        }
+
+        public RenderFrame runStage(VoxyRenderSystem vrs, RenderStage stage, RenderFrame frame, Object payload) {
+            return vrs.runFrameStage(
+                    stage,
+                    frame,
+                    this.matrices,
+                    this.x,
+                    this.y,
+                    this.z,
+                    IRIS_INSTALLED,
+                    irisShaderPackEnabled(),
+                    payload);
         }
     }
 

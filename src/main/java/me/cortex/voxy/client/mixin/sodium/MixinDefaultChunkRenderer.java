@@ -2,7 +2,8 @@ package me.cortex.voxy.client.mixin.sodium;
 
 import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
-import me.cortex.voxy.client.core.rendering.Viewport;
+import me.cortex.voxy.client.core.rendering.backend.RenderFrameStageState;
+import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import net.caffeinemc.mods.sodium.client.gl.device.CommandList;
 import net.caffeinemc.mods.sodium.client.gl.device.RenderDevice;
@@ -32,7 +33,7 @@ public abstract class MixinDefaultChunkRenderer extends ShaderChunkRenderer {
     private void cancelThingie(ChunkRenderMatrices matrices, CommandList commandList, ChunkRenderListIterable renderLists, TerrainRenderPass renderPass, CameraTransform camera, CallbackInfo ci) {
         if (VoxyClient.disableSodiumChunkRender()) {
             super.begin(renderPass);
-            this.doRender(matrices, renderPass, camera);
+            this.doRender(matrices, renderLists, renderPass, camera);
             super.end(renderPass);
             ci.cancel();
         }
@@ -40,21 +41,57 @@ public abstract class MixinDefaultChunkRenderer extends ShaderChunkRenderer {
 
     @Inject(method = "render", at = @At(value = "INVOKE", target = "Lnet/caffeinemc/mods/sodium/client/render/chunk/ShaderChunkRenderer;end(Lnet/caffeinemc/mods/sodium/client/render/chunk/terrain/TerrainRenderPass;)V", shift = At.Shift.BEFORE))
     private void injectRender(ChunkRenderMatrices matrices, CommandList commandList, ChunkRenderListIterable renderLists, TerrainRenderPass renderPass, CameraTransform camera, CallbackInfo ci) {
-        this.doRender(matrices, renderPass, camera);
+        this.doRender(matrices, renderLists, renderPass, camera);
     }
 
     @Unique
-    private void doRender(ChunkRenderMatrices matrices, TerrainRenderPass renderPass, CameraTransform camera) {
+    private void doRender(ChunkRenderMatrices matrices, ChunkRenderListIterable renderLists, TerrainRenderPass renderPass, CameraTransform camera) {
+        var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
+        if (renderer == null) {
+            return;
+        }
+
+        if (renderPass == DefaultTerrainRenderPasses.SOLID) {
+            renderer.beginVanillaRenderSectionSync();
+            renderer.syncVanillaRenderSections(renderLists, renderPass.isTranslucent());
+            RenderFrameStageState.store(
+                    renderer.runFrameStage(
+                            RenderStage.SODIUM_SOLID_SYNC,
+                            RenderFrameStageState.currentFrame(),
+                            matrices,
+                            camera.x,
+                            camera.y,
+                            camera.z,
+                            IrisUtil.IRIS_INSTALLED,
+                            IrisUtil.irisShaderPackEnabled()));
+            return;
+        }
+
         if (renderPass == DefaultTerrainRenderPasses.CUTOUT) {
-            var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
-            if (renderer != null) {
-                Viewport<?> viewport = null;
-                if (IrisUtil.irisShaderPackEnabled()) {
-                    viewport = renderer.getViewport();
-                } else {
-                    viewport = renderer.setupViewport(matrices, camera.x, camera.y, camera.z);
-                }
-                renderer.renderOpaque(viewport);
+            renderer.syncVanillaRenderSections(renderLists, renderPass.isTranslucent());
+            boolean shaderPackActive = IrisUtil.irisShaderPackEnabled();
+            var frame = renderer.runFrameStage(
+                    RenderStage.SODIUM_CUTOUT_SYNC,
+                    RenderFrameStageState.currentFrame(),
+                    matrices,
+                    camera.x,
+                    camera.y,
+                    camera.z,
+                    IrisUtil.IRIS_INSTALLED,
+                    shaderPackActive);
+            frame = renderer.runFrameStage(
+                    RenderStage.LEGACY_OPAQUE,
+                    frame,
+                    matrices,
+                    camera.x,
+                    camera.y,
+                    camera.z,
+                    IrisUtil.IRIS_INSTALLED,
+                    shaderPackActive);
+            if (shaderPackActive) {
+                RenderFrameStageState.store(frame);
+            } else {
+                RenderFrameStageState.clear();
             }
         }
     }

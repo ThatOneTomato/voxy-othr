@@ -1,6 +1,8 @@
 package me.cortex.voxy.client.mixin.iris;
 
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.rendering.backend.RenderFrameStageState;
+import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.client.iris.IGetIrisVoxyPipelineData;
 import me.cortex.voxy.client.iris.IGetVoxyPatchData;
@@ -46,7 +48,9 @@ public class MixinIrisRenderingPipeline implements IGetVoxyPatchData, IGetIrisVo
         if (IrisUtil.CAPTURED_VIEWPORT_PARAMETERS != null) {
             var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
             if (renderer != null) {
-                IrisUtil.CAPTURED_VIEWPORT_PARAMETERS.apply(renderer);
+                RenderFrameStageState.store(
+                        IrisUtil.CAPTURED_VIEWPORT_PARAMETERS.runStage(
+                                renderer, RenderStage.LEGACY_VIEWPORT_SETUP, RenderFrameStageState.currentFrame()));
             }
         }
     }

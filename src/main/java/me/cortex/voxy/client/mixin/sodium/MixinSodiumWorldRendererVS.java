@@ -7,7 +7,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
-import me.cortex.voxy.client.core.rendering.Viewport;
+import me.cortex.voxy.client.core.rendering.backend.RenderFrameStageState;
+import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer;
 import net.caffeinemc.mods.sodium.client.render.chunk.ChunkRenderMatrices;
@@ -35,13 +36,21 @@ public class MixinSodiumWorldRendererVS {
         if (renderLayer == RenderType.solid()) {
             var renderer = ((IGetVoxyRenderSystem) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
             if (renderer != null) {
-                Viewport<?> viewport = null;
-                if (IrisUtil.irisShaderPackEnabled()) {
-                    viewport = renderer.getViewport();
+                boolean shaderPackActive = IrisUtil.irisShaderPackEnabled();
+                var frame = renderer.runFrameStage(
+                        RenderStage.LEGACY_OPAQUE,
+                        RenderFrameStageState.currentFrame(),
+                        matrices,
+                        x,
+                        y,
+                        z,
+                        IrisUtil.IRIS_INSTALLED,
+                        shaderPackActive);
+                if (shaderPackActive) {
+                    RenderFrameStageState.store(frame);
                 } else {
-                    viewport = renderer.setupViewport(matrices, x, y, z);
+                    RenderFrameStageState.clear();
                 }
-                renderer.renderOpaque(viewport);
             }
         }
     }

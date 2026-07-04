@@ -19,7 +19,7 @@ public class VoxyUniforms {
             return new Matrix4f();
         }
         var vrs = getVrs.voxy$getRenderSystem();
-        return new Matrix4f(vrs.getViewport().MVP);
+        return new Matrix4f(vrs.getLastFrameMatrices().mvp());
     }
 
     public static Matrix4f getModelView() {//This is 1 frame late ;-; cries, since the update occurs _before_ the voxy render pipeline
@@ -28,7 +28,7 @@ public class VoxyUniforms {
             return new Matrix4f();
         }
         var vrs = getVrs.voxy$getRenderSystem();
-        return new Matrix4f(vrs.getViewport().modelView);
+        return new Matrix4f(vrs.getLastFrameMatrices().modelView());
     }
 
     public static Matrix4f getProjection() {//This is 1 frame late ;-; cries, since the update occurs _before_ the voxy render pipeline
@@ -37,7 +37,7 @@ public class VoxyUniforms {
             return new Matrix4f();
         }
         var vrs = getVrs.voxy$getRenderSystem();
-        var mat = vrs.getViewport().projection;
+        var mat = vrs.getLastFrameMatrices().projection();
         if (mat == null) {
             return new Matrix4f();
         }

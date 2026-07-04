@@ -80,6 +80,13 @@ processResources {
 
 loom {
     accessWidenerPath = file("src/main/resources/voxy.accesswidener")
+
+    runs {
+        client {
+            // Pass the render backend selection through to the game JVM (auto/gl46/gl41metal)
+            property 'voxy.renderBackend', System.getProperty('voxy.renderBackend', 'auto')
+        }
+    }
 }
 
 def modRuntimeOnlyMsk = {arg->}
@@ -237,10 +244,16 @@ dependencies {
     include(implementation "org.lwjgl:lwjgl-zstd")
     runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-windows"
     runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-linux"
+    runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-macos"
+    runtimeOnly "org.lwjgl:lwjgl:$lwjglVersion:natives-macos-arm64"
     include(runtimeOnly "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-windows")
     include(runtimeOnly "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-windows")
     include(runtimeOnly "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-linux")
     include(runtimeOnly "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-linux")
+    include(runtimeOnly "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-macos")
+    include(runtimeOnly "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-macos")
+    include(runtimeOnly "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-macos-arm64")
+    include(runtimeOnly "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-macos-arm64")
 
     include(implementation 'redis.clients:jedis:5.1.0')
     include(implementation('org.rocksdb:rocksdbjni:10.2.1'))
