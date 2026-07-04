@@ -1,15 +1,12 @@
 package me.cortex.voxy.client.core.rendering;
 
-import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.rendering.util.DepthFramebuffer;
-import me.cortex.voxy.client.core.rendering.util.HiZBuffer;
 import net.minecraft.util.Mth;
 import org.joml.*;
 
 import java.lang.reflect.Field;
 
 public abstract class Viewport <A extends Viewport<A>> {
-    public final HiZBuffer hiZBuffer = new HiZBuffer();
     public final DepthFramebuffer depthBoundingBuffer = new DepthFramebuffer();
 
     private static final Field planesField;
@@ -53,7 +50,6 @@ public abstract class Viewport <A extends Viewport<A>> {
     }
 
     protected void delete0() {
-        this.hiZBuffer.free();
         this.depthBoundingBuffer.free();
     }
 
@@ -109,6 +105,4 @@ public abstract class Viewport <A extends Viewport<A>> {
 
         return (A) this;
     }
-
-    public abstract GlBuffer getRenderList();
 }

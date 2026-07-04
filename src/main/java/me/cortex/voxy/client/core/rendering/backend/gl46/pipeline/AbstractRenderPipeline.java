@@ -4,12 +4,12 @@ import me.cortex.voxy.client.RenderStatistics;
 import me.cortex.voxy.client.TimingStatistics;
 import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.core.model.ModelBakerySubsystem;
-import me.cortex.voxy.client.core.rendering.Viewport;
-import me.cortex.voxy.client.core.rendering.hierachical.AsyncNodeManager;
-import me.cortex.voxy.client.core.rendering.hierachical.HierarchicalOcclusionTraverser;
-import me.cortex.voxy.client.core.rendering.hierachical.NodeCleaner;
-import me.cortex.voxy.client.core.rendering.post.FullscreenBlit;
-import me.cortex.voxy.client.core.rendering.section.backend.AbstractSectionRenderer;
+import me.cortex.voxy.client.core.rendering.backend.gl46.Gl46Viewport;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.AsyncNodeManager;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.HierarchicalOcclusionTraverser;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.NodeCleaner;
+import me.cortex.voxy.client.core.rendering.backend.gl46.util.FullscreenBlit;
+import me.cortex.voxy.client.core.rendering.backend.gl46.section.AbstractSectionRenderer;
 import me.cortex.voxy.client.core.rendering.util.DepthFramebuffer;
 import me.cortex.voxy.client.core.rendering.util.DownloadStream;
 import me.cortex.voxy.client.core.util.GPUTiming;
@@ -82,18 +82,18 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
     }
 
     //Called before the pipeline starts running, used to update uniforms etc
-    public void preSetup(Viewport<?> viewport) {
+    public void preSetup(Gl46Viewport<?> viewport) {
 
     }
 
-    protected abstract int setup(Viewport<?> viewport, int sourceFramebuffer, int srcWidth, int srcHeight);
-    protected abstract void postOpaquePreTranslucent(Viewport<?> viewport, int sourceFrameBuffer);
-    protected void finish(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
+    protected abstract int setup(Gl46Viewport<?> viewport, int sourceFramebuffer, int srcWidth, int srcHeight);
+    protected abstract void postOpaquePreTranslucent(Gl46Viewport<?> viewport, int sourceFrameBuffer);
+    protected void finish(Gl46Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
         glDisable(GL_STENCIL_TEST);
         glBindFramebuffer(GL_FRAMEBUFFER, sourceFrameBuffer);
     }
 
-    public void runPipeline(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
+    public void runPipeline(Gl46Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
         int depthTexture = this.setup(viewport, sourceFrameBuffer, srcWidth, srcHeight);
 
         var rs = ((AbstractSectionRenderer)this.sectionRenderer);
@@ -164,7 +164,7 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
     }
 
     private static final long SCRATCH = MemoryUtil.nmemAlloc(4*4*4);
-    protected static void transformBlitDepth(FullscreenBlit blitShader, int srcDepthTex, int dstFB, Viewport<?> viewport, Matrix4f targetTransform) {
+    protected static void transformBlitDepth(FullscreenBlit blitShader, int srcDepthTex, int dstFB, Gl46Viewport<?> viewport, Matrix4f targetTransform) {
         // at this point the dst frame buffer doesn't have a stencil attachment so we don't need to keep the stencil test on for the blit
         // in the worst case the dstFB does have a stencil attachment causing this pass to become 'corrupted'
         glDisable(GL_STENCIL_TEST);
@@ -183,7 +183,7 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
         glDisable(GL_DEPTH_TEST);
     }
 
-    protected void innerPrimaryWork(Viewport<?> viewport, int depthBuffer) {
+    protected void innerPrimaryWork(Gl46Viewport<?> viewport, int depthBuffer) {
 
         //Compute the mip chain
         viewport.hiZBuffer.buildMipChain(depthBuffer, viewport.width, viewport.height);
@@ -228,8 +228,8 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
     }
 
     //Binds the framebuffer and any other bindings needed for rendering
-    public abstract void setupAndBindOpaque(Viewport<?> viewport);
-    public abstract void setupAndBindTranslucent(Viewport<?> viewport);
+    public abstract void setupAndBindOpaque(Gl46Viewport<?> viewport);
+    public abstract void setupAndBindTranslucent(Gl46Viewport<?> viewport);
 
 
     public void bindUniforms() {

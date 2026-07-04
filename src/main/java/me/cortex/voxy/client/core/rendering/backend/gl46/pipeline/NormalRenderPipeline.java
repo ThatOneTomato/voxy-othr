@@ -6,11 +6,11 @@ import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
 import me.cortex.voxy.client.core.SSAO;
 import me.cortex.voxy.client.core.gl.GlFramebuffer;
 import me.cortex.voxy.client.core.gl.GlTexture;
-import me.cortex.voxy.client.core.rendering.Viewport;
-import me.cortex.voxy.client.core.rendering.hierachical.AsyncNodeManager;
-import me.cortex.voxy.client.core.rendering.hierachical.HierarchicalOcclusionTraverser;
-import me.cortex.voxy.client.core.rendering.hierachical.NodeCleaner;
-import me.cortex.voxy.client.core.rendering.post.FullscreenBlit;
+import me.cortex.voxy.client.core.rendering.backend.gl46.Gl46Viewport;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.AsyncNodeManager;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.HierarchicalOcclusionTraverser;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.NodeCleaner;
+import me.cortex.voxy.client.core.rendering.backend.gl46.util.FullscreenBlit;
 import me.cortex.voxy.client.core.util.GPUTiming;
 import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
@@ -57,7 +57,7 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
     }
 
     @Override
-    protected int setup(Viewport<?> viewport, int sourceFB, int srcWidth, int srcHeight) {
+    protected int setup(Gl46Viewport<?> viewport, int sourceFB, int srcWidth, int srcHeight) {
         if (this.colourTex == null || this.colourTex.getHeight() != viewport.height || this.colourTex.getWidth() != viewport.width) {
             if (this.colourTex != null) {
                 this.colourTex.free();
@@ -85,14 +85,14 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
     }
 
     @Override
-    protected void postOpaquePreTranslucent(Viewport<?> viewport, int sourceFrameBuffer) {
+    protected void postOpaquePreTranslucent(Gl46Viewport<?> viewport, int sourceFrameBuffer) {
         GPUTiming.INSTANCE.marker("ao");
         this.ssao.computeSSAO(viewport, this.colourSSAOTex, this.colourTex, this.fb.getDepthTex(), sourceFrameBuffer);
         glBindFramebuffer(GL_FRAMEBUFFER, this.fbSSAO.id);
     }
 
     @Override
-    protected void finish(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
+    protected void finish(Gl46Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
         this.finalBlit.bind();
         var vrs = IGetVoxyRenderSystem.getNullable();
         float fogStart = vrs != null ? vrs.getCapturedFogStart() : RenderSystem.getShaderFogStart();
@@ -135,12 +135,12 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
     }
 
     @Override
-    public void setupAndBindOpaque(Viewport<?> viewport) {
+    public void setupAndBindOpaque(Gl46Viewport<?> viewport) {
         this.fb.bind();
     }
 
     @Override
-    public void setupAndBindTranslucent(Viewport<?> viewport) {
+    public void setupAndBindTranslucent(Gl46Viewport<?> viewport) {
         glBindFramebuffer(GL_FRAMEBUFFER, this.fbSSAO.id);
     }
 

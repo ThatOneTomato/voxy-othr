@@ -1,8 +1,8 @@
 package me.cortex.voxy.client.core.rendering.backend.gl46.pipeline;
 
-import me.cortex.voxy.client.core.rendering.hierachical.AsyncNodeManager;
-import me.cortex.voxy.client.core.rendering.hierachical.HierarchicalOcclusionTraverser;
-import me.cortex.voxy.client.core.rendering.hierachical.NodeCleaner;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.AsyncNodeManager;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.HierarchicalOcclusionTraverser;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.NodeCleaner;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.client.iris.IGetIrisVoxyPipelineData;
 import me.cortex.voxy.common.Logger;

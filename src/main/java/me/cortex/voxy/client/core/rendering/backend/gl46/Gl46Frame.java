@@ -8,7 +8,7 @@ import me.cortex.voxy.client.core.rendering.backend.RenderFrame;
 // directly at render time (matching the pre-abstraction VoxyRenderSystem behaviour) instead of
 // using values captured at frame-setup time, which under Iris happens in beginLevelRendering with
 // a different framebuffer bound.
-public record Gl46Frame(Viewport<?> viewport) implements RenderFrame {
+public record Gl46Frame(Gl46Viewport<?> viewport) implements RenderFrame {
     @Override
     public RenderBackendId backendId() {
         return RenderBackendId.GL46;

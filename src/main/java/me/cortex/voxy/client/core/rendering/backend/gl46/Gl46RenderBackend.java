@@ -25,17 +25,17 @@ import me.cortex.voxy.client.core.rendering.backend.RenderStage;
 import me.cortex.voxy.client.core.rendering.backend.RenderStageContext;
 import me.cortex.voxy.client.core.rendering.backend.VoxyRenderBackend;
 import me.cortex.voxy.client.core.rendering.building.RenderGenerationService;
-import me.cortex.voxy.client.core.rendering.hierachical.AsyncNodeManager;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.AsyncNodeManager;
 import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
-import me.cortex.voxy.client.core.rendering.hierachical.HierarchicalOcclusionTraverser;
-import me.cortex.voxy.client.core.rendering.hierachical.NodeCleaner;
-import me.cortex.voxy.client.core.rendering.section.IUsesMeshlets;
-import me.cortex.voxy.client.core.rendering.section.backend.AbstractSectionRenderer;
-import me.cortex.voxy.client.core.rendering.section.backend.mdic.MDICSectionRenderer;
-import me.cortex.voxy.client.core.rendering.section.geometry.BasicSectionGeometryData;
-import me.cortex.voxy.client.core.rendering.section.geometry.IGeometryData;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.HierarchicalOcclusionTraverser;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.NodeCleaner;
+import me.cortex.voxy.client.core.rendering.backend.gl46.section.IUsesMeshlets;
+import me.cortex.voxy.client.core.rendering.backend.gl46.section.AbstractSectionRenderer;
+import me.cortex.voxy.client.core.rendering.backend.gl46.section.mdic.MDICSectionRenderer;
+import me.cortex.voxy.client.core.rendering.geometry.BasicSectionGeometryData;
+import me.cortex.voxy.client.core.rendering.geometry.IGeometryData;
 import me.cortex.voxy.client.core.rendering.util.DownloadStream;
-import me.cortex.voxy.client.core.rendering.util.PrintfDebugUtil;
+import me.cortex.voxy.client.core.rendering.backend.gl46.util.PrintfDebugUtil;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.client.core.util.GPUTiming;
 import me.cortex.voxy.client.core.util.IrisUtil;
@@ -80,7 +80,7 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
     private final RenderDistanceTracker renderDistanceTracker;
     public final ChunkBoundRenderer chunkBoundRenderer;
 
-    private final ViewportSelector<?> viewportSelector;
+    private final ViewportSelector<? extends Gl46Viewport<?>> viewportSelector;
 
     private final AbstractRenderPipeline pipeline;
 
@@ -266,7 +266,7 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
         if (!(frame instanceof Gl46Frame gl46Frame)) {
             return;
         }
-        Viewport<?> viewport = gl46Frame.viewport();
+        Gl46Viewport<?> viewport = gl46Frame.viewport();
         if (viewport == null) {
             return;
         }
@@ -401,7 +401,7 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
         this.renderDistanceTracker.setRenderDistance((int) Math.ceil(renderDistance+1));//the +1 is to cover the outer ring of chunks when rendering a circle
     }
 
-    private Viewport<?> getViewport() {
+    private Gl46Viewport<?> getViewport() {
         if (IrisUtil.irisShadowActive()) {
             return null;
         }

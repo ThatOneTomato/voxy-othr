@@ -2,12 +2,12 @@ package me.cortex.voxy.client.core.rendering.backend.gl46.pipeline;
 
 import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.model.ModelBakerySubsystem;
-import me.cortex.voxy.client.core.rendering.Viewport;
-import me.cortex.voxy.client.core.rendering.hierachical.AsyncNodeManager;
-import me.cortex.voxy.client.core.rendering.hierachical.HierarchicalOcclusionTraverser;
-import me.cortex.voxy.client.core.rendering.hierachical.NodeCleaner;
-import me.cortex.voxy.client.core.rendering.post.FullscreenBlit;
-import me.cortex.voxy.client.core.rendering.section.backend.AbstractSectionRenderer;
+import me.cortex.voxy.client.core.rendering.backend.gl46.Gl46Viewport;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.AsyncNodeManager;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.HierarchicalOcclusionTraverser;
+import me.cortex.voxy.client.core.rendering.backend.gl46.traversal.NodeCleaner;
+import me.cortex.voxy.client.core.rendering.backend.gl46.util.FullscreenBlit;
+import me.cortex.voxy.client.core.rendering.backend.gl46.section.AbstractSectionRenderer;
 import me.cortex.voxy.client.core.rendering.util.DepthFramebuffer;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.client.iris.IrisVoxyRenderPipelineData;
@@ -100,7 +100,7 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
     }
 
     @Override
-    public void preSetup(Viewport<?> viewport) {
+    public void preSetup(Gl46Viewport<?> viewport) {
         super.preSetup(viewport);
         if (this.shaderUniforms != null) {
             //Update the uniforms
@@ -111,7 +111,7 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
     }
 
     @Override
-    protected int setup(Viewport<?> viewport, int sourceFramebuffer, int srcWidth, int srcHeight) {
+    protected int setup(Gl46Viewport<?> viewport, int sourceFramebuffer, int srcWidth, int srcHeight) {
         this.fb.resize(viewport.width, viewport.height);
         this.fbTranslucent.resize(viewport.width, viewport.height);
 
@@ -131,7 +131,7 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
     }
 
     @Override
-    protected void postOpaquePreTranslucent(Viewport<?> viewport, int sourceFrameBuffer) {
+    protected void postOpaquePreTranslucent(Gl46Viewport<?> viewport, int sourceFrameBuffer) {
         if (this.shaderDepthHackFixTransformBlit != null) {
             this.fb.bind();
             glEnable(GL_DEPTH_TEST);
@@ -160,7 +160,7 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
     }
 
     @Override
-    protected void finish(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
+    protected void finish(Gl46Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
         if (this.data.renderToVanillaDepth && srcWidth == viewport.width  && srcHeight == viewport.height) {//We can only depthblit out if destination size is the same
             glColorMask(false, false, false, false);
             AbstractRenderPipeline.transformBlitDepth(this.depthBlit,
@@ -197,13 +197,13 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
         }
     }
     @Override
-    public void setupAndBindOpaque(Viewport<?> viewport) {
+    public void setupAndBindOpaque(Gl46Viewport<?> viewport) {
         this.fb.bind();
         this.doBindings();
     }
 
     @Override
-    public void setupAndBindTranslucent(Viewport<?> viewport) {
+    public void setupAndBindTranslucent(Gl46Viewport<?> viewport) {
         this.fbTranslucent.bind();
         this.doBindings();
         if (this.data.getBlender() != null) {

@@ -8,7 +8,7 @@ import me.cortex.voxy.client.core.rendering.RenderDistanceTracker;
 import me.cortex.voxy.client.core.rendering.backend.BackendContext;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameContext;
 import me.cortex.voxy.client.core.rendering.building.RenderGenerationService;
-import me.cortex.voxy.client.core.rendering.hierachical.MetalNodeSyncHost;
+import me.cortex.voxy.client.core.rendering.hierarchical.CpuNodeSyncHost;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.world.WorldEngine;
@@ -39,9 +39,9 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
   private final Gl41MetalMaterialStore materialStore;
   private final ModelBakerySubsystem modelService;
   private final RenderGenerationService renderGen;
-  private final MetalNodeSyncHost nodeSyncHost;
+  private final CpuNodeSyncHost nodeSyncHost;
   private final RenderDistanceTracker renderDistanceTracker;
-  private final MetalNodeSyncHost.Sink nativeSink = new NativeSyncSink();
+  private final CpuNodeSyncHost.Sink nativeSink = new NativeSyncSink();
   private long nativeHandle;
   private boolean nativeResourcesCreated;
   private boolean closed;
@@ -62,7 +62,7 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
             false,
             RenderGenerationService.TaskPriorityMode.FINE_LOD_FIRST);
     this.nodeSyncHost =
-        new MetalNodeSyncHost(
+        new CpuNodeSyncHost(
             MAX_NODES, MAX_RESIDENT_SECTIONS, GEOMETRY_CAPACITY_BYTES, this.renderGen);
     Arrays.stream(this.world.getMapper().getBiomeEntries()).forEach(this.modelService::addBiome);
     this.world.getMapper().setBiomeCallback(this.modelService::addBiome);
@@ -276,7 +276,7 @@ final class Gl41MetalTerrainResources implements AutoCloseable {
     }
   }
 
-  private final class NativeSyncSink implements MetalNodeSyncHost.Sink {
+  private final class NativeSyncSink implements CpuNodeSyncHost.Sink {
     @Override
     public void uploadNode(int nodeId, long nodeAddress) {
       Gl41MetalNative.uploadNode(Gl41MetalTerrainResources.this.nativeHandle, nodeId, nodeAddress);
