@@ -286,4 +286,12 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
   public float[] getRenderScalingFactor() {
     return null;
   }
+
+  /**
+   * Depth texture holding Voxy's LOD depth when it is kept out of the vanilla depth buffer, used by
+   * the Sable compat depth shim. 0 when the pipeline already writes depth to the vanilla buffer.
+   */
+  public int getSableOcclusionDepthTexture() {
+    return 0;
+  }
 }

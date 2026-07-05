@@ -3,6 +3,7 @@ package me.cortex.voxy.client.config;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 import java.io.FileReader;
 import java.io.IOException;
 import java.lang.reflect.Modifier;
@@ -14,6 +15,7 @@ import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.platform.PlatformAccess;
 import me.cortex.voxy.common.util.cpu.CpuLayout;
 import me.cortex.voxy.impl.VoxyCommon;
+import me.cortex.voxy.impl.compat.sable.SableContraptionRenderDistance;
 import net.caffeinemc.mods.sodium.client.gui.options.storage.OptionStorage;
 
 public class VoxyConfig implements OptionStorage<VoxyConfig> {
@@ -30,6 +32,10 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
   public boolean enableRendering = true;
   public boolean ingestEnabled = true;
   public float sectionRenderDistance = 16;
+
+  // Sable compat: % interpolation between the vanilla and voxy render distance used as the
+  // simulated contraption render distance. Only persisted when Sable is installed.
+  public int simulatedContraptionRenderDistancePercent = 50;
   public int serviceThreads = (int) Math.max(CpuLayout.getCoreCount() / 1.5, 1);
   public float subDivisionSize = 64;
   public boolean renderVoxyFog = true;
@@ -96,14 +102,21 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
   public void save() {
     if (!VoxyCommon.isAvailable()) {
       Logger.info("Not saving config since voxy is unavalible");
+      this.syncSableContraptionRenderDistance();
       return;
     }
 
     try {
-      Files.writeString(getConfigPath(), GSON.toJson(this));
+      JsonObject json = GSON.toJsonTree(this).getAsJsonObject();
+      if (!PlatformAccess.get().isModLoaded("sable")) {
+        json.remove("simulated_contraption_render_distance_percent");
+      }
+      Files.writeString(getConfigPath(), GSON.toJson(json));
     } catch (IOException e) {
       Logger.error("Failed to write config file", e);
     }
+
+    this.syncSableContraptionRenderDistance();
   }
 
   private static Path getConfigPath() {
@@ -117,5 +130,12 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
 
   public boolean isRenderingEnabled() {
     return VoxyCommon.isAvailable() && this.enabled && this.enableRendering;
+  }
+
+  public void syncSableContraptionRenderDistance() {
+    SableContraptionRenderDistance.updateClientConfig(
+        this.isRenderingEnabled(),
+        this.sectionRenderDistance,
+        this.simulatedContraptionRenderDistancePercent);
   }
 }

@@ -1,6 +1,7 @@
 package me.cortex.voxy.client.core.rendering.backend;
 
 import java.util.List;
+import me.cortex.voxy.client.core.rendering.Viewport;
 import net.caffeinemc.mods.sodium.client.render.chunk.lists.ChunkRenderListIterable;
 
 public interface VoxyRenderBackend extends AutoCloseable {
@@ -35,6 +36,24 @@ public interface VoxyRenderBackend extends AutoCloseable {
    */
   default int voxyDistantDepthTextureId() {
     return 0;
+  }
+
+  /**
+   * GL texture id of the depth target that holds Voxy's LOD depth when it is NOT written to the
+   * vanilla depth buffer (Iris pipeline with a private depth target), used by the Sable
+   * compatibility depth shim to occlude contraptions against distant terrain. 0 when the backend
+   * writes depth to the vanilla buffer already (no shim needed) or does not support the shim.
+   */
+  default int getSableOcclusionDepthTexture() {
+    return 0;
+  }
+
+  /**
+   * The viewport that produced {@link #getSableOcclusionDepthTexture()} (needed for its MVP and
+   * dimensions), or null when the shim is unsupported.
+   */
+  default Viewport<?> getSableOcclusionViewport() {
+    return null;
   }
 
   void onChunkTrackerReset();

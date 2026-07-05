@@ -6,7 +6,14 @@
     "defaultRequire": 1
   },
   "mixins": [
-    "minecraft.MixinWorld"
+    "minecraft.MixinServerLevel",
+    "minecraft.MixinWorld",
+    "sable.MixinClientSubLevelFinalizeLighting",
+    "sable.MixinPhysicsChunkTicketManager",
+    "sable.MixinSubLevelHoldingChunk",
+    "sable.MixinSubLevelHoldingChunkMap",
+    "sable.MixinSubLevelTrackingSystem",
+    "sable.SableSubLevelHoldingChunkMapAccessor"
   ],
   "overwrites": {
     "requireAnnotations": true

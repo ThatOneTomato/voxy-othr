@@ -28,6 +28,10 @@ repositories {
     }
     maven { url = "https://maven.shedaniel.me/" }
     maven { url = "https://maven.terraformersmc.com/releases/" }
+    maven {
+        name = "RyanHCode Maven"
+        url = "https://maven.ryanhcode.dev/releases"
+    }
 
     exclusiveContent {
         forRepository {
@@ -137,6 +141,11 @@ dependencies {
     implementation "maven.modrinth:sodium:mc1.21.1-0.6.13-neoforge"
 
     implementation "maven.modrinth:lithium:mc1.21.1-0.15.0-neoforge"
+
+    // Sable (Aero's contraption engine) compile-only compat; its classes are referenced
+    // via remap=false mixins so the unremapped jar is fine on both loaders.
+    compileOnly "maven.modrinth:sable:${project.sable_neoforge_version}"
+    compileOnly "dev.ryanhcode.sable-companion:sable-companion-common-${project.minecraft_version}:${project.sable_companion_version}"
 
     compileOnly "drouarb:nvidium:0.4.1-beta9:1.21-1.21.1@jar"
 

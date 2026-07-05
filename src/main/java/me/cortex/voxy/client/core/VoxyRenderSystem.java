@@ -6,6 +6,7 @@ import static org.lwjgl.opengl.GL30C.GL_DRAW_FRAMEBUFFER_BINDING;
 
 import java.util.List;
 import me.cortex.voxy.client.VoxyClient;
+import me.cortex.voxy.client.core.rendering.Viewport;
 import me.cortex.voxy.client.core.rendering.backend.BackendContext;
 import me.cortex.voxy.client.core.rendering.backend.RenderBackendId;
 import me.cortex.voxy.client.core.rendering.backend.RenderBackendSelection;
@@ -84,6 +85,16 @@ public class VoxyRenderSystem {
 
   public float[] getCapturedFogColor() {
     return this.capturedFogColor;
+  }
+
+  /** See {@link VoxyRenderBackend#getSableOcclusionDepthTexture()}. */
+  public int getSableOcclusionDepthTexture() {
+    return this.backend.getSableOcclusionDepthTexture();
+  }
+
+  /** See {@link VoxyRenderBackend#getSableOcclusionViewport()}. */
+  public Viewport<?> getSableOcclusionViewport() {
+    return this.backend.getSableOcclusionViewport();
   }
 
   public RenderFrame setupFrame(

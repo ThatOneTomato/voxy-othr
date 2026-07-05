@@ -25,6 +25,7 @@ import me.cortex.voxy.client.core.gl.GlTexture;
 import me.cortex.voxy.client.core.model.ModelBakerySubsystem;
 import me.cortex.voxy.client.core.rendering.ChunkBoundRenderer;
 import me.cortex.voxy.client.core.rendering.RenderDistanceTracker;
+import me.cortex.voxy.client.core.rendering.Viewport;
 import me.cortex.voxy.client.core.rendering.ViewportSelector;
 import me.cortex.voxy.client.core.rendering.backend.BackendContext;
 import me.cortex.voxy.client.core.rendering.backend.NoopRenderFrame;
@@ -429,6 +430,16 @@ public final class Gl46RenderBackend implements VoxyRenderBackend {
       return null;
     }
     return this.viewportSelector.getViewport();
+  }
+
+  @Override
+  public int getSableOcclusionDepthTexture() {
+    return this.pipeline.getSableOcclusionDepthTexture();
+  }
+
+  @Override
+  public Viewport<?> getSableOcclusionViewport() {
+    return this.getViewport();
   }
 
   @Override

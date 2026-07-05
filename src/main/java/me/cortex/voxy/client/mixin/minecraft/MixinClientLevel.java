@@ -1,10 +1,12 @@
 package me.cortex.voxy.client.mixin.minecraft;
 
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.common.world.service.VoxelIngestService;
 import me.cortex.voxy.impl.VoxyCommon;
 import me.cortex.voxy.impl.WorldIdentifier;
+import me.cortex.voxy.impl.compat.sable.SableClientSkyLightCache;
 import net.minecraft.client.multiplayer.ClientChunkCache;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -51,6 +53,11 @@ public abstract class MixinClientLevel {
       long seed,
       CallbackInfo cir) {
     this.bottomSectionY = ((Level) (Object) this).getMinBuildHeight() >> 4;
+  }
+
+  @Inject(method = "tick(Ljava/util/function/BooleanSupplier;)V", at = @At("TAIL"))
+  private void voxy$tickSableSkyLightCache(BooleanSupplier shouldKeepTicking, CallbackInfo ci) {
+    SableClientSkyLightCache.tick((ClientLevel) (Object) this);
   }
 
   @Inject(method = "setBlocksDirty", at = @At("TAIL"))

@@ -4,9 +4,11 @@ import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.List;
 import me.cortex.voxy.client.ClientSessionEvents;
+import me.cortex.voxy.client.compat.sable.SableClientRenderDistance;
 import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import me.cortex.voxy.client.core.rendering.post.SSAO;
 import me.cortex.voxy.client.core.util.IrisUtil;
+import me.cortex.voxy.common.platform.PlatformAccess;
 import me.cortex.voxy.common.util.cpu.CpuLayout;
 import me.cortex.voxy.impl.VoxyCommon;
 import net.caffeinemc.mods.sodium.client.gui.options.*;
@@ -31,6 +33,7 @@ public abstract class VoxyConfigScreenPages {
   public static OptionPage page() {
     List<OptionGroup> groups = new ArrayList<>();
     VoxyConfig storage = VoxyConfig.CONFIG;
+    boolean sableInstalled = PlatformAccess.get().isModLoaded("sable");
 
     // General
     groups.add(
@@ -60,6 +63,8 @@ public abstract class VoxyConfigScreenPages {
                             IrisUtil.reload();
                           } catch (Throwable ignored) {
                           }
+                          s.syncSableContraptionRenderDistance();
+                          refreshSableRenderDistance(sableInstalled);
                         },
                         s -> s.enabled)
                     .setFlags(OptionFlag.REQUIRES_RENDERER_RELOAD)
@@ -142,6 +147,8 @@ public abstract class VoxyConfigScreenPages {
                             IrisUtil.reload();
                           } catch (Throwable ignored) {
                           }
+                          s.syncSableContraptionRenderDistance();
+                          refreshSableRenderDistance(sableInstalled);
                         },
                         s -> s.enableRendering)
                     .setImpact(OptionImpact.HIGH)
@@ -191,6 +198,8 @@ public abstract class VoxyConfigScreenPages {
                               vrs.setRenderDistance(s.sectionRenderDistance);
                             }
                           }
+                          s.syncSableContraptionRenderDistance();
+                          refreshSableRenderDistance(sableInstalled);
                         },
                         s -> Math.round(s.sectionRenderDistance * 16))
                     .setImpact(OptionImpact.LOW)
@@ -300,8 +309,39 @@ public abstract class VoxyConfigScreenPages {
                     .setFlags(OptionFlag.REQUIRES_RENDERER_RELOAD)
                     .build())
             .build());
+
+    if (sableInstalled) {
+      groups.add(
+          OptionGroup.createBuilder()
+              .add(
+                  OptionImpl.createBuilder(int.class, storage)
+                      .setName(
+                          Component.translatable(
+                              "voxy.config.general.simulated_contraption_render_distance"))
+                      .setTooltip(
+                          Component.translatable(
+                              "voxy.config.general.simulated_contraption_render_distance.tooltip"))
+                      .setControl(
+                          opt -> new SliderControl(opt, 0, 100, 1, v -> Component.literal(v + "%")))
+                      .setBinding(
+                          (s, v) -> {
+                            s.simulatedContraptionRenderDistancePercent = v;
+                            s.syncSableContraptionRenderDistance();
+                            refreshSableRenderDistance(true);
+                          },
+                          s -> s.simulatedContraptionRenderDistancePercent)
+                      .setImpact(OptionImpact.MEDIUM)
+                      .build())
+              .build());
+    }
     return new OptionPage(
         Component.translatable("voxy.config.title"), ImmutableList.copyOf(groups));
+  }
+
+  private static void refreshSableRenderDistance(boolean sableInstalled) {
+    if (sableInstalled) {
+      SableClientRenderDistance.refreshSableRenderData();
+    }
   }
 
   private static void reloadActiveRenderer() {
