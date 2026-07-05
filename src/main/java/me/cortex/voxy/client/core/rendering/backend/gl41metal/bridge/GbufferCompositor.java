@@ -857,11 +857,16 @@ final class GbufferCompositor {
     if (boundEnabledUniform >= 0) {
       glUniform1i(boundEnabledUniform, enabled ? 1 : 0);
     }
-    if (!enabled) {
-      return;
-    }
+    // ALWAYS point the sampler at its dedicated unit, even when the bound is disabled. A sampler
+    // uniform left at its default value (0) aliases uTgbuffer0Tex's unit, and two samplers of
+    // DIFFERENT types (sampler2D vs sampler2DRect) on one unit make the whole draw fail with
+    // GL_INVALID_OPERATION - the entire distant-water pass silently vanished whenever the bound
+    // was disabled (e.g. camera above build height, or before Sodium reported any section).
     if (boundDepthTexUniform >= 0) {
       glUniform1i(boundDepthTexUniform, BOUND_TEXTURE_UNIT);
+    }
+    if (!enabled) {
+      return;
     }
     if (boundSizeUniform >= 0) {
       glUniform2f(boundSizeUniform, bound.width(), bound.height());
