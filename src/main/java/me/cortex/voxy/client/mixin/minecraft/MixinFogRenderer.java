@@ -4,8 +4,10 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.FogRenderer;
 import net.minecraft.client.renderer.FogRenderer.FogMode;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.material.FogType;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -42,13 +44,19 @@ public class MixinFogRenderer {
 
       // Capture original fog values BEFORE we modify them,
       // so Voxy's own fog pass can use the correct values
-      float capturedFogEnd =
-          noFogType
-              ? VoxyConfig.CONFIG.sectionRenderDistance * 32 * 16
-              : RenderSystem.getShaderFogEnd();
+      float capturedFogStart = RenderSystem.getShaderFogStart();
+      float capturedFogEnd = RenderSystem.getShaderFogEnd();
+      if (noFogType) {
+        // Derive the fog start from the vanilla render distance instead of the (possibly
+        // already extended) shader fog, so the captured value stays stable
+        float vanillaViewDistance =
+            Math.max(Minecraft.getInstance().options.getEffectiveRenderDistance() * 16.0F, 32.0F);
+        float fogRange = Mth.clamp(vanillaViewDistance / 10.0F, 4.0F, 64.0F);
+        capturedFogStart = vanillaViewDistance - fogRange;
+        capturedFogEnd = VoxyConfig.CONFIG.sectionRenderDistance * 32 * 16;
+      }
 
-      vrs.setCapturedFog(
-          RenderSystem.getShaderFogStart(), capturedFogEnd, RenderSystem.getShaderFogColor());
+      vrs.setCapturedFog(capturedFogStart, capturedFogEnd, RenderSystem.getShaderFogColor());
 
       // Always hide vanilla terrain fog - either replaced by voxy or disabled completely
       // unless it's special fog, in that case it must be rendered to restrict vision in regular

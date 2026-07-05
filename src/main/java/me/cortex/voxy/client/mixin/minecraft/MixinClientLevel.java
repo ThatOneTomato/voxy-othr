@@ -65,7 +65,7 @@ public abstract class MixinClientLevel {
     if (VoxyCommon.getInstance() == null) return;
     if (!VoxyConfig.CONFIG.ingestEnabled) return; // Only ingest if setting enabled
 
-    var self = (Level) (Object) this;
+    var self = (ClientLevel) (Object) this;
     var wi = WorldIdentifier.of(self);
     if (wi == null) {
       return;
@@ -74,27 +74,61 @@ public abstract class MixinClientLevel {
     int x = pos.getX() & 15;
     int y = pos.getY() & 15;
     int z = pos.getZ() & 15;
-    if (x == 0 || x == 15 || y == 0 || y == 15 || z == 0
-        || z == 15) { // Update if there is a statechange on the boarder
-      var csp = SectionPos.of(pos);
-      // Is not using voxy$cheekyGetChunk as dont think is need
-      var chunk = self.getChunk(pos.getX() >> 4, pos.getZ() >> 4, ChunkStatus.FULL, false);
-      if (chunk != null) {
-        var section = chunk.getSection(csp.y() - this.bottomSectionY);
-        var lp = self.getLightEngine();
-
-        var blp = lp.getLayerListener(LightLayer.BLOCK).getDataLayerData(csp);
-        var slp = lp.getLayerListener(LightLayer.SKY).getDataLayerData(csp);
-
-        VoxelIngestService.rawIngest(
-            wi,
-            section,
-            csp.x(),
-            csp.y(),
-            csp.z(),
-            blp == null ? null : blp.copy(),
-            slp == null ? null : slp.copy());
-      }
+    // Update if there is a statechange on the boarder
+    if (x != 0 && x != 15 && y != 0 && y != 15 && z != 0 && z != 15) {
+      return;
     }
+
+    var sectionPos = SectionPos.of(pos);
+    this.voxy$ingestSection(wi, self, sectionPos);
+
+    // Re-ingest the touching neighbour sections too, so LODs on the other side of the
+    // border don't keep stale geometry/lighting
+    if (x == 0)
+      this.voxy$ingestSection(
+          wi, self, SectionPos.of(sectionPos.x() - 1, sectionPos.y(), sectionPos.z()));
+    if (x == 15)
+      this.voxy$ingestSection(
+          wi, self, SectionPos.of(sectionPos.x() + 1, sectionPos.y(), sectionPos.z()));
+    if (y == 0)
+      this.voxy$ingestSection(
+          wi, self, SectionPos.of(sectionPos.x(), sectionPos.y() - 1, sectionPos.z()));
+    if (y == 15)
+      this.voxy$ingestSection(
+          wi, self, SectionPos.of(sectionPos.x(), sectionPos.y() + 1, sectionPos.z()));
+    if (z == 0)
+      this.voxy$ingestSection(
+          wi, self, SectionPos.of(sectionPos.x(), sectionPos.y(), sectionPos.z() - 1));
+    if (z == 15)
+      this.voxy$ingestSection(
+          wi, self, SectionPos.of(sectionPos.x(), sectionPos.y(), sectionPos.z() + 1));
+  }
+
+  @Unique
+  private void voxy$ingestSection(WorldIdentifier wi, ClientLevel level, SectionPos sectionPos) {
+    // Is not using voxy$cheekyGetChunk as dont think is need
+    var chunk = level.getChunk(sectionPos.x(), sectionPos.z(), ChunkStatus.FULL, false);
+    if (chunk == null) {
+      return;
+    }
+
+    int sectionIndex = sectionPos.y() - this.bottomSectionY;
+    if (sectionIndex < 0 || sectionIndex >= chunk.getSections().length) {
+      return;
+    }
+
+    var section = chunk.getSection(sectionIndex);
+    var lightEngine = level.getLightEngine();
+    var blockLight = lightEngine.getLayerListener(LightLayer.BLOCK).getDataLayerData(sectionPos);
+    var skyLight = lightEngine.getLayerListener(LightLayer.SKY).getDataLayerData(sectionPos);
+
+    VoxelIngestService.rawIngest(
+        wi,
+        section,
+        sectionPos.x(),
+        sectionPos.y(),
+        sectionPos.z(),
+        blockLight == null ? null : blockLight.copy(),
+        skyLight == null ? null : skyLight.copy());
   }
 }
