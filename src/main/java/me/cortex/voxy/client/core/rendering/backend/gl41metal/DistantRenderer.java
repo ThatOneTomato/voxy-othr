@@ -5,6 +5,7 @@ import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameContext;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SharedDistantGbuffer;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
+import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
@@ -60,12 +61,15 @@ public final class DistantRenderer {
     }
   }
 
-  // Distant SSAO sample count for this frame; 0 disables the Metal pass. Runs for BOTH the
-  // vanilla and shader-pack paths: the bridge folds the factor into the distant ALBEDO (the
-  // analog of vanilla's per-vertex AO, which near terrain carries into a pack's gbuffers), so
-  // a pack's own screen-space AO stacks on it exactly like it stacks on near terrain.
+  // Distant SSAO sample count for this frame; 0 disables the Metal pass. VANILLA path only,
+  // matching gl46 where SSAO exists solely in NormalRenderPipeline and the Iris pipeline has
+  // none: with a shader pack active the pack owns ALL distant lighting/AO, and folding our AO
+  // into the albedo underneath it double-darkens LOD terrain (patchy dark forests vs near).
   private static int computeSsaoSteps(RenderFrameContext context) {
     if (context.matrices() == null) {
+      return 0;
+    }
+    if (IrisUtil.irisShaderPackEnabled()) {
       return 0;
     }
     return switch (VoxyConfig.CONFIG.getSSAOMode()) {
