@@ -324,7 +324,11 @@ fragment QuadFragmentOut voxy_quad_fragment(QuadVertexOut in [[stage_in]],
       atlas.sample(atlasSampler, metalTexPos,
                    gradient2d(dfdx(metalUvSmol), dfdy(metalUvSmol)));
 
-  if (useDiscard && sampled.a <= 0.1f) {
+  // gl46 quads.frag deliberately tests the TOP mip for the cutout discard
+  // ("this stops mipmapping fucking it over"): mipped alpha smears cutout
+  // edges, eroding/thickening distant leaves compared to gl46.
+  if (useDiscard &&
+      atlas.sample(atlasSampler, metalTexPos, level(0.0f)).a <= 0.1f) {
     discard_fragment();
   }
 
@@ -334,8 +338,14 @@ fragment QuadFragmentOut voxy_quad_fragment(QuadVertexOut in [[stage_in]],
       tint = unpack_rgba(in.colorTintPacked).yzwx;
     }
   } else if (tintState == 1u) {
-    if (abs(sampled.r - sampled.g) < 0.02f &&
-        abs(sampled.g - sampled.b) < 0.02f) {
+    // Partial tint (e.g. grass block sides: untinted dirt + greyscale tintable
+    // overlay). Match gl46 quads.frag, which runs the greyscale test on the TOP
+    // mip (textureLod(..., 0)): mipped samples blend overlay and dirt texels
+    // together, so at distance they stop being greyscale and the whole face
+    // degrades to untinted grey.
+    float4 tintTest = atlas.sample(atlasSampler, metalTexPos, level(0.0f));
+    if (abs(tintTest.r - tintTest.g) < 0.02f &&
+        abs(tintTest.g - tintTest.b) < 0.02f) {
       if (in.colorTintPacked != 0xffffffffu) {
         tint = unpack_rgba(in.colorTintPacked).yzwx;
       }
@@ -1023,7 +1033,9 @@ fragment TranslucentFragmentOut voxy_translucent_fragment(
                    gradient2d(dfdx(metalUvSmol), dfdy(metalUvSmol)));
   float alpha = sampled.a;
 
-  if (alpha == 0.0f) {
+  // gl46 parity: the empty-texel discard tests the TOP mip, not the mipped
+  // sample (blending still uses the mipped alpha, like gl46).
+  if (atlas.sample(atlasSampler, metalTexPos, level(0.0f)).a == 0.0f) {
     discard_fragment();
   }
 
@@ -1034,8 +1046,10 @@ fragment TranslucentFragmentOut voxy_translucent_fragment(
       tint = unpack_rgba(in.colorTintPacked).yzwx;
     }
   } else if (tintState == 1u) {
-    if (abs(sampled.r - sampled.g) < 0.02f &&
-        abs(sampled.g - sampled.b) < 0.02f) {
+    // Same top-mip greyscale test as the opaque fragment above (gl46 parity).
+    float4 tintTest = atlas.sample(atlasSampler, metalTexPos, level(0.0f));
+    if (abs(tintTest.r - tintTest.g) < 0.02f &&
+        abs(tintTest.g - tintTest.b) < 0.02f) {
       if (in.colorTintPacked != 0xffffffffu) {
         tint = unpack_rgba(in.colorTintPacked).yzwx;
       }
