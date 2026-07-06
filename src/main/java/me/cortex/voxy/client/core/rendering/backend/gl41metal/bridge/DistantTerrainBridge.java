@@ -30,7 +30,7 @@ import static org.lwjgl.opengl.GL15C.GL_ELEMENT_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL15C.GL_ELEMENT_ARRAY_BUFFER_BINDING;
 import static org.lwjgl.opengl.GL15C.glBindBuffer;
 import static org.lwjgl.opengl.GL20C.GL_CURRENT_PROGRAM;
-import static org.lwjgl.opengl.GL20C.GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS;
+import static org.lwjgl.opengl.GL20C.GL_MAX_TEXTURE_IMAGE_UNITS;
 import static org.lwjgl.opengl.GL20C.glUseProgram;
 import static org.lwjgl.opengl.GL30C.GL_DRAW_FRAMEBUFFER;
 import static org.lwjgl.opengl.GL30C.GL_DRAW_FRAMEBUFFER_BINDING;
@@ -422,10 +422,16 @@ public final class DistantTerrainBridge implements AutoCloseable {
         glGetBooleanv(GL_DEPTH_WRITEMASK, depthMaskBuffer);
         depthMask = depthMaskBuffer.get(0) != 0;
       }
+      // The bridge only ever binds FRAGMENT-stage texture units: the reconstruction samplers on
+      // units 0-5 (see GbufferCompositor) and the Iris pack samplers on SAMPLER_BINDING_BASE+i,
+      // which IrisBridgeShaderBindings caps at GL_MAX_TEXTURE_IMAGE_UNITS - 1 (15 on Apple GL4.1).
+      // Snapshotting GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS (80 on Apple) instead cost ~480 glGet*
+      // calls per capture plus the matching rebinds on restore, several times per frame, on a
+      // driver where every glGet is CPU-expensive. Units above the fragment budget are never
+      // touched by this bridge and need no save/restore.
       int maxUnit =
           Math.max(
-              glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS),
-              GbufferCompositor.LIGHTMAP_TEXTURE_UNIT + 1);
+              glGetInteger(GL_MAX_TEXTURE_IMAGE_UNITS), GbufferCompositor.BOUND_TEXTURE_UNIT + 1);
       int[] rectangleTextures = new int[maxUnit];
       int[] textures1d = new int[maxUnit];
       int[] textures2d = new int[maxUnit];

@@ -155,7 +155,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       queueMeta[i * 4 + 1] = 1;
       queueMeta[i * 4 + 2] = 1;
     }
-    [frame->queueMeta didModifyRange:NSMakeRange(0, MAX_LOD_ITERATIONS * 4 * sizeof(uint32_t))];
 
     if (traversalMvpAddress == 0 || drawMvpAddress == 0) {
       resetSubmittedSlot(context, slotIndex);
@@ -206,7 +205,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     reinterpret_cast<uint32_t*>(scene + 208)[1] = 0;
     reinterpret_cast<uint32_t*>(scene + 208)[2] = 0;
     reinterpret_cast<uint32_t*>(scene + 208)[3] = 0;
-    [frame->sceneUniform didModifyRange:NSMakeRange(0, SCENE_UNIFORM_BYTES)];
 
     if (terrain->topNodeCount > 0) {
       id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];

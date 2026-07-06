@@ -413,9 +413,14 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
         if (w < scene.queueSizes.x) {
           uint quadBase = atomic_fetch_add_explicit(&worklistCounter[1], qc,
                                                     memory_order_relaxed);
-          if (quadBase >= scene.rasterLimits.x) return;
-          uint accepted = min(qc, scene.rasterLimits.x - quadBase);
-          if (accepted == 0u) return;
+          uint accepted = quadBase < scene.rasterLimits.x
+                              ? min(qc, scene.rasterLimits.x - quadBase)
+                              : 0u;
+          // Every claimed slot MUST be written even when the raster-quad
+          // capacity is exhausted (accepted == 0): the per-frame scratch clear
+          // no longer wipes the worklist data buffer, so an unwritten slot
+          // would replay a stale item from an earlier frame. A zero quad count
+          // makes the object shader skip the item.
           WorkItem item;
           item.meshId = n.meshPtr;
           item.quadBase = quadBase;
@@ -423,6 +428,7 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
           item.lodAndQuadCount =
               (n.lodLevel << 24) | min(accepted, 0x00ffffffu);
           worklist[w] = item;
+          if (accepted == 0u) return;
           atomic_fetch_add_explicit(&stats[1], 1u, memory_order_relaxed);
           atomic_fetch_add_explicit(&stats[3], accepted, memory_order_relaxed);
         }

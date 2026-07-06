@@ -99,6 +99,9 @@ bool createSlotFrameResources(Slot* slot, NativeContext* context, TerrainResourc
   return true;
 }
 
+// Full slot-buffer wipe. Used at resource creation and full terrain resets only; the per-frame
+// path uses clearTraversalScratch below. All of these buffers are MTLResourceStorageModeShared,
+// so no didModifyRange calls are needed (that API is for managed-mode buffers).
 void clearSlotFrameResources(FrameResources* frame, TerrainResources* terrain) {
   if (frame == nullptr) {
     return;
@@ -126,36 +129,6 @@ void clearSlotFrameResources(FrameResources* frame, TerrainResources* terrain) {
               TRANSLUCENT_BUCKET_COUNT * sizeof(uint32_t));
   std::memset([frame->meshIndirectArgs contents], 0, 3 * sizeof(uint32_t));
   std::memset([frame->translucentMeshIndirectArgs contents], 0, 3 * sizeof(uint32_t));
-  [frame->queueMeta didModifyRange:NSMakeRange(0, MAX_LOD_ITERATIONS * 4 * sizeof(uint32_t))];
-  [frame->scratchQueueA
-      didModifyRange:NSMakeRange(0, static_cast<NSUInteger>(terrain->maxTraversalQueue) *
-                                        sizeof(uint32_t))];
-  [frame->scratchQueueB
-      didModifyRange:NSMakeRange(0, static_cast<NSUInteger>(terrain->maxTraversalQueue) *
-                                        sizeof(uint32_t))];
-  [frame->requestQueue
-      didModifyRange:NSMakeRange(0,
-                                 (1 + static_cast<NSUInteger>(terrain->maxTraversalRequests) * 2) *
-                                     sizeof(uint32_t))];
-  [frame->worklistCounter didModifyRange:NSMakeRange(0, 2 * sizeof(uint32_t))];
-  [frame->worklist
-      didModifyRange:NSMakeRange(0, static_cast<NSUInteger>(terrain->maxWorklistItems) *
-                                        WORKLIST_ITEM_BYTES)];
-  [frame->traversalStats didModifyRange:NSMakeRange(0, 8 * sizeof(uint32_t))];
-  [frame->sceneUniform didModifyRange:NSMakeRange(0, SCENE_UNIFORM_BYTES)];
-  [frame->drawArgs didModifyRange:NSMakeRange(0, 5 * sizeof(uint32_t))];
-  [frame->translucentWorklistCounter didModifyRange:NSMakeRange(0, 2 * sizeof(uint32_t))];
-  [frame->translucentWorklist
-      didModifyRange:NSMakeRange(0, static_cast<NSUInteger>(terrain->maxWorklistItems) *
-                                        WORKLIST_ITEM_BYTES)];
-  [frame->translucentQuadRefs
-      didModifyRange:NSMakeRange(0, static_cast<NSUInteger>(terrain->maxRasterQuads) *
-                                        QUAD_DRAW_REF_BYTES)];
-  [frame->translucentDrawArgs didModifyRange:NSMakeRange(0, 5 * sizeof(uint32_t))];
-  [frame->translucentDistanceBuckets
-      didModifyRange:NSMakeRange(0, TRANSLUCENT_BUCKET_COUNT * sizeof(uint32_t))];
-  [frame->meshIndirectArgs didModifyRange:NSMakeRange(0, 3 * sizeof(uint32_t))];
-  [frame->translucentMeshIndirectArgs didModifyRange:NSMakeRange(0, 3 * sizeof(uint32_t))];
 }
 
 void refreshTopNodeBuffer(TerrainResources* terrain) {
@@ -167,9 +140,6 @@ void refreshTopNodeBuffer(TerrainResources* terrain) {
     std::memcpy(buffer, terrain->topNodes.data(), count * sizeof(uint32_t));
   }
   terrain->topNodeCount = count;
-  [terrain->topNodeBuffer
-      didModifyRange:NSMakeRange(0, static_cast<NSUInteger>(terrain->maxTraversalQueue) *
-                                        sizeof(uint32_t))];
 }
 
 uint32_t sectionQuadCount(const uint32_t* meta) {
@@ -203,8 +173,28 @@ void updateSectionResidencyFromMetadata(TerrainResources* terrain, int sectionId
   terrain->uploadedSections++;
 }
 
+// Per-frame scratch reset: clears ONLY the counters the GPU passes read before writing. The big
+// data buffers (worklists, scratch queues, translucentQuadRefs, ...) are strictly
+// write-before-read within one frame - every slot below the (cleared) counters is written by the
+// producing kernel before the consuming pass reads it - so wiping them each frame was ~140MB of
+// pure render-thread memset per frame. They are still fully wiped by clearSlotFrameResources on
+// creation and full terrain resets.
 void clearTraversalScratch(FrameResources* frame, TerrainResources* terrain) {
-  clearSlotFrameResources(frame, terrain);
+  (void)terrain;
+  if (frame == nullptr) {
+    return;
+  }
+  // Iteration queue heads/counts; submitTraversal rewrites slots [0..3] and the per-iteration
+  // dispatch fields, but the per-iteration allocation cursors ([i*4+3]) must start at 0.
+  std::memset([frame->queueMeta contents], 0, MAX_LOD_ITERATIONS * 4 * sizeof(uint32_t));
+  // requestQueue[0] is the request counter; the request payload beyond it is bounded by it.
+  std::memset([frame->requestQueue contents], 0, sizeof(uint32_t));
+  std::memset([frame->worklistCounter contents], 0, 2 * sizeof(uint32_t));
+  std::memset([frame->traversalStats contents], 0, 8 * sizeof(uint32_t));
+  std::memset([frame->translucentWorklistCounter contents], 0, 2 * sizeof(uint32_t));
+  // The translucent count/prefix-sum passes accumulate into the buckets, so they must be zeroed.
+  std::memset([frame->translucentDistanceBuckets contents], 0,
+              TRANSLUCENT_BUCKET_COUNT * sizeof(uint32_t));
 }
 
 }  // namespace gl41metal
@@ -446,8 +436,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_u
                       sourceBytesPerRow);
         }
       }
-      [staging didModifyRange:NSMakeRange(0, static_cast<NSUInteger>(stagingBytes))];
-
       id<MTLCommandBuffer> commandBuffer = [context->queue commandBuffer];
       if (commandBuffer == nil) {
         throwJava(env, "GL41Metal uploadModel atlas blit commandBuffer returned nil");
@@ -626,8 +614,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_u
   std::memcpy(static_cast<uint8_t*>([terrain->nodeBuffer contents]) +
                   static_cast<uint64_t>(nodeId) * NODE_BYTES,
               reinterpret_cast<const void*>(nodeAddress), NODE_BYTES);
-  [terrain->nodeBuffer
-      didModifyRange:NSMakeRange(static_cast<NSUInteger>(nodeId) * NODE_BYTES, NODE_BYTES)];
   terrain->uploadedNodes++;
 }
 
@@ -646,9 +632,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_u
   uint8_t* destination = static_cast<uint8_t*>([terrain->sectionMetadata contents]) +
                          static_cast<uint64_t>(sectionId) * SECTION_METADATA_BYTES;
   std::memcpy(destination, reinterpret_cast<const void*>(metadataAddress), SECTION_METADATA_BYTES);
-  [terrain->sectionMetadata
-      didModifyRange:NSMakeRange(static_cast<NSUInteger>(sectionId) * SECTION_METADATA_BYTES,
-                                 SECTION_METADATA_BYTES)];
   updateSectionResidencyFromMetadata(terrain, sectionId,
                                      reinterpret_cast<const uint32_t*>(metadataAddress));
 }
@@ -676,8 +659,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_u
   }
   std::memcpy(static_cast<uint8_t*>([terrain->geometry contents]) + byteOffset,
               reinterpret_cast<const void*>(geometryAddress), static_cast<size_t>(bytes));
-  [terrain->geometry didModifyRange:NSMakeRange(static_cast<NSUInteger>(byteOffset),
-                                                static_cast<NSUInteger>(bytes))];
   terrain->uploadedGeometryBytes += bytes;
 }
 
@@ -753,7 +734,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_c
   std::memset(terrain->lastTraversal, 0, sizeof(terrain->lastTraversal));
   std::memset(terrain->lastRaster, 0, sizeof(terrain->lastRaster));
   for (Slot& slot : context->slots) {
-    clearTraversalScratch(slot.frame.get(), terrain);
+    // Full wipe (not the per-frame counter-only clear): this is an explicit reset entry point.
+    clearSlotFrameResources(slot.frame.get(), terrain);
   }
 }
 

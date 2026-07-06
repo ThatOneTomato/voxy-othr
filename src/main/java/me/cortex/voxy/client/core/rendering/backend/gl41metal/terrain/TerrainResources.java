@@ -34,6 +34,13 @@ public final class TerrainResources implements AutoCloseable {
   private static final int MAX_RASTER_QUADS =
       readInt("voxy.gl41metal.maxRasterQuads", 8_000_000, 1024, 32_000_000);
   private static final int MESH_BATCH_SIZE = readInt("voxy.gl41metal.meshBatchSize", 32, 16, 64);
+  // Debug-only GPU residency validation. The native pass dispatches a compute kernel over ALL
+  // maxSections and then blocks the render thread with waitUntilCompleted on the SAME serial
+  // command queue as the frame's traversal/raster work, i.e. it drains every in-flight Metal
+  // frame before returning. Running it every frame serialized the whole CPU<->GPU pipeline, so
+  // it is opt-in for debugging only.
+  private static final boolean VALIDATE_TERRAIN =
+      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.validateTerrain", "false"));
 
   private final WorldEngine world;
   private final MaterialStore materialStore;
@@ -198,10 +205,14 @@ public final class TerrainResources implements AutoCloseable {
   }
 
   private void runValidation(long handle) {
-    NativeBindings.validateTerrainResources(handle);
-    this.validationRuns++;
+    if (VALIDATE_TERRAIN) {
+      NativeBindings.validateTerrainResources(handle);
+      this.validationRuns++;
+    }
     this.lastStats = TerrainStats.fromNative(NativeBindings.getTerrainStats(handle));
-    if (!this.loggedFirstValidation && this.lastStats.validationResidentSections() > 0) {
+    if (VALIDATE_TERRAIN
+        && !this.loggedFirstValidation
+        && this.lastStats.validationResidentSections() > 0) {
       this.loggedFirstValidation = true;
       Logger.info("GL41Metal terrain Metal validation passed: " + this.lastStats.compact());
     }
