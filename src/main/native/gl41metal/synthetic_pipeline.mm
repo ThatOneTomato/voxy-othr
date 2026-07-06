@@ -30,6 +30,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     }
 
     Slot& slot = context->slots[slotIndex];
+    // The synthetic clear never touches the translucent targets.
+    slot.translucentValid = false;
     id<MTLCommandBuffer> commandBuffer = [context->queue commandBuffer];
     if (commandBuffer == nil) {
       resetSubmittedSlot(context, slotIndex);

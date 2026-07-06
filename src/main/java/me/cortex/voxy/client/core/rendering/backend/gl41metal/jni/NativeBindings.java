@@ -154,6 +154,11 @@ public final class NativeBindings {
 
   public static native int waitCurrent(long handle, int currentSlot, int timeoutMs);
 
+  // Whether the slot's submit ran the translucent Metal pass. False when no translucent geometry
+  // was resident (the tgbuffer textures are stale - neither rastered nor cleared), in which case
+  // the GL translucent composite must be skipped for this slot.
+  public static native boolean isSlotTranslucentValid(long handle, int slot);
+
   public static native void discardCurrentSlot(long handle, int slot);
 
   public static native void releaseSampledSlot(long handle, int slot);

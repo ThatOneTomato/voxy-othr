@@ -145,6 +145,7 @@ ext.voxyRunProperties = {
         'voxy.gl41metal.boundAddDelayFrames'  : '1',
         'voxy.gl41metal.meshBatchSize'        : '32',
         'voxy.gl41metal.validateTerrain'      : 'false',
+        'voxy.gl41metal.modelBakeBudgetMs'    : '4',
         'voxy.fluidBridgeWalls'               : 'true',
     ].each { key, defaultValue ->
         props[key] = System.getProperty(key, defaultValue)

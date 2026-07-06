@@ -109,29 +109,31 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
 
     bool willOpaqueRaster = terrain->opaqueMeshPipeline != nil &&
                             terrain->meshArgsPipeline != nil && terrain->atlas != nil;
+    // Skip the whole translucent pipeline (sort dispatches + raster pass, i.e. 3 full-screen
+    // RGBA32F clear+stores of pure bandwidth) when NO resident section has translucent geometry.
+    // The tgbuffer textures are then left stale; slot.translucentValid tells the GL side to skip
+    // the translucent composite (and its full-screen tgbuffer reads) for this slot.
     bool willTranslucentRaster = willOpaqueRaster && terrain->translucentMeshPipeline != nil &&
                                  terrain->translucentCountPipeline != nil &&
                                  terrain->translucentPrefixSumPipeline != nil &&
-                                 terrain->translucentScatterPipeline != nil;
+                                 terrain->translucentScatterPipeline != nil &&
+                                 terrain->translucentQuadsResident > 0;
+    bool willSsao = willOpaqueRaster && ssaoSteps > 0 && terrain->ssaoPipeline != nil &&
+                    ssaoMatricesAddress != 0;
+    slot.translucentValid = willTranslucentRaster;
 
-    // Issue a standalone clear only for targets that won't be cleared by a raster pass below.
-    // On Apple Silicon TBDR, each raster pass's MTLLoadActionClear is free (tile-local), so the
-    // standalone clear is pure overhead when a raster pass follows. Skipping it saves ~0.87ms
-    // of bandwidth-limited tile-store work per frame.
-    if (!willOpaqueRaster || !willTranslucentRaster) {
+    // Issue a standalone clear only for the opaque targets and only when the raster pass below
+    // won't clear them itself. On Apple Silicon TBDR, each raster pass's MTLLoadActionClear is
+    // free (tile-local), so the standalone clear is pure overhead when a raster pass follows.
+    // The translucent targets never need a standalone clear: whenever their raster pass is
+    // skipped, slot.translucentValid is false and the GL side never samples them.
+    if (!willOpaqueRaster) {
       MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
-      int nextAttachment = 0;
-      if (!willOpaqueRaster) {
-        setupQuadGbufferAttachments(pass, slot);
-        nextAttachment = 3;
-        pass.depthAttachment.texture = slot.renderDepth;
-        pass.depthAttachment.loadAction = MTLLoadActionClear;
-        pass.depthAttachment.storeAction = MTLStoreActionDontCare;
-        pass.depthAttachment.clearDepth = 1.0;
-      }
-      if (!willTranslucentRaster) {
-        setupTranslucentGbufferAttachments(pass, slot, nextAttachment);
-      }
+      setupQuadGbufferAttachments(pass, slot);
+      pass.depthAttachment.texture = slot.renderDepth;
+      pass.depthAttachment.loadAction = MTLLoadActionClear;
+      pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+      pass.depthAttachment.clearDepth = 1.0;
 
       id<MTLRenderCommandEncoder> renderEncoder =
           [commandBuffer renderCommandEncoderWithDescriptor:pass];
@@ -258,8 +260,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       [encoder endEncoding];
     }
 
-    if (terrain->opaqueMeshPipeline != nil && terrain->meshArgsPipeline != nil &&
-        terrain->atlas != nil) {
+    if (willOpaqueRaster) {
       {
         id<MTLComputeCommandEncoder> meshArgsEncoder = [commandBuffer computeCommandEncoder];
         if (meshArgsEncoder == nil) {
@@ -282,7 +283,10 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       renderPass.depthAttachment.texture = slot.renderDepth;
       renderPass.depthAttachment.loadAction = MTLLoadActionClear;
       renderPass.depthAttachment.clearDepth = 1.0;
-      renderPass.depthAttachment.storeAction = MTLStoreActionStore;
+      // The stored opaque depth is only consumed by the SSAO and translucent passes; skip the
+      // full-screen depth store (pure bandwidth) when neither runs this frame.
+      renderPass.depthAttachment.storeAction =
+          (willSsao || willTranslucentRaster) ? MTLStoreActionStore : MTLStoreActionDontCare;
 
       id<MTLRenderCommandEncoder> quadEncoder =
           [commandBuffer renderCommandEncoderWithDescriptor:renderPass];
@@ -317,8 +321,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     // factor into gbuffer2.w's spare bits (see ssao.metal) using the opaque depth stored by the
     // raster pass above. Runs before the translucent raster only for encoder locality; it
     // touches neither the depth attachment nor the translucent targets.
-    if (willOpaqueRaster && ssaoSteps > 0 && terrain->ssaoPipeline != nil &&
-        ssaoMatricesAddress != 0) {
+    if (willSsao) {
       MTLRenderPassDescriptor* ssaoPass = [MTLRenderPassDescriptor renderPassDescriptor];
       ssaoPass.colorAttachments[0].texture = slot.gbuffer2->metalTexture;
       ssaoPass.colorAttachments[0].loadAction = MTLLoadActionLoad;
@@ -349,10 +352,9 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     // Translucent (group 0) pass: sort the emitted translucent work items by section distance
     // (count -> exclusive prefix sum -> scatter) and rasterise them far->near into the translucent
     // gbuffer, depth-tested against the stored opaque distant depth. Runs only when the full quad
-    // pipeline (incl. atlas) is ready, mirroring the opaque guard above.
-    if (terrain->translucentMeshPipeline != nil && terrain->translucentCountPipeline != nil &&
-        terrain->translucentPrefixSumPipeline != nil &&
-        terrain->translucentScatterPipeline != nil && terrain->atlas != nil) {
+    // pipeline (incl. atlas) is ready AND translucent geometry is actually resident (see
+    // willTranslucentRaster above).
+    if (willTranslucentRaster) {
       id<MTLComputeCommandEncoder> sortEncoder = [commandBuffer computeCommandEncoder];
       if (sortEncoder == nil) {
         resetSubmittedSlot(context, slotIndex);

@@ -41,6 +41,12 @@ public final class TerrainResources implements AutoCloseable {
   // it is opt-in for debugging only.
   private static final boolean VALIDATE_TERRAIN =
       Boolean.parseBoolean(System.getProperty("voxy.gl41metal.validateTerrain", "false"));
+  // Render-thread budget for draining queued block model bakes each frame. The old 100ms value
+  // effectively meant "bake everything immediately", which stalls whole frames while new chunks
+  // stream in. ModelBakerySubsystem.tick still guarantees a minimum of 5 bakes per frame, so a
+  // small budget only spreads a large burst across a few frames instead of one giant hitch.
+  private static final long MODEL_BAKE_BUDGET_NANOS =
+      readInt("voxy.gl41metal.modelBakeBudgetMs", 4, 1, 100) * 1_000_000L;
 
   private final WorldEngine world;
   private final MaterialStore materialStore;
@@ -98,7 +104,7 @@ public final class TerrainResources implements AutoCloseable {
     this.syncIrisBlockStateMapping();
     this.ensureNativeResources(nativeHandle);
     this.renderDistanceTracker.setCenterAndProcess(frameContext.cameraX(), frameContext.cameraZ());
-    this.modelService.tick(100_000_000L);
+    this.modelService.tick(MODEL_BAKE_BUDGET_NANOS);
     this.materialStore.drainUploads(nativeHandle);
     this.nodeSyncHost.drain(NativeBindings.pollTraversalRequests(nativeHandle), this.nativeSink);
     this.runValidation(nativeHandle);

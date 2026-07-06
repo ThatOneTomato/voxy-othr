@@ -225,6 +225,11 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     if (sampleSlot < 0) {
       return;
     }
+    // False when the Metal submit skipped the translucent pass (no translucent geometry
+    // resident): the tgbuffer textures are stale, so the GL translucent composite (and its
+    // full-screen tgbuffer reads) must be skipped for this slot.
+    boolean slotHasTranslucent =
+        NativeBindings.isSlotTranslucentValid(this.gbuffer.nativeHandle(), sampleSlot);
     boolean held = false;
     try {
       RenderFrameContext renderContext =
@@ -264,7 +269,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
                   gl41MetalFrame.drawMvp(),
                   gl41MetalFrame.vanillaDrawMvp());
           this.profiler.recordBridgeOpaque(tBridge);
-          if (rendered && holdForTranslucent) {
+          if (rendered && holdForTranslucent && slotHasTranslucent) {
             this.heldTranslucentSlot = sampleSlot;
             this.heldTranslucentFrame = gl41MetalFrame;
             this.heldTranslucentContext = renderContext;
@@ -292,13 +297,16 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           DistantTerrainBridge.vanillaJob(renderContext, this.config.visibleComposite()),
           gl41MetalFrame.drawMvp(),
           gl41MetalFrame.vanillaDrawMvp());
-      this.bridge.renderTranslucent(
-          renderContext,
-          slot,
-          DistantTerrainBridge.vanillaTranslucentJob(renderContext, this.config.visibleComposite()),
-          gl41MetalFrame.drawMvp(),
-          gl41MetalFrame.vanillaDrawMvp(),
-          this.currentBound);
+      if (slotHasTranslucent) {
+        this.bridge.renderTranslucent(
+            renderContext,
+            slot,
+            DistantTerrainBridge.vanillaTranslucentJob(
+                renderContext, this.config.visibleComposite()),
+            gl41MetalFrame.drawMvp(),
+            gl41MetalFrame.vanillaDrawMvp(),
+            this.currentBound);
+      }
       this.profiler.recordBridgeOpaque(tBridge);
     } finally {
       if (!held) {

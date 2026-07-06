@@ -94,6 +94,12 @@ struct FrameResources {
 struct Slot {
   SlotState state = SlotState::Free;
   int64_t frameId = -1;
+  // Whether this slot's submit ran the translucent raster pipeline (tgbuffer contents are valid
+  // for this frame). When no resident section has translucent geometry the whole translucent
+  // Metal pass is skipped - including the 3 full-screen RGBA32F clear+stores - leaving the
+  // tgbuffer textures stale, and the GL side must skip the translucent composite for this slot.
+  // Written on the render thread at submit time and read on the render thread at sample time.
+  bool translucentValid = false;
   std::unique_ptr<SharedTexture> gbuffer0;
   std::unique_ptr<SharedTexture> gbuffer1;
   std::unique_ptr<SharedTexture> gbuffer2;
@@ -112,6 +118,11 @@ struct TerrainSectionSlot {
   bool resident = false;
   uint64_t geometryOffsetBytes = 0;
   uint64_t geometryBytes = 0;
+  // Group-0 (translucent) quad count from this section's metadata. Aggregated into
+  // TerrainResources::translucentQuadsResident so the per-frame submit can skip the whole
+  // translucent sort/raster pipeline (3 full-screen RGBA32F clear+stores) when NO resident
+  // section has translucent geometry.
+  uint32_t translucentQuads = 0;
 };
 
 struct TerrainResources {
@@ -128,6 +139,9 @@ struct TerrainResources {
   uint64_t geometryCursorBytes = 0;
   uint64_t topNodeCount = 0;
   uint64_t residentSections = 0;
+  // Sum of TerrainSectionSlot::translucentQuads over resident sections. 0 means the translucent
+  // Metal pipeline (and the GL translucent composite) can be skipped entirely this frame.
+  uint64_t translucentQuadsResident = 0;
   uint64_t geometryBytes = 0;
   uint64_t uploadedSections = 0;
   uint64_t removedSections = 0;

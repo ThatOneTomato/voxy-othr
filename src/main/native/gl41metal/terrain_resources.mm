@@ -21,6 +21,7 @@ struct AtlasMipUpload {
 
 void clearTerrainCounters(TerrainResources* terrain) {
   terrain->residentSections = 0;
+  terrain->translucentQuadsResident = 0;
   terrain->geometryBytes = 0;
   terrain->uploadedSections = 0;
   terrain->removedSections = 0;
@@ -156,6 +157,7 @@ void updateSectionResidencyFromMetadata(TerrainResources* terrain, int sectionId
     if (slot.resident) {
       terrain->residentSections--;
       terrain->geometryBytes -= slot.geometryBytes;
+      terrain->translucentQuadsResident -= slot.translucentQuads;
       slot = TerrainSectionSlot{};
       terrain->removedSections++;
     }
@@ -165,11 +167,15 @@ void updateSectionResidencyFromMetadata(TerrainResources* terrain, int sectionId
     terrain->residentSections++;
   } else {
     terrain->geometryBytes -= slot.geometryBytes;
+    terrain->translucentQuadsResident -= slot.translucentQuads;
   }
   slot.resident = true;
   slot.geometryOffsetBytes = static_cast<uint64_t>(meta[3]) * 8;
   slot.geometryBytes = bytes;
+  // Render group 0 (see traversal_worklist.metal group_count) is the translucent quad group.
+  slot.translucentQuads = meta[4] & 0xffffu;
   terrain->geometryBytes += bytes;
+  terrain->translucentQuadsResident += slot.translucentQuads;
   terrain->uploadedSections++;
 }
 
@@ -545,6 +551,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_u
     terrain->residentSections++;
   } else {
     terrain->geometryBytes -= slot.geometryBytes;
+    terrain->translucentQuadsResident -= slot.translucentQuads;
   }
 
   // TODO(gl41metal): replace this bump allocator with a reclaiming arena and async upload staging.
@@ -572,6 +579,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_u
   meta[5] = (offsets[3] - offsets[2]) | ((offsets[4] - offsets[3]) << 16);
   meta[6] = (offsets[5] - offsets[4]) | ((offsets[6] - offsets[5]) << 16);
   meta[7] = (offsets[7] - offsets[6]) | ((itemCount - offsets[7]) << 16);
+  slot.translucentQuads = meta[4] & 0xffffu;
+  terrain->translucentQuadsResident += slot.translucentQuads;
   (void)childExistence;
 }
 
@@ -592,6 +601,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_r
     slot.resident = false;
     terrain->residentSections--;
     terrain->geometryBytes -= slot.geometryBytes;
+    terrain->translucentQuadsResident -= slot.translucentQuads;
+    slot.translucentQuads = 0;
     terrain->removedSections++;
   }
   std::memset(static_cast<uint8_t*>([terrain->sectionMetadata contents]) +
