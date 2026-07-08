@@ -24,7 +24,8 @@ public final class DistantRenderer {
       RenderFrameContext context,
       Matrix4fc traversalMvp,
       Matrix4fc drawMvp,
-      Matrix4fc projection) {
+      Matrix4fc projection,
+      int outputMode) {
     // Layout: [0..15] traversalMvp, [16..31] drawMvp, [32..79] SSAO matrices
     // (proj, invProj, modelView - see SsaoUniformHost in gl41metal_abi.h).
     MemoryBuffer matrices = new MemoryBuffer(80L * Float.BYTES);
@@ -55,7 +56,8 @@ public final class DistantRenderer {
           context.viewportWidth(),
           context.viewportHeight(),
           ssaoMatricesAddress,
-          ssaoSteps);
+          ssaoSteps,
+          outputMode);
     } finally {
       matrices.free();
     }
@@ -140,7 +142,7 @@ public final class DistantRenderer {
     return ((int) Math.floor(value)) >> 5;
   }
 
-  private static float computeEarthRadius() {
+  static float computeEarthRadius() {
     int earthCurveRatio = VoxyConfig.CONFIG.earthCurveRatio;
     return earthCurveRatio >= 50 ? 6371000.0f / earthCurveRatio : 0.0f;
   }

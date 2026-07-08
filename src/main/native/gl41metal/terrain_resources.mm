@@ -267,12 +267,15 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_c
         [context->device newBufferWithLength:sizeof(uint32_t) options:MTLResourceStorageModeShared];
     terrain->validationGeometryQuadCapacity =
         [context->device newBufferWithLength:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+    terrain->drawlistCounterBuffer =
+        [context->device newBufferWithLength:8 * sizeof(uint32_t)
+                                     options:MTLResourceStorageModeShared];
 
     if (terrain->sectionMetadata == nil || terrain->geometry == nil || terrain->nodeBuffer == nil ||
         terrain->topNodeBuffer == nil || terrain->modelBuffer == nil ||
         terrain->modelColourBuffer == nil || terrain->modelPresentBuffer == nil ||
         terrain->validationStats == nil || terrain->validationMaxSections == nil ||
-        terrain->validationGeometryQuadCapacity == nil) {
+        terrain->validationGeometryQuadCapacity == nil || terrain->drawlistCounterBuffer == nil) {
       throwJava(env, "GL41Metal could not allocate terrain Metal buffers");
       return;
     }
@@ -314,6 +317,10 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_c
     }
     terrain->traversalPipeline = createTraversalPipeline(env, context);
     if (terrain->traversalPipeline == nil) {
+      return;
+    }
+    terrain->drawlistInstancePipeline = createDrawlistInstancePipeline(env, context);
+    if (terrain->drawlistInstancePipeline == nil) {
       return;
     }
     if (!createTranslucentSortPipelines(env, context, terrain.get())) {

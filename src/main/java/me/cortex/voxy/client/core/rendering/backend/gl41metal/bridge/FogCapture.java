@@ -14,7 +14,7 @@ import net.minecraft.client.Minecraft;
  * MixinFogRenderer captured before neutralising vanilla terrain fog. The Iris paths never touch
  * this: shader packs fog their own scene.
  */
-final class FogCapture {
+public final class FogCapture {
   private FogCapture() {}
 
   /**
@@ -24,7 +24,7 @@ final class FogCapture {
    * renderVoxyFog=off or degenerate captured fog uploads intensity 0, which the shader treats as
    * "no fog". No-ops on programs that compile without the fog block (strict Iris / debug shapes).
    */
-  static void setVanillaFogUniforms(int paramsUniform, int colorUniform, int shapeUniform) {
+  public static void setVanillaFogUniforms(int paramsUniform, int colorUniform, int shapeUniform) {
     if (paramsUniform < 0) {
       return;
     }
@@ -63,7 +63,7 @@ final class FogCapture {
    * output entirely for the frame. The Iris paths never take this branch: shader packs own their
    * fog and Voxy has no business second-guessing it.
    */
-  static boolean vanillaFogHidesDistant() {
+  public static boolean vanillaFogHidesDistant() {
     var vrs = VoxyRenderSystemAccess.getNullable();
     float fogEnd = vrs != null ? vrs.getCapturedFogEnd() : RenderSystem.getShaderFogEnd();
     return fogEnd < Minecraft.getInstance().gameRenderer.getRenderDistance();

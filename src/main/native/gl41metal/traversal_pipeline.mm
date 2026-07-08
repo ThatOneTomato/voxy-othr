@@ -62,7 +62,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     jdouble cameraY, jdouble cameraZ, jlong traversalMvpAddress, jlong drawMvpAddress,
     jfloat subDivisionSize, jfloat earthRadius, jfloat nearExclusionRadius,
     jfloat renderDistanceSquared, jint viewportWidth, jint viewportHeight,
-    jlong ssaoMatricesAddress, jint ssaoSteps) {
+    jlong ssaoMatricesAddress, jint ssaoSteps, jint outputMode) {
   @autoreleasepool {
     NativeContext* context = requireContext(env, handle);
     if (context == nullptr) {
@@ -98,13 +98,13 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       throwJava(env, "GL41Metal traversal submit has no per-slot frame resources");
       return;
     }
-    bool willOpaqueRaster = terrain->opaqueMeshPipeline != nil &&
+    bool sharedGbufferOutput = outputMode != OUTPUT_MODE_DRAWLIST;
+    bool willOpaqueRaster = sharedGbufferOutput && terrain->opaqueMeshPipeline != nil &&
                             terrain->meshArgsPipeline != nil && terrain->atlas != nil;
-    bool willTranslucentRaster = willOpaqueRaster && terrain->translucentMeshPipeline != nil &&
-                                 terrain->translucentCountPipeline != nil &&
-                                 terrain->translucentPrefixSumPipeline != nil &&
-                                 terrain->translucentScatterPipeline != nil &&
-                                 terrain->translucentQuadsResident > 0;
+    bool willTranslucentRaster =
+        willOpaqueRaster && terrain->translucentMeshPipeline != nil &&
+        terrain->translucentCountPipeline != nil && terrain->translucentPrefixSumPipeline != nil &&
+        terrain->translucentScatterPipeline != nil && terrain->translucentQuadsResident > 0;
     bool willSsao = willOpaqueRaster && ssaoSteps > 0 && terrain->ssaoPipeline != nil &&
                     ssaoMatricesAddress != 0;
     slot.translucentValid = willTranslucentRaster;
@@ -124,7 +124,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     traversalCB.label =
         [NSString stringWithFormat:@"Voxy Traversal F%ld S%d", (long)frameId, (int)slotIndex];
 
-    if (!willOpaqueRaster) {
+    if (sharedGbufferOutput && !willOpaqueRaster) {
       MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
       setupQuadGbufferAttachments(pass, slot);
       pass.depthAttachment.texture = slot.renderDepth;
@@ -203,7 +203,11 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     reinterpret_cast<uint32_t*>(scene + 208)[0] = static_cast<uint32_t>(terrain->maxRasterQuads);
     reinterpret_cast<uint32_t*>(scene + 208)[1] = 0;
     reinterpret_cast<uint32_t*>(scene + 208)[2] = 0;
-    reinterpret_cast<uint32_t*>(scene + 208)[3] = 0;
+    // rasterLimits.w: drawlist mode asks traversal to keep all opaque face groups in the
+    // worklist. Section-level camera-face culling is only an optimization for direct GL; keeping
+    // all groups avoids dropping whole 32^3 section faces when the coarse cull disagrees with GL
+    // raster behavior.
+    reinterpret_cast<uint32_t*>(scene + 208)[3] = outputMode == OUTPUT_MODE_DRAWLIST ? 1u : 0u;
 
     if (terrain->topNodeCount > 0) {
       id<MTLComputeCommandEncoder> encoder = [traversalCB computeCommandEncoder];
@@ -314,11 +318,11 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
 
       [quadEncoder setRenderPipelineState:terrain->opaqueMeshPipeline];
       [quadEncoder setDepthStencilState:terrain->quadDepthStencil];
-      [quadEncoder drawMeshThreadgroupsWithIndirectBuffer:frame->meshIndirectArgs
-                                     indirectBufferOffset:0
-                              threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
-                                threadsPerMeshThreadgroup:MTLSizeMake(terrain->meshBatchSize * 4, 1,
-                                                                     1)];
+      [quadEncoder
+          drawMeshThreadgroupsWithIndirectBuffer:frame->meshIndirectArgs
+                            indirectBufferOffset:0
+                     threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
+                       threadsPerMeshThreadgroup:MTLSizeMake(terrain->meshBatchSize * 4, 1, 1)];
 
       [quadEncoder endEncoding];
     }
@@ -454,12 +458,11 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       [translucentEncoder setMeshBuffer:terrain->modelColourBuffer offset:0 atIndex:4];
       [translucentEncoder setMeshBuffer:terrain->modelPresentBuffer offset:0 atIndex:5];
       [translucentEncoder setMeshBuffer:frame->sceneUniform offset:0 atIndex:6];
-      [translucentEncoder drawMeshThreadgroupsWithIndirectBuffer:frame->translucentMeshIndirectArgs
-                                            indirectBufferOffset:0
-                                     threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
-                                       threadsPerMeshThreadgroup:MTLSizeMake(
-                                                                     terrain->meshBatchSize * 4, 1,
-                                                                     1)];
+      [translucentEncoder
+          drawMeshThreadgroupsWithIndirectBuffer:frame->translucentMeshIndirectArgs
+                            indirectBufferOffset:0
+                     threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
+                       threadsPerMeshThreadgroup:MTLSizeMake(terrain->meshBatchSize * 4, 1, 1)];
       [translucentEncoder endEncoding];
     }
 
@@ -467,9 +470,9 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     //     last CB completes all preceding CBs are guaranteed complete, so we can read
     //     their GPUStartTime/GPUEndTime safely. ---
     id<MTLCommandBuffer> finalCB = translucentCB ? translucentCB
-                                   : ssaoCB     ? ssaoCB
-                                   : opaqueCB   ? opaqueCB
-                                                : traversalCB;
+                                   : ssaoCB      ? ssaoCB
+                                   : opaqueCB    ? opaqueCB
+                                                 : traversalCB;
     NativeContext* capturedContext = context;
     int capturedSlot = slotIndex;
     FrameResources* capturedFrame = frame;
@@ -502,10 +505,9 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
         } else {
           capturedContext->gpuTranslucentMs = 0.0;
         }
-        capturedContext->lastMetalGpuTimeMs = capturedContext->gpuTraversalMs +
-                                              capturedContext->gpuOpaqueRasterMs +
-                                              capturedContext->gpuSsaoMs +
-                                              capturedContext->gpuTranslucentMs;
+        capturedContext->lastMetalGpuTimeMs =
+            capturedContext->gpuTraversalMs + capturedContext->gpuOpaqueRasterMs +
+            capturedContext->gpuSsaoMs + capturedContext->gpuTranslucentMs;
 
         if (buffer.status == MTLCommandBufferStatusError && buffer.error != nil) {
           capturedContext->asyncFailure = [[buffer.error localizedDescription] UTF8String];

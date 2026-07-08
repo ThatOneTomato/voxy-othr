@@ -92,6 +92,7 @@ static inline bool group_visible_from_camera(uint group, SectionMeta meta,
                                              constant SceneUniform& scene) {
   if (group == 1u) return true;
   if (group == 0u) return false;
+  if (scene.rasterLimits.w != 0u) return true;
   uint detail = extract_detail(meta);
   int3 relative =
       extract_section_pos(meta) - int3(scene.baseSectionFrame.x >> detail,

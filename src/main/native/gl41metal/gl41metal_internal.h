@@ -177,8 +177,12 @@ struct TerrainResources {
   id<MTLComputePipelineState> translucentScatterPipeline = nil;
   id<MTLDepthStencilState> translucentDepthStencil = nil;
   id<MTLComputePipelineState> meshArgsPipeline = nil;
+  id<MTLComputePipelineState> drawlistInstancePipeline = nil;
   id<MTLRenderPipelineState> opaqueMeshPipeline = nil;
   id<MTLRenderPipelineState> translucentMeshPipeline = nil;
+  id<MTLBuffer> drawlistInstanceBuffer = nil;
+  id<MTLBuffer> drawlistCounterBuffer = nil;
+  uint32_t drawlistInstanceCapacity = 0;
   // Distant SSAO full-screen pass (ssao.metal): framebuffer-fetch RMW of gbuffer2 that bakes
   // the AO factor into gbuffer2.w's spare bits for the GL vanilla composite. nil = disabled.
   id<MTLRenderPipelineState> ssaoPipeline = nil;
@@ -225,6 +229,7 @@ id<MTLComputePipelineState> createValidationPipeline(JNIEnv* env, NativeContext*
 id<MTLComputePipelineState> createTraversalPipeline(JNIEnv* env, NativeContext* context);
 bool createTranslucentSortPipelines(JNIEnv* env, NativeContext* context, TerrainResources* terrain);
 id<MTLComputePipelineState> createMeshArgsPipeline(JNIEnv* env, NativeContext* context);
+id<MTLComputePipelineState> createDrawlistInstancePipeline(JNIEnv* env, NativeContext* context);
 bool createOpaqueMeshPipeline(JNIEnv* env, NativeContext* context, TerrainResources* terrain);
 bool createTranslucentMeshPipeline(JNIEnv* env, NativeContext* context, TerrainResources* terrain);
 bool createSsaoPipeline(JNIEnv* env, NativeContext* context, TerrainResources* terrain);

@@ -55,6 +55,7 @@ public final class TerrainResources implements AutoCloseable {
   private final CpuNodeSyncHost nodeSyncHost;
   private final RenderDistanceTracker renderDistanceTracker;
   private final CpuNodeSyncHost.Sink nativeSink = new NativeSyncSink();
+  private DrawlistMirror drawlistMirror;
   private long nativeHandle;
   private boolean nativeResourcesCreated;
   private boolean closed;
@@ -146,6 +147,22 @@ public final class TerrainResources implements AutoCloseable {
             + ", zeroCustomIdModels="
             + this.materialStore.uploadedZeroCustomIdModelCount());
     this.nodeSyncHost.addDebug(debug);
+  }
+
+  public void setAtlasMirror(MaterialStore.AtlasMirror atlasMirror) {
+    this.materialStore.setAtlasMirror(atlasMirror);
+  }
+
+  public void setDrawlistMirror(DrawlistMirror drawlistMirror) {
+    this.drawlistMirror = drawlistMirror;
+  }
+
+  public static int maxResidentSections() {
+    return MAX_RESIDENT_SECTIONS;
+  }
+
+  public static long geometryCapacityBytes() {
+    return GEOMETRY_CAPACITY_BYTES;
   }
 
   private void ensureNativeResources(long handle) {
@@ -303,6 +320,9 @@ public final class TerrainResources implements AutoCloseable {
     public void uploadSectionMetadata(int sectionId, long metadataAddress) {
       NativeBindings.uploadSectionMetadata(
           TerrainResources.this.nativeHandle, sectionId, metadataAddress);
+      if (TerrainResources.this.drawlistMirror != null) {
+        TerrainResources.this.drawlistMirror.uploadSectionMetadata(sectionId, metadataAddress);
+      }
     }
 
     @Override
@@ -313,6 +333,10 @@ public final class TerrainResources implements AutoCloseable {
           geometryElementOffset,
           geometryAddress,
           geometryBytes);
+      if (TerrainResources.this.drawlistMirror != null) {
+        TerrainResources.this.drawlistMirror.uploadGeometry(
+            geometryElementOffset, geometryAddress, geometryBytes);
+      }
     }
 
     @Override
@@ -329,5 +353,11 @@ public final class TerrainResources implements AutoCloseable {
     public void removeTopNode(int nodeId) {
       NativeBindings.removeTopNode(TerrainResources.this.nativeHandle, nodeId);
     }
+  }
+
+  public interface DrawlistMirror {
+    void uploadSectionMetadata(int sectionId, long metadataAddress);
+
+    void uploadGeometry(int geometryElementOffset, long geometryAddress, long geometryBytes);
   }
 }

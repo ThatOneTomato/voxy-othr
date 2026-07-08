@@ -18,6 +18,7 @@ import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SlotSchedul
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.TerrainResources;
+import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.Logger;
 import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
@@ -28,6 +29,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   private final DistantRenderer metalRenderer;
   private final SlotScheduler slotScheduler;
   private final DistantTerrainBridge bridge;
+  private final DrawlistOpaqueRenderer drawlistOpaqueRenderer;
   private final FrameProfiler profiler = new FrameProfiler();
   // GL-only loaded-volume bound (P1): tracks the Sodium-loaded 16-block render sections and
   // produces
@@ -64,8 +66,19 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     this.slotScheduler = new SlotScheduler(this.config.waitTimeoutMs());
     this.bridge = new DistantTerrainBridge();
     this.terrainResources = new TerrainResources(context);
+    if (this.config.useDrawlistPipeline()) {
+      this.drawlistOpaqueRenderer =
+          new DrawlistOpaqueRenderer(
+              TerrainResources.maxResidentSections(), TerrainResources.geometryCapacityBytes());
+      this.terrainResources.setAtlasMirror(this.drawlistOpaqueRenderer);
+      this.terrainResources.setDrawlistMirror(this.drawlistOpaqueRenderer);
+    } else {
+      this.drawlistOpaqueRenderer = null;
+    }
     Logger.info(
-        "Created Voxy GL41Metal shared texture backend with Metal LOD/culling and quad raster.");
+        "Created Voxy GL41Metal backend with pipeline="
+            + this.config.pipelineMode()
+            + " (shared_gbuffer remains the default path).");
   }
 
   @Override
@@ -124,7 +137,11 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
         if (renderFrame == null) {
           renderFrame = this.submitMetalFrame(context.frameContext());
         }
-        this.sampleFrame(renderFrame, context, false);
+        if (this.useDirectDrawlistOpaque()) {
+          this.sampleDrawlistOpaque(renderFrame, context.frameContext());
+        } else {
+          this.sampleFrame(renderFrame, context, false);
+        }
         yield renderFrame;
       }
       case FRAME_END -> frame;
@@ -175,7 +192,8 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           context,
           frameMatrices.traversalMvp(),
           frameMatrices.drawMvp(),
-          frameMatrices.projection());
+          frameMatrices.projection(),
+          this.submitOutputMode());
       this.slotScheduler.recordSubmitted();
     } else {
       this.slotScheduler.recordNoFreeSlot();
@@ -188,7 +206,21 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
 
   @Override
   public void renderOpaque(RenderFrame frame) {
-    this.sampleFrame(frame);
+    if (this.useDirectDrawlistOpaque()) {
+      this.sampleDrawlistOpaque(frame, null);
+    } else {
+      this.sampleFrame(frame);
+    }
+  }
+
+  private boolean useDirectDrawlistOpaque() {
+    return this.drawlistOpaqueRenderer != null && !IrisUtil.irisShaderPackEnabled();
+  }
+
+  private int submitOutputMode() {
+    return this.useDirectDrawlistOpaque()
+        ? NativeBindings.OUTPUT_MODE_DRAWLIST
+        : NativeBindings.OUTPUT_MODE_SHARED_GBUFFER;
   }
 
   private void sampleFrame(
@@ -202,6 +234,40 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
 
   private void sampleFrame(RenderFrame frame) {
     this.sampleFrame(frame, null, null, false);
+  }
+
+  private void sampleDrawlistOpaque(RenderFrame frame, RenderFrameContext stageContext) {
+    if (frame == null || this.drawlistOpaqueRenderer == null) {
+      return;
+    }
+    if (!(frame instanceof Frame gl41MetalFrame)) {
+      throw new IllegalArgumentException(
+          "Cannot render frame for backend " + frame.backendId() + " with GL41Metal backend");
+    }
+    if (this.gbuffer == null) {
+      return;
+    }
+    long tWait = this.profiler.begin();
+    int sampleSlot =
+        this.slotScheduler.selectSlotForSampling(this.gbuffer, gl41MetalFrame.writeSlot());
+    this.profiler.recordSlotWait(tWait);
+    if (sampleSlot < 0) {
+      return;
+    }
+    try {
+      RenderFrameContext renderContext =
+          stageContext == null ? gl41MetalFrame.context() : stageContext;
+      this.drawlistOpaqueRenderer.render(
+          this.gbuffer.nativeHandle(),
+          sampleSlot,
+          renderContext,
+          gl41MetalFrame.drawMvp(),
+          gl41MetalFrame.vanillaDrawMvp(),
+          this.config.visibleComposite(),
+          this.profiler);
+    } finally {
+      this.slotScheduler.queueSampledSlotRetirement(this.gbuffer, sampleSlot);
+    }
   }
 
   private void sampleFrame(
@@ -381,7 +447,11 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   @Override
   public void addDebugInfo(List<String> debug) {
     debug.add("Voxy backend: GL41METAL");
-    debug.add("Voxy GL41Metal status: Metal LOD/culling worklist and quad raster active");
+    debug.add(
+        "Voxy GL41Metal status: pipeline="
+            + this.config.pipelineMode()
+            + ", directDrawlistOpaque="
+            + this.useDirectDrawlistOpaque());
     debug.add("Voxy GL41Metal selection: " + this.context.selection().reason());
     debug.add("Voxy GL41Metal config: " + this.config);
     if (this.gbuffer != null) {
@@ -428,6 +498,9 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     Logger.info("Shutting down Voxy GL41Metal shared texture backend");
     this.dropHeldTranslucentSlot();
     this.terrainResources.close();
+    if (this.drawlistOpaqueRenderer != null) {
+      this.drawlistOpaqueRenderer.close();
+    }
     this.bridge.close();
     this.boundRenderer.close();
     if (this.gbuffer != null) {

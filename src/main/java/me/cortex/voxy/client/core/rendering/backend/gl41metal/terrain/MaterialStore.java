@@ -31,6 +31,23 @@ public final class MaterialStore implements ModelOutputSink {
   private int uploadedZeroCustomIdModelCount;
   private long uploadedBiomeBatchCount;
   private boolean loggedFirstModelUpload;
+  private AtlasMirror atlasMirror;
+
+  public interface AtlasMirror {
+    default void uploadModelData(int modelId, long modelAddress, long modelBytes) {}
+
+    default void uploadBiomeData(
+        long colourAddress,
+        long colourBytes,
+        long modelBiomePairsAddress,
+        long modelBiomePairsBytes) {}
+
+    void uploadModelTexture(int modelId, long textureAddress, long textureBytes);
+  }
+
+  synchronized void setAtlasMirror(AtlasMirror atlasMirror) {
+    this.atlasMirror = atlasMirror;
+  }
 
   @Override
   public synchronized void uploadModel(BakedModelPayload payload) {
@@ -46,7 +63,7 @@ public final class MaterialStore implements ModelOutputSink {
         new ModelUpload(
             payload.modelId(),
             payload.model().copy(),
-            FULL_ATLAS_UPLOADS ? payload.texture().copy() : null,
+            this.atlasMirror != null || FULL_ATLAS_UPLOADS ? payload.texture().copy() : null,
             payload.renderLayer(),
             payload.fallbackReason(),
             payload.sourceDescription()));
@@ -78,6 +95,13 @@ public final class MaterialStore implements ModelOutputSink {
             upload.texture == null ? 0 : upload.texture.size,
             upload.renderLayer,
             upload.fallbackReason);
+        if (this.atlasMirror != null) {
+          this.atlasMirror.uploadModelData(upload.modelId, upload.model.address, upload.model.size);
+          if (upload.texture != null) {
+            this.atlasMirror.uploadModelTexture(
+                upload.modelId, upload.texture.address, upload.texture.size);
+          }
+        }
         this.uploadedModelCount++;
         if (customId == 0) {
           this.uploadedZeroCustomIdModelCount++;
@@ -124,6 +148,13 @@ public final class MaterialStore implements ModelOutputSink {
             upload.biomeColours.size,
             upload.modelBiomePairs.address,
             upload.modelBiomePairs.size);
+        if (this.atlasMirror != null) {
+          this.atlasMirror.uploadBiomeData(
+              upload.biomeColours.address,
+              upload.biomeColours.size,
+              upload.modelBiomePairs.address,
+              upload.modelBiomePairs.size);
+        }
         this.uploadedBiomeBatchCount++;
       } finally {
         upload.free();

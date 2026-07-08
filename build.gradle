@@ -129,6 +129,7 @@ ext.voxyRunProperties = {
     ]
     [
         'voxy.gl41metal.slotCount'            : '3',
+        'voxy.gl41metal.pipeline'             : 'shared_gbuffer',
         'voxy.gl41metal.waitTimeoutMs'        : '0',
         'voxy.gl41metal.visibleComposite'     : 'true',
         'voxy.gl41metal.residencyMaxSections' : '262144',
