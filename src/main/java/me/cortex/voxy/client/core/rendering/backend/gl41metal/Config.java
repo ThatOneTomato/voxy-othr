@@ -7,7 +7,7 @@ public record Config(
         readInt("voxy.gl41metal.slotCount", 3, 2, 8),
         readInt("voxy.gl41metal.waitTimeoutMs", 0, 0, 100),
         readBoolean("voxy.gl41metal.visibleComposite", true),
-        readInt("voxy.gl41metal.meshBatchSize", 32, 16, 64));
+        readInt("voxy.gl41metal.meshBatchSize", 64, 16, 64));
   }
 
   private static boolean readBoolean(String property, boolean fallback) {

@@ -33,7 +33,7 @@ public final class TerrainResources implements AutoCloseable {
       readInt("voxy.gl41metal.maxWorklistItems", 400_000, 1024, 2_000_000);
   private static final int MAX_RASTER_QUADS =
       readInt("voxy.gl41metal.maxRasterQuads", 8_000_000, 1024, 32_000_000);
-  private static final int MESH_BATCH_SIZE = readInt("voxy.gl41metal.meshBatchSize", 32, 16, 64);
+  private static final int MESH_BATCH_SIZE = readInt("voxy.gl41metal.meshBatchSize", 64, 16, 64);
   // Debug-only GPU residency validation. The native pass dispatches a compute kernel over ALL
   // maxSections and then blocks the render thread with waitUntilCompleted on the SAME serial
   // command queue as the frame's traversal/raster work, i.e. it drains every in-flight Metal

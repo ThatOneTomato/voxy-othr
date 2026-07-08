@@ -199,6 +199,13 @@ struct NativeContext {
   int pendingCommandBuffers = 0;
   std::string asyncFailure;
   double lastMetalGpuTimeMs = 0.0;
+  // Per-pass GPU timings (ms) from the most recent completed Metal frame. Written in the
+  // command-buffer completion handler under mutex. The sum of the individual passes can be
+  // slightly less than lastMetalGpuTimeMs because of inter-encoder gaps and driver overhead.
+  double gpuTraversalMs = 0.0;
+  double gpuOpaqueRasterMs = 0.0;
+  double gpuSsaoMs = 0.0;
+  double gpuTranslucentMs = 0.0;
   std::unique_ptr<TerrainResources> terrain;
 };
 

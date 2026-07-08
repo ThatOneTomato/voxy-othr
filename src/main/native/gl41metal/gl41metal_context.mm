@@ -249,6 +249,27 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
   return context->lastMetalGpuTimeMs;
 }
 
+// Per-pass GPU timing (ms) from the most recent completed Metal frame. Returns 4 doubles
+// packed into a long array: [traversal, opaqueRaster, ssao, translucent].
+JNIEXPORT jdoubleArray JNICALL
+Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getPerPassGpuTimesMs(
+    JNIEnv* env, jclass, jlong handle) {
+  NativeContext* context = requireContext(env, handle);
+  jdouble values[4] = {};
+  if (context != nullptr) {
+    std::lock_guard<std::mutex> lock(context->mutex);
+    values[0] = context->gpuTraversalMs;
+    values[1] = context->gpuOpaqueRasterMs;
+    values[2] = context->gpuSsaoMs;
+    values[3] = context->gpuTranslucentMs;
+  }
+  jdoubleArray result = env->NewDoubleArray(4);
+  if (result != nullptr) {
+    env->SetDoubleArrayRegion(result, 0, 4, values);
+  }
+  return result;
+}
+
 // The distant gbuffer is 3 shared textures (see quad_raster.metal QuadFragmentOut). These three
 // getters return the imported GL texture name for each; the Java DistantGbufferSlot mirrors
 // the same order.

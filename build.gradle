@@ -143,7 +143,7 @@ ext.voxyRunProperties = {
         'voxy.gl41metal.boundVerticalMargin'  : '1',
         'voxy.gl41metal.boundHorizontalMargin': '0',
         'voxy.gl41metal.boundAddDelayFrames'  : '1',
-        'voxy.gl41metal.meshBatchSize'        : '32',
+        'voxy.gl41metal.meshBatchSize'        : '64',
         'voxy.gl41metal.validateTerrain'      : 'false',
         'voxy.gl41metal.modelBakeBudgetMs'    : '4',
         'voxy.fluidBridgeWalls'               : 'true',

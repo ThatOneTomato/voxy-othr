@@ -110,6 +110,10 @@ public final class NativeBindings {
 
   public static native double getLastMetalGpuTimeMs(long handle);
 
+  // Per-pass GPU timing (ms) from the most recent completed Metal frame.
+  // Returns [traversal, opaqueRaster, ssao, translucent].
+  public static native double[] getPerPassGpuTimesMs(long handle);
+
   // Distant gbuffer is 3 shared RGBA32F textures (see quad_raster.metal QuadFragmentOut):
   // gbuffer0 = uv/tile, gbuffer1 = depth/modelId/customId, gbuffer2 = packed albedo/light/tint
   // and face/flags/coverage. Three is the sampler-budget limit for the Iris bridge program.

@@ -141,10 +141,12 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     this.profiler.recordTick(tTick);
 
     if (this.gbuffer != null) {
-      double metalGpuMs = NativeBindings.getLastMetalGpuTimeMs(this.gbuffer.nativeHandle());
+      long nh = this.gbuffer.nativeHandle();
+      double metalGpuMs = NativeBindings.getLastMetalGpuTimeMs(nh);
       if (metalGpuMs > 0) {
         this.profiler.recordMetalGpuMs(metalGpuMs);
       }
+      this.profiler.recordPerPassGpuMs(NativeBindings.getPerPassGpuTimesMs(nh));
     }
 
     if (context.matrices() == null) {

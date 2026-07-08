@@ -98,21 +98,8 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       throwJava(env, "GL41Metal traversal submit has no per-slot frame resources");
       return;
     }
-    id<MTLCommandBuffer> commandBuffer = [context->queue commandBuffer];
-    if (commandBuffer == nil) {
-      resetSubmittedSlot(context, slotIndex);
-      throwJava(env, "GL41Metal traversal commandBuffer returned nil");
-      return;
-    }
-    commandBuffer.label =
-        [NSString stringWithFormat:@"Voxy Frame %ld Slot %d", (long)frameId, (int)slotIndex];
-
     bool willOpaqueRaster = terrain->opaqueMeshPipeline != nil &&
                             terrain->meshArgsPipeline != nil && terrain->atlas != nil;
-    // Skip the whole translucent pipeline (sort dispatches + raster pass, i.e. 3 full-screen
-    // RGBA32F clear+stores of pure bandwidth) when NO resident section has translucent geometry.
-    // The tgbuffer textures are then left stale; slot.translucentValid tells the GL side to skip
-    // the translucent composite (and its full-screen tgbuffer reads) for this slot.
     bool willTranslucentRaster = willOpaqueRaster && terrain->translucentMeshPipeline != nil &&
                                  terrain->translucentCountPipeline != nil &&
                                  terrain->translucentPrefixSumPipeline != nil &&
@@ -122,11 +109,21 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
                     ssaoMatricesAddress != 0;
     slot.translucentValid = willTranslucentRaster;
 
-    // Issue a standalone clear only for the opaque targets and only when the raster pass below
-    // won't clear them itself. On Apple Silicon TBDR, each raster pass's MTLLoadActionClear is
-    // free (tile-local), so the standalone clear is pure overhead when a raster pass follows.
-    // The translucent targets never need a standalone clear: whenever their raster pass is
-    // skipped, slot.translucentValid is false and the GL side never samples them.
+    // --- Per-pass GPU timing: each logical pass gets its own MTLCommandBuffer so its
+    //     GPUEndTime - GPUStartTime gives isolated per-pass GPU time. All CBs are
+    //     committed together at the end; if any encoding fails, none are committed and
+    //     the slot is reset safely. ---
+
+    // Phase 1: Clear (optional) + LOD Traversal compute
+    id<MTLCommandBuffer> traversalCB = [context->queue commandBuffer];
+    if (traversalCB == nil) {
+      resetSubmittedSlot(context, slotIndex);
+      throwJava(env, "GL41Metal traversal commandBuffer returned nil");
+      return;
+    }
+    traversalCB.label =
+        [NSString stringWithFormat:@"Voxy Traversal F%ld S%d", (long)frameId, (int)slotIndex];
+
     if (!willOpaqueRaster) {
       MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
       setupQuadGbufferAttachments(pass, slot);
@@ -136,7 +133,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       pass.depthAttachment.clearDepth = 1.0;
 
       id<MTLRenderCommandEncoder> renderEncoder =
-          [commandBuffer renderCommandEncoderWithDescriptor:pass];
+          [traversalCB renderCommandEncoderWithDescriptor:pass];
       if (renderEncoder == nil) {
         resetSubmittedSlot(context, slotIndex);
         throwJava(env, "GL41Metal traversal render encoder returned nil");
@@ -209,7 +206,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     reinterpret_cast<uint32_t*>(scene + 208)[3] = 0;
 
     if (terrain->topNodeCount > 0) {
-      id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+      id<MTLComputeCommandEncoder> encoder = [traversalCB computeCommandEncoder];
       if (encoder == nil) {
         resetSubmittedSlot(context, slotIndex);
         throwJava(env, "GL41Metal traversal compute encoder returned nil");
@@ -260,9 +257,19 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       [encoder endEncoding];
     }
 
+    // Phase 2: Opaque raster (mesh args compute + quad mesh shader)
+    id<MTLCommandBuffer> opaqueCB = nil;
     if (willOpaqueRaster) {
+      opaqueCB = [context->queue commandBuffer];
+      if (opaqueCB == nil) {
+        resetSubmittedSlot(context, slotIndex);
+        throwJava(env, "GL41Metal opaque raster commandBuffer returned nil");
+        return;
+      }
+      opaqueCB.label =
+          [NSString stringWithFormat:@"Voxy Opaque F%ld S%d", (long)frameId, (int)slotIndex];
       {
-        id<MTLComputeCommandEncoder> meshArgsEncoder = [commandBuffer computeCommandEncoder];
+        id<MTLComputeCommandEncoder> meshArgsEncoder = [opaqueCB computeCommandEncoder];
         if (meshArgsEncoder == nil) {
           resetSubmittedSlot(context, slotIndex);
           throwJava(env, "GL41Metal mesh args encoder returned nil");
@@ -283,13 +290,11 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       renderPass.depthAttachment.texture = slot.renderDepth;
       renderPass.depthAttachment.loadAction = MTLLoadActionClear;
       renderPass.depthAttachment.clearDepth = 1.0;
-      // The stored opaque depth is only consumed by the SSAO and translucent passes; skip the
-      // full-screen depth store (pure bandwidth) when neither runs this frame.
       renderPass.depthAttachment.storeAction =
           (willSsao || willTranslucentRaster) ? MTLStoreActionStore : MTLStoreActionDontCare;
 
       id<MTLRenderCommandEncoder> quadEncoder =
-          [commandBuffer renderCommandEncoderWithDescriptor:renderPass];
+          [opaqueCB renderCommandEncoderWithDescriptor:renderPass];
       if (quadEncoder == nil) {
         resetSubmittedSlot(context, slotIndex);
         throwJava(env, "GL41Metal quad render encoder returned nil");
@@ -312,23 +317,31 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       [quadEncoder drawMeshThreadgroupsWithIndirectBuffer:frame->meshIndirectArgs
                                      indirectBufferOffset:0
                               threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
-                                threadsPerMeshThreadgroup:MTLSizeMake(64 * 4, 1, 1)];
+                                threadsPerMeshThreadgroup:MTLSizeMake(terrain->meshBatchSize * 4, 1,
+                                                                     1)];
 
       [quadEncoder endEncoding];
     }
 
-    // Distant SSAO. Full-screen framebuffer-fetch read-modify-write of gbuffer2: bakes the AO
-    // factor into gbuffer2.w's spare bits (see ssao.metal) using the opaque depth stored by the
-    // raster pass above. Runs before the translucent raster only for encoder locality; it
-    // touches neither the depth attachment nor the translucent targets.
+    // Phase 3: Distant SSAO (optional)
+    id<MTLCommandBuffer> ssaoCB = nil;
     if (willSsao) {
+      ssaoCB = [context->queue commandBuffer];
+      if (ssaoCB == nil) {
+        resetSubmittedSlot(context, slotIndex);
+        throwJava(env, "GL41Metal SSAO commandBuffer returned nil");
+        return;
+      }
+      ssaoCB.label =
+          [NSString stringWithFormat:@"Voxy SSAO F%ld S%d", (long)frameId, (int)slotIndex];
+
       MTLRenderPassDescriptor* ssaoPass = [MTLRenderPassDescriptor renderPassDescriptor];
       ssaoPass.colorAttachments[0].texture = slot.gbuffer2->metalTexture;
       ssaoPass.colorAttachments[0].loadAction = MTLLoadActionLoad;
       ssaoPass.colorAttachments[0].storeAction = MTLStoreActionStore;
 
       id<MTLRenderCommandEncoder> ssaoEncoder =
-          [commandBuffer renderCommandEncoderWithDescriptor:ssaoPass];
+          [ssaoCB renderCommandEncoderWithDescriptor:ssaoPass];
       if (ssaoEncoder == nil) {
         resetSubmittedSlot(context, slotIndex);
         throwJava(env, "GL41Metal SSAO render encoder returned nil");
@@ -349,13 +362,19 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       [ssaoEncoder endEncoding];
     }
 
-    // Translucent (group 0) pass: sort the emitted translucent work items by section distance
-    // (count -> exclusive prefix sum -> scatter) and rasterise them far->near into the translucent
-    // gbuffer, depth-tested against the stored opaque distant depth. Runs only when the full quad
-    // pipeline (incl. atlas) is ready AND translucent geometry is actually resident (see
-    // willTranslucentRaster above).
+    // Phase 4: Translucent sort + raster (optional)
+    id<MTLCommandBuffer> translucentCB = nil;
     if (willTranslucentRaster) {
-      id<MTLComputeCommandEncoder> sortEncoder = [commandBuffer computeCommandEncoder];
+      translucentCB = [context->queue commandBuffer];
+      if (translucentCB == nil) {
+        resetSubmittedSlot(context, slotIndex);
+        throwJava(env, "GL41Metal translucent commandBuffer returned nil");
+        return;
+      }
+      translucentCB.label =
+          [NSString stringWithFormat:@"Voxy Translucent F%ld S%d", (long)frameId, (int)slotIndex];
+
+      id<MTLComputeCommandEncoder> sortEncoder = [translucentCB computeCommandEncoder];
       if (sortEncoder == nil) {
         resetSubmittedSlot(context, slotIndex);
         throwJava(env, "GL41Metal translucent sort compute encoder returned nil");
@@ -411,7 +430,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       translucentPass.depthAttachment.storeAction = MTLStoreActionDontCare;
 
       id<MTLRenderCommandEncoder> translucentEncoder =
-          [commandBuffer renderCommandEncoderWithDescriptor:translucentPass];
+          [translucentCB renderCommandEncoderWithDescriptor:translucentPass];
       if (translucentEncoder == nil) {
         resetSubmittedSlot(context, slotIndex);
         throwJava(env, "GL41Metal translucent render encoder returned nil");
@@ -438,19 +457,56 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       [translucentEncoder drawMeshThreadgroupsWithIndirectBuffer:frame->translucentMeshIndirectArgs
                                             indirectBufferOffset:0
                                      threadsPerObjectThreadgroup:MTLSizeMake(1, 1, 1)
-                                       threadsPerMeshThreadgroup:MTLSizeMake(64 * 4, 1, 1)];
+                                       threadsPerMeshThreadgroup:MTLSizeMake(
+                                                                     terrain->meshBatchSize * 4, 1,
+                                                                     1)];
       [translucentEncoder endEncoding];
     }
 
+    // --- Completion handler on the FINAL command buffer. On a serial queue, when the
+    //     last CB completes all preceding CBs are guaranteed complete, so we can read
+    //     their GPUStartTime/GPUEndTime safely. ---
+    id<MTLCommandBuffer> finalCB = translucentCB ? translucentCB
+                                   : ssaoCB     ? ssaoCB
+                                   : opaqueCB   ? opaqueCB
+                                                : traversalCB;
     NativeContext* capturedContext = context;
     int capturedSlot = slotIndex;
     FrameResources* capturedFrame = frame;
-    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> buffer) {
+    id<MTLCommandBuffer> capturedTraversalCB = traversalCB;
+    id<MTLCommandBuffer> capturedOpaqueCB = opaqueCB;
+    id<MTLCommandBuffer> capturedSsaoCB = ssaoCB;
+    [finalCB addCompletedHandler:^(id<MTLCommandBuffer> buffer) {
       {
         std::lock_guard<std::mutex> lock(capturedContext->mutex);
-        if (buffer.status == MTLCommandBufferStatusCompleted) {
-          capturedContext->lastMetalGpuTimeMs = (buffer.GPUEndTime - buffer.GPUStartTime) * 1000.0;
+
+        // Per-pass GPU timing
+        auto cbMs = [](id<MTLCommandBuffer> cb) -> double {
+          if (cb == nil || cb.status != MTLCommandBufferStatusCompleted) return 0.0;
+          return (cb.GPUEndTime - cb.GPUStartTime) * 1000.0;
+        };
+        capturedContext->gpuTraversalMs = cbMs(capturedTraversalCB);
+        capturedContext->gpuOpaqueRasterMs = cbMs(capturedOpaqueCB);
+        capturedContext->gpuSsaoMs = cbMs(capturedSsaoCB);
+        capturedContext->gpuTranslucentMs = cbMs(buffer);
+        if (buffer != capturedTraversalCB) {
+          // finalCB is not the traversal CB; gpuTranslucentMs holds the final pass time.
+          // Recalculate in case finalCB is actually opaque or SSAO (the ternary above).
+          if (buffer == capturedOpaqueCB) {
+            capturedContext->gpuOpaqueRasterMs = cbMs(buffer);
+            capturedContext->gpuTranslucentMs = 0.0;
+          } else if (buffer == capturedSsaoCB) {
+            capturedContext->gpuSsaoMs = cbMs(buffer);
+            capturedContext->gpuTranslucentMs = 0.0;
+          }
+        } else {
+          capturedContext->gpuTranslucentMs = 0.0;
         }
+        capturedContext->lastMetalGpuTimeMs = capturedContext->gpuTraversalMs +
+                                              capturedContext->gpuOpaqueRasterMs +
+                                              capturedContext->gpuSsaoMs +
+                                              capturedContext->gpuTranslucentMs;
+
         if (buffer.status == MTLCommandBufferStatusError && buffer.error != nil) {
           capturedContext->asyncFailure = [[buffer.error localizedDescription] UTF8String];
         }
@@ -496,7 +552,12 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       }
       capturedContext->condition.notify_all();
     }];
-    [commandBuffer commit];
+
+    // Commit all CBs in serial-queue order.
+    [traversalCB commit];
+    if (opaqueCB != nil) [opaqueCB commit];
+    if (ssaoCB != nil) [ssaoCB commit];
+    if (translucentCB != nil) [translucentCB commit];
   }
 }
 

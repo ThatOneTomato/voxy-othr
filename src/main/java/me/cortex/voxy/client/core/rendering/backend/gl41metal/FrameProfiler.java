@@ -37,6 +37,11 @@ public final class FrameProfiler {
   private double metalGpuMsAccum;
   private double maxMetalGpuMs;
 
+  private double gpuTraversalAccum;
+  private double gpuOpaqueRasterAccum;
+  private double gpuSsaoAccum;
+  private double gpuTranslucentAccum;
+
   private int frames;
   private long windowStartNanos;
   private long lastLogTimeMs;
@@ -93,6 +98,14 @@ public final class FrameProfiler {
     this.maxMetalGpuMs = Math.max(this.maxMetalGpuMs, ms);
   }
 
+  void recordPerPassGpuMs(double[] times) {
+    if (times == null || times.length < 4) return;
+    this.gpuTraversalAccum += times[0];
+    this.gpuOpaqueRasterAccum += times[1];
+    this.gpuSsaoAccum += times[2];
+    this.gpuTranslucentAccum += times[3];
+  }
+
   void endFrame() {
     this.frames++;
     if (this.frames >= WINDOW_SIZE) {
@@ -114,14 +127,19 @@ public final class FrameProfiler {
         String.format(
             Locale.ROOT,
             "Voxy perf avg(ms): tick=%.2f submit=%.2f wait=%.2f bound=%.2f"
-                + " opaqueGL=%.2f transGL=%.2f metalGPU=%.2f",
+                + " opaqueGL=%.2f transGL=%.2f metalGPU=%.2f"
+                + " (trav=%.2f opaque=%.2f ssao=%.2f trans=%.2f)",
             s.avgTickMs,
             s.avgMetalSubmitMs,
             s.avgSlotWaitMs,
             s.avgBoundRenderMs,
             s.avgBridgeOpaqueMs,
             s.avgBridgeTranslucentMs,
-            s.avgMetalGpuMs));
+            s.avgMetalGpuMs,
+            s.avgGpuTraversalMs,
+            s.avgGpuOpaqueRasterMs,
+            s.avgGpuSsaoMs,
+            s.avgGpuTranslucentMs));
     debug.add(
         String.format(
             Locale.ROOT,
@@ -159,7 +177,11 @@ public final class FrameProfiler {
             toMs(this.maxBridgeTranslucentNanos),
             this.maxMetalGpuMs,
             n,
-            windowMs);
+            windowMs,
+            this.gpuTraversalAccum / n,
+            this.gpuOpaqueRasterAccum / n,
+            this.gpuSsaoAccum / n,
+            this.gpuTranslucentAccum / n);
     this.snapshot = s;
 
     if (LOG_INTERVAL_MS > 0) {
@@ -171,7 +193,8 @@ public final class FrameProfiler {
                 Locale.ROOT,
                 "GL41Metal perf [%d frames / %.0fms]: "
                     + "avg tick=%.2f submit=%.2f wait=%.2f bound=%.2f opaqueGL=%.2f"
-                    + " transGL=%.2f metalGPU=%.2f | voxyTotal=%.2f ms"
+                    + " transGL=%.2f metalGPU=%.2f (trav=%.2f opaque=%.2f ssao=%.2f trans=%.2f)"
+                    + " | voxyTotal=%.2f ms"
                     + " | max wait=%.2f opaqueGL=%.2f metalGPU=%.2f",
                 s.frames,
                 s.windowMs,
@@ -182,6 +205,10 @@ public final class FrameProfiler {
                 s.avgBridgeOpaqueMs,
                 s.avgBridgeTranslucentMs,
                 s.avgMetalGpuMs,
+                s.avgGpuTraversalMs,
+                s.avgGpuOpaqueRasterMs,
+                s.avgGpuSsaoMs,
+                s.avgGpuTranslucentMs,
                 s.avgVoxyTotalMs(),
                 s.maxSlotWaitMs,
                 s.maxBridgeOpaqueMs,
@@ -196,6 +223,10 @@ public final class FrameProfiler {
     this.bridgeOpaqueAccum = 0;
     this.bridgeTranslucentAccum = 0;
     this.metalGpuMsAccum = 0;
+    this.gpuTraversalAccum = 0;
+    this.gpuOpaqueRasterAccum = 0;
+    this.gpuSsaoAccum = 0;
+    this.gpuTranslucentAccum = 0;
     this.maxTickNanos = 0;
     this.maxMetalSubmitNanos = 0;
     this.maxSlotWaitNanos = 0;
@@ -231,9 +262,13 @@ public final class FrameProfiler {
       double maxBridgeTranslucentMs,
       double maxMetalGpuMs,
       int frames,
-      double windowMs) {
+      double windowMs,
+      double avgGpuTraversalMs,
+      double avgGpuOpaqueRasterMs,
+      double avgGpuSsaoMs,
+      double avgGpuTranslucentMs) {
     static final ProfileSnapshot EMPTY =
-        new ProfileSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        new ProfileSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     double avgVoxyTotalMs() {
       return avgTickMs
