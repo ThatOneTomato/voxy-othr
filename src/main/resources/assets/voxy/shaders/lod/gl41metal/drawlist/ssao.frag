@@ -2,8 +2,9 @@
 
 uniform sampler2D uColourTex;
 uniform sampler2D uDepthTex;
-uniform mat4 uMvp;
-uniform mat4 uInvMvp;
+uniform mat4 uProjection;
+uniform mat4 uInvProjection;
+uniform mat4 uModelView;
 uniform int uSteps;
 
 in vec2 UV;
@@ -15,12 +16,12 @@ const float SSAO_MAX_RADIUS_SCREEN = 0.05;
 const float SSAO_RADIUS = 1.0;
 
 vec3 viewPos(vec2 uv, float depth) {
-  vec4 view = uInvMvp * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+  vec4 view = uInvProjection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
   return view.xyz / view.w;
 }
 
 vec2 projectUv(vec3 viewPos_) {
-  vec4 clip = uMvp * vec4(viewPos_, 1.0);
+  vec4 clip = uProjection * vec4(viewPos_, 1.0);
   return clip.xy / clip.w * 0.5 + 0.5;
 }
 
@@ -64,7 +65,7 @@ void main() {
 
   uint face = metadata & 7u;
   vec3 positionView = viewPos(UV, depth);
-  vec3 viewNormal = faceToNormal(face);
+  vec3 viewNormal = normalize(mat3(uModelView) * faceToNormal(face));
   mat3 tbn = tbnMatrix(viewNormal);
   mat2 sampleMatrix =
       SSAO_RADIUS *

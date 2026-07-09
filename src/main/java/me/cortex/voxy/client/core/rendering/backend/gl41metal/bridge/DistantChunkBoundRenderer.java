@@ -12,6 +12,9 @@ import static org.lwjgl.opengl.GL11C.GL_FLOAT;
 import static org.lwjgl.opengl.GL11C.GL_GREATER;
 import static org.lwjgl.opengl.GL11C.GL_NEAREST;
 import static org.lwjgl.opengl.GL11C.GL_NONE;
+import static org.lwjgl.opengl.GL11C.GL_SCISSOR_BOX;
+import static org.lwjgl.opengl.GL11C.GL_SCISSOR_TEST;
+import static org.lwjgl.opengl.GL11C.GL_STENCIL_TEST;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_2D;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_MAG_FILTER;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_MIN_FILTER;
@@ -34,6 +37,7 @@ import static org.lwjgl.opengl.GL11C.glGetBooleanv;
 import static org.lwjgl.opengl.GL11C.glGetInteger;
 import static org.lwjgl.opengl.GL11C.glGetIntegerv;
 import static org.lwjgl.opengl.GL11C.glIsEnabled;
+import static org.lwjgl.opengl.GL11C.glScissor;
 import static org.lwjgl.opengl.GL11C.glTexImage2D;
 import static org.lwjgl.opengl.GL11C.glTexParameteri;
 import static org.lwjgl.opengl.GL11C.glViewport;
@@ -344,10 +348,14 @@ public final class DistantChunkBoundRenderer implements AutoCloseable {
     boolean prevDepthTest = glIsEnabled(GL_DEPTH_TEST);
     boolean prevCull = glIsEnabled(GL_CULL_FACE);
     boolean prevBlend = glIsEnabled(GL_BLEND);
+    boolean prevScissor = glIsEnabled(GL_SCISSOR_TEST);
+    boolean prevStencil = glIsEnabled(GL_STENCIL_TEST);
     int prevProgram = glGetInteger(GL_CURRENT_PROGRAM);
     int prevVao = glGetInteger(GL_VERTEX_ARRAY_BINDING);
     int[] prevViewport = new int[4];
+    int[] prevScissorBox = new int[4];
     glGetIntegerv(GL_VIEWPORT, prevViewport);
+    glGetIntegerv(GL_SCISSOR_BOX, prevScissorBox);
     boolean prevDepthMask;
     boolean prevColorMaskR, prevColorMaskG, prevColorMaskB, prevColorMaskA;
     try (MemoryStack stateStack = MemoryStack.stackPush()) {
@@ -364,6 +372,8 @@ public final class DistantChunkBoundRenderer implements AutoCloseable {
 
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, this.framebuffer);
     glViewport(0, 0, this.width, this.height);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_STENCIL_TEST);
     glColorMask(false, false, false, false);
     glDepthMask(true);
     // Clear to the NEAR value (0) so that, where no chunks are loaded, nothing is "nearer than the
@@ -434,6 +444,9 @@ public final class DistantChunkBoundRenderer implements AutoCloseable {
     setEnabled(GL_DEPTH_TEST, prevDepthTest);
     setEnabled(GL_CULL_FACE, prevCull);
     setEnabled(GL_BLEND, prevBlend);
+    setEnabled(GL_SCISSOR_TEST, prevScissor);
+    setEnabled(GL_STENCIL_TEST, prevStencil);
+    glScissor(prevScissorBox[0], prevScissorBox[1], prevScissorBox[2], prevScissorBox[3]);
     glDepthMask(prevDepthMask);
     glColorMask(prevColorMaskR, prevColorMaskG, prevColorMaskB, prevColorMaskA);
     glClearDepth(1.0);

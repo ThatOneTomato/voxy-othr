@@ -11,14 +11,17 @@ import static org.lwjgl.opengl.GL11C.GL_FLOAT;
 import static org.lwjgl.opengl.GL11C.GL_GEQUAL;
 import static org.lwjgl.opengl.GL11C.GL_GREATER;
 import static org.lwjgl.opengl.GL11C.GL_LEQUAL;
-import static org.lwjgl.opengl.GL11C.GL_LINEAR_MIPMAP_LINEAR;
 import static org.lwjgl.opengl.GL11C.GL_NEAREST;
+import static org.lwjgl.opengl.GL11C.GL_NEAREST_MIPMAP_LINEAR;
 import static org.lwjgl.opengl.GL11C.GL_NONE;
 import static org.lwjgl.opengl.GL11C.GL_ONE;
 import static org.lwjgl.opengl.GL11C.GL_ONE_MINUS_SRC_ALPHA;
 import static org.lwjgl.opengl.GL11C.GL_RGBA;
 import static org.lwjgl.opengl.GL11C.GL_RGBA8;
+import static org.lwjgl.opengl.GL11C.GL_SCISSOR_BOX;
+import static org.lwjgl.opengl.GL11C.GL_SCISSOR_TEST;
 import static org.lwjgl.opengl.GL11C.GL_SRC_ALPHA;
+import static org.lwjgl.opengl.GL11C.GL_STENCIL_TEST;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_2D;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_BINDING_2D;
@@ -45,6 +48,7 @@ import static org.lwjgl.opengl.GL11C.glGetIntegerv;
 import static org.lwjgl.opengl.GL11C.glIsEnabled;
 import static org.lwjgl.opengl.GL11C.glPixelStorei;
 import static org.lwjgl.opengl.GL11C.glReadBuffer;
+import static org.lwjgl.opengl.GL11C.glScissor;
 import static org.lwjgl.opengl.GL11C.glTexImage2D;
 import static org.lwjgl.opengl.GL11C.glTexParameteri;
 import static org.lwjgl.opengl.GL11C.glViewport;
@@ -228,14 +232,16 @@ final class DrawlistOpaqueRenderer
   private final int faceShadeXUniform;
   private final int nearDepthUniform;
   private final int nearDepthSizeUniform;
+  private final int nearDepthViewportOriginUniform;
   private final int useNearDepthMaskUniform;
   private final int reverseDepthUniform;
   private final int ssaoMetadataModeUniform;
   private final int useVoxyDepthUniform;
   private final int ssaoColourUniform;
   private final int ssaoDepthUniform;
-  private final int ssaoMvpUniform;
-  private final int ssaoInvMvpUniform;
+  private final int ssaoProjectionUniform;
+  private final int ssaoInvProjectionUniform;
+  private final int ssaoModelViewUniform;
   private final int ssaoStepsUniform;
   private final int compositeColourUniform;
   private final int compositeDepthUniform;
@@ -262,6 +268,7 @@ final class DrawlistOpaqueRenderer
   private final int translucentFaceShadeXUniform;
   private final int translucentBoundDepthUniform;
   private final int translucentBoundSizeUniform;
+  private final int translucentViewportOriginUniform;
   private final int translucentBoundEnabledUniform;
   private final int[] vaos = new int[STREAM_BUFFER_COUNT];
   private final int[] instanceBuffers = new int[STREAM_BUFFER_COUNT];
@@ -366,14 +373,16 @@ final class DrawlistOpaqueRenderer
     this.faceShadeXUniform = glGetUniformLocation(this.shader.id(), "uFaceShadeX");
     this.nearDepthUniform = glGetUniformLocation(this.shader.id(), "uNearDepthTex");
     this.nearDepthSizeUniform = glGetUniformLocation(this.shader.id(), "uNearDepthSize");
+    this.nearDepthViewportOriginUniform = glGetUniformLocation(this.shader.id(), "uViewportOrigin");
     this.useNearDepthMaskUniform = glGetUniformLocation(this.shader.id(), "uUseNearDepthMask");
     this.reverseDepthUniform = glGetUniformLocation(this.shader.id(), "uReverseDepth");
     this.ssaoMetadataModeUniform = glGetUniformLocation(this.shader.id(), "uSsaoMetadataMode");
     this.useVoxyDepthUniform = glGetUniformLocation(this.shader.id(), "uUseVoxyDepth");
     this.ssaoColourUniform = glGetUniformLocation(this.ssaoShader.id(), "uColourTex");
     this.ssaoDepthUniform = glGetUniformLocation(this.ssaoShader.id(), "uDepthTex");
-    this.ssaoMvpUniform = glGetUniformLocation(this.ssaoShader.id(), "uMvp");
-    this.ssaoInvMvpUniform = glGetUniformLocation(this.ssaoShader.id(), "uInvMvp");
+    this.ssaoProjectionUniform = glGetUniformLocation(this.ssaoShader.id(), "uProjection");
+    this.ssaoInvProjectionUniform = glGetUniformLocation(this.ssaoShader.id(), "uInvProjection");
+    this.ssaoModelViewUniform = glGetUniformLocation(this.ssaoShader.id(), "uModelView");
     this.ssaoStepsUniform = glGetUniformLocation(this.ssaoShader.id(), "uSteps");
     this.compositeColourUniform = glGetUniformLocation(this.compositeShader.id(), "uColourTex");
     this.compositeDepthUniform = glGetUniformLocation(this.compositeShader.id(), "uDepthTex");
@@ -437,6 +446,8 @@ final class DrawlistOpaqueRenderer
         translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uBoundDepthTex") : -1;
     this.translucentBoundSizeUniform =
         translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uBoundSize") : -1;
+    this.translucentViewportOriginUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uViewportOrigin") : -1;
     this.translucentBoundEnabledUniform =
         translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uBoundEnabled") : -1;
 
@@ -949,6 +960,7 @@ final class DrawlistOpaqueRenderer
       FrameProfiler profiler) {
     int previousDepthFunc = glGetInteger(GL_DEPTH_FUNC);
     boolean reverseDepth = previousDepthFunc == GL_GEQUAL || previousDepthFunc == GL_GREATER;
+    this.disableHostClipState();
     int nearDepthTexture = this.snapshotSourceDepth(context);
     int ssaoSteps = DistantRenderer.computeSsaoSteps(context);
     boolean useSsao = colorWriteEnabled && nearDepthTexture != 0 && ssaoSteps > 0;
@@ -958,7 +970,7 @@ final class DrawlistOpaqueRenderer
     if (!useSsao) {
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
     }
-    glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
+    this.setDrawViewport(context, useSsao);
     glColorMask(colorWriteEnabled, colorWriteEnabled, colorWriteEnabled, colorWriteEnabled);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(reverseDepth ? GL_GEQUAL : GL_LEQUAL);
@@ -991,7 +1003,7 @@ final class DrawlistOpaqueRenderer
     FogCapture.setVanillaFogUniforms(
         this.fogParamsUniform, this.fogColorUniform, this.fogShapeUniform);
     this.setFaceShadeUniforms(this.faceShadeUniform, this.faceShadeXUniform);
-    this.setNearDepthUniforms(context, nearDepthTexture, reverseDepth);
+    this.setNearDepthUniforms(context, nearDepthTexture, reverseDepth, useSsao);
     if (this.ssaoMetadataModeUniform >= 0) {
       glUniform1i(this.ssaoMetadataModeUniform, useSsao ? 1 : 0);
     }
@@ -1043,6 +1055,7 @@ final class DrawlistOpaqueRenderer
       FrameProfiler profiler) {
     int previousDepthFunc = glGetInteger(GL_DEPTH_FUNC);
     boolean reverseDepth = previousDepthFunc == GL_GEQUAL || previousDepthFunc == GL_GREATER;
+    this.disableHostClipState();
     int nearDepthTexture = this.snapshotSourceDepth(context);
     int ssaoSteps = DistantRenderer.computeSsaoSteps(context);
     boolean useSsao = colorWriteEnabled && nearDepthTexture != 0 && ssaoSteps > 0;
@@ -1052,7 +1065,7 @@ final class DrawlistOpaqueRenderer
     if (!useSsao) {
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
     }
-    glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
+    this.setDrawViewport(context, useSsao);
     glColorMask(colorWriteEnabled, colorWriteEnabled, colorWriteEnabled, colorWriteEnabled);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(reverseDepth ? GL_GEQUAL : GL_LEQUAL);
@@ -1083,7 +1096,7 @@ final class DrawlistOpaqueRenderer
     FogCapture.setVanillaFogUniforms(
         this.fogParamsUniform, this.fogColorUniform, this.fogShapeUniform);
     this.setFaceShadeUniforms(this.faceShadeUniform, this.faceShadeXUniform);
-    this.setNearDepthUniforms(context, nearDepthTexture, reverseDepth);
+    this.setNearDepthUniforms(context, nearDepthTexture, reverseDepth, useSsao);
     if (this.ssaoMetadataModeUniform >= 0) {
       glUniform1i(this.ssaoMetadataModeUniform, useSsao ? 1 : 0);
     }
@@ -1135,10 +1148,32 @@ final class DrawlistOpaqueRenderer
     if (!this.ensureSsaoTargets(context.viewportWidth(), context.viewportHeight())) {
       return false;
     }
+    this.disableHostClipState();
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, this.ssaoDrawFramebuffer);
     glClearBufferfv(GL_COLOR, 0, stack.floats(0.0f, 0.0f, 0.0f, 0.0f));
     glClearBufferfv(GL_DEPTH, 0, stack.floats(reverseDepth ? 0.0f : 1.0f));
     return true;
+  }
+
+  private void setDrawViewport(RenderFrameContext context, boolean localFramebuffer) {
+    if (localFramebuffer) {
+      glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
+      return;
+    }
+    this.setSourceViewport(context);
+  }
+
+  private void disableHostClipState() {
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_STENCIL_TEST);
+  }
+
+  private void setSourceViewport(RenderFrameContext context) {
+    glViewport(
+        context.viewportX(),
+        context.viewportY(),
+        context.viewportWidth(),
+        context.viewportHeight());
   }
 
   private void applySsaoAndComposite(
@@ -1162,8 +1197,10 @@ final class DrawlistOpaqueRenderer
     if (this.ssaoStepsUniform >= 0) {
       glUniform1i(this.ssaoStepsUniform, ssaoSteps);
     }
-    this.uploadMatrix(this.ssaoMvpUniform, drawMvp, stack);
-    this.uploadMatrix(this.ssaoInvMvpUniform, new Matrix4f(drawMvp).invert(), stack);
+    Matrix4f projection = DistantRenderer.computeProjectionMat(context.matrices().projection());
+    this.uploadMatrix(this.ssaoProjectionUniform, projection, stack);
+    this.uploadMatrix(this.ssaoInvProjectionUniform, projection.invert(new Matrix4f()), stack);
+    this.uploadMatrix(this.ssaoModelViewUniform, context.matrices().modelView(), stack);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, this.ssaoColourTexture);
@@ -1196,7 +1233,7 @@ final class DrawlistOpaqueRenderer
     glBindTexture(GL_TEXTURE_2D, this.ssaoDepthTexture);
     glBindSampler(1, 0);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
-    glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
+    this.setSourceViewport(context);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_ALWAYS);
     glDepthMask(true);
@@ -1317,8 +1354,9 @@ final class DrawlistOpaqueRenderer
       FrameProfiler profiler) {
     int previousDepthFunc = glGetInteger(GL_DEPTH_FUNC);
     boolean reverseDepth = previousDepthFunc == GL_GEQUAL || previousDepthFunc == GL_GREATER;
+    this.disableHostClipState();
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
-    glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
+    this.setSourceViewport(context);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(reverseDepth ? GL_GEQUAL : GL_LEQUAL);
     glDepthMask(true);
@@ -1352,7 +1390,7 @@ final class DrawlistOpaqueRenderer
         this.translucentFogColorUniform,
         this.translucentFogShapeUniform);
     this.setFaceShadeUniforms(this.translucentFaceShadeUniform, this.translucentFaceShadeXUniform);
-    this.setTranslucentBoundUniforms(bound);
+    this.setTranslucentBoundUniforms(context, bound);
 
     glActiveTexture(GL_TEXTURE0 + BLOCK_ATLAS_UNIT);
     glBindTexture(GL_TEXTURE_2D, this.atlasTexture);
@@ -1390,7 +1428,7 @@ final class DrawlistOpaqueRenderer
     this.translucentDrawGpuTimer.end();
   }
 
-  private void setTranslucentBoundUniforms(LoadedVolumeBound bound) {
+  private void setTranslucentBoundUniforms(RenderFrameContext context, LoadedVolumeBound bound) {
     boolean enabled = bound != null && bound.enabled();
     if (this.translucentBoundDepthUniform >= 0) {
       glUniform1i(this.translucentBoundDepthUniform, BOUND_DEPTH_UNIT);
@@ -1400,6 +1438,9 @@ final class DrawlistOpaqueRenderer
           this.translucentBoundSizeUniform,
           enabled ? bound.width() : 0,
           enabled ? bound.height() : 0);
+    }
+    if (this.translucentViewportOriginUniform >= 0) {
+      glUniform2f(this.translucentViewportOriginUniform, context.viewportX(), context.viewportY());
     }
     if (this.translucentBoundEnabledUniform >= 0) {
       glUniform1i(this.translucentBoundEnabledUniform, enabled ? 1 : 0);
@@ -1435,12 +1476,21 @@ final class DrawlistOpaqueRenderer
   }
 
   private void setNearDepthUniforms(
-      RenderFrameContext context, int nearDepthTexture, boolean reverseDepth) {
+      RenderFrameContext context,
+      int nearDepthTexture,
+      boolean reverseDepth,
+      boolean localFramebuffer) {
     if (this.nearDepthUniform >= 0) {
       glUniform1i(this.nearDepthUniform, NEAR_DEPTH_UNIT);
     }
     if (this.nearDepthSizeUniform >= 0) {
       glUniform2f(this.nearDepthSizeUniform, context.viewportWidth(), context.viewportHeight());
+    }
+    if (this.nearDepthViewportOriginUniform >= 0) {
+      glUniform2f(
+          this.nearDepthViewportOriginUniform,
+          localFramebuffer ? 0.0f : context.viewportX(),
+          localFramebuffer ? 0.0f : context.viewportY());
     }
     if (this.useNearDepthMaskUniform >= 0) {
       glUniform1i(this.useNearDepthMaskUniform, nearDepthTexture != 0 ? 1 : 0);
@@ -1462,16 +1512,16 @@ final class DrawlistOpaqueRenderer
       this.logNearDepthFallback();
       return 0;
     }
-    int snapshot =
-        this.snapshotNearDepth(
-            sourceDepthTexture, context.viewportWidth(), context.viewportHeight());
+    int snapshot = this.snapshotNearDepth(sourceDepthTexture, context);
     if (snapshot == 0) {
       this.logNearDepthFallback();
     }
     return snapshot;
   }
 
-  private int snapshotNearDepth(int depthTexture, int width, int height) {
+  private int snapshotNearDepth(int depthTexture, RenderFrameContext context) {
+    int width = context.viewportWidth();
+    int height = context.viewportHeight();
     if (depthTexture == 0 || width <= 0 || height <= 0) {
       return 0;
     }
@@ -1495,7 +1545,19 @@ final class DrawlistOpaqueRenderer
               + Integer.toHexString(drawStatus));
       return 0;
     }
-    glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    int sourceX = context.viewportX();
+    int sourceY = context.viewportY();
+    glBlitFramebuffer(
+        sourceX,
+        sourceY,
+        sourceX + width,
+        sourceY + height,
+        0,
+        0,
+        width,
+        height,
+        GL_DEPTH_BUFFER_BIT,
+        GL_NEAREST);
     return this.nearDepthTexture;
   }
 
@@ -1771,7 +1833,7 @@ final class DrawlistOpaqueRenderer
           GL_UNSIGNED_BYTE,
           0L);
     }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, org.lwjgl.opengl.GL11C.GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, org.lwjgl.opengl.GL11C.GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -1974,6 +2036,8 @@ final class DrawlistOpaqueRenderer
       boolean depthEnabled,
       boolean blendEnabled,
       boolean cullEnabled,
+      boolean scissorEnabled,
+      boolean stencilEnabled,
       int depthFunc,
       int blendSrcRgb,
       int blendDstRgb,
@@ -1984,13 +2048,19 @@ final class DrawlistOpaqueRenderer
       boolean colorMaskG,
       boolean colorMaskB,
       boolean colorMaskA,
+      int scissorX,
+      int scissorY,
+      int scissorWidth,
+      int scissorHeight,
       int viewportX,
       int viewportY,
       int viewportWidth,
       int viewportHeight) {
     static StateSnapshot capture() {
       int[] viewport = new int[4];
+      int[] scissorBox = new int[4];
       glGetIntegerv(GL_VIEWPORT, viewport);
+      glGetIntegerv(GL_SCISSOR_BOX, scissorBox);
       boolean colorMaskR;
       boolean colorMaskG;
       boolean colorMaskB;
@@ -2016,12 +2086,15 @@ final class DrawlistOpaqueRenderer
           glIsEnabled(GL_DEPTH_TEST),
           glIsEnabled(GL_BLEND),
           glIsEnabled(GL_CULL_FACE),
+          glIsEnabled(GL_SCISSOR_TEST),
+          glIsEnabled(GL_STENCIL_TEST),
           glGetInteger(GL_DEPTH_FUNC),
           depthMask,
           colorMaskR,
           colorMaskG,
           colorMaskB,
-          colorMaskA);
+          colorMaskA,
+          scissorBox);
     }
 
     private static StateSnapshot captureCommon(
@@ -2033,12 +2106,15 @@ final class DrawlistOpaqueRenderer
         boolean depthEnabled,
         boolean blendEnabled,
         boolean cullEnabled,
+        boolean scissorEnabled,
+        boolean stencilEnabled,
         int depthFunc,
         boolean depthMask,
         boolean colorMaskR,
         boolean colorMaskG,
         boolean colorMaskB,
-        boolean colorMaskA) {
+        boolean colorMaskA,
+        int[] scissorBox) {
       int oldActiveTexture = glGetInteger(GL_ACTIVE_TEXTURE);
       glActiveTexture(GL_TEXTURE0);
       int texture0 = glGetInteger(GL_TEXTURE_BINDING_2D);
@@ -2082,6 +2158,8 @@ final class DrawlistOpaqueRenderer
           depthEnabled,
           blendEnabled,
           cullEnabled,
+          scissorEnabled,
+          stencilEnabled,
           depthFunc,
           glGetInteger(GL_BLEND_SRC_RGB),
           glGetInteger(GL_BLEND_DST_RGB),
@@ -2092,6 +2170,10 @@ final class DrawlistOpaqueRenderer
           colorMaskG,
           colorMaskB,
           colorMaskA,
+          scissorBox[0],
+          scissorBox[1],
+          scissorBox[2],
+          scissorBox[3],
           viewport[0],
           viewport[1],
           viewport[2],
@@ -2120,6 +2202,16 @@ final class DrawlistOpaqueRenderer
       } else {
         glDisable(GL_CULL_FACE);
       }
+      if (this.scissorEnabled) {
+        glEnable(GL_SCISSOR_TEST);
+      } else {
+        glDisable(GL_SCISSOR_TEST);
+      }
+      if (this.stencilEnabled) {
+        glEnable(GL_STENCIL_TEST);
+      } else {
+        glDisable(GL_STENCIL_TEST);
+      }
       glDepthFunc(this.depthFunc);
       glBlendFuncSeparate(
           this.blendSrcRgb, this.blendDstRgb, this.blendSrcAlpha, this.blendDstAlpha);
@@ -2128,6 +2220,7 @@ final class DrawlistOpaqueRenderer
       if (this.viewportWidth > 0 && this.viewportHeight > 0) {
         glViewport(this.viewportX, this.viewportY, this.viewportWidth, this.viewportHeight);
       }
+      glScissor(this.scissorX, this.scissorY, this.scissorWidth, this.scissorHeight);
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, this.texture0);
       glBindSampler(0, this.sampler0);

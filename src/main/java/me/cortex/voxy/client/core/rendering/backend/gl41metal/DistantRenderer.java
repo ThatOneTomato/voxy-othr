@@ -40,6 +40,10 @@ public final class DistantRenderer {
         writeMatrix(ssaoMatricesAddress + 16L * Float.BYTES, projection.invert(new Matrix4f()));
         writeMatrix(ssaoMatricesAddress + 32L * Float.BYTES, context.matrices().modelView());
       }
+      float subDivisionSize = VoxyConfig.CONFIG.subDivisionSize;
+      if (outputMode == NativeBindings.OUTPUT_MODE_DRAWLIST) {
+        subDivisionSize *= computeDrawlistLodFovScale(context);
+      }
       NativeBindings.submitTraversal(
           gbuffer.nativeHandle(),
           slot,
@@ -49,7 +53,7 @@ public final class DistantRenderer {
           context.cameraZ(),
           matrices.address,
           matrices.address + 16L * Float.BYTES,
-          VoxyConfig.CONFIG.subDivisionSize,
+          subDivisionSize,
           computeEarthRadius(),
           computeNearExclusionRadius(),
           computeRenderDistanceSquared(),
@@ -61,6 +65,29 @@ public final class DistantRenderer {
     } finally {
       matrices.free();
     }
+  }
+
+  private static float computeDrawlistLodFovScale(RenderFrameContext context) {
+    // GL46 lets the current projection directly drive LOD subdivision. Direct drawlist keeps the
+    // draw projection current, but stabilizes the traversal threshold against transient zoom FOVs
+    // (spyglass) so the zoom animation does not repeatedly switch LOD levels while child nodes are
+    // still warming.
+    if (context.matrices() == null) {
+      return 1.0f;
+    }
+    double configuredFovDegrees = Minecraft.getInstance().options.fov().get();
+    if (!(configuredFovDegrees > 0.0) || configuredFovDegrees >= 179.0) {
+      return 1.0f;
+    }
+    double vanillaScale = 1.0 / Math.tan(Math.toRadians(configuredFovDegrees) * 0.5);
+    if (!(vanillaScale > 0.0)) {
+      return 1.0f;
+    }
+    float currentScale = Math.abs(context.matrices().projection().m11());
+    if (!(currentScale > 0.0f)) {
+      return 1.0f;
+    }
+    return Math.max(1.0f, Math.min(16.0f, (float) (currentScale / vanillaScale)));
   }
 
   // Distant SSAO sample count for this frame. This is VANILLA-only, matching GL46 where SSAO exists

@@ -22,6 +22,7 @@ import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.Logger;
 import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 
 public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   private final BackendContext context;
@@ -100,12 +101,20 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   public RenderFrame runFrameStage(
       RenderStage stage, RenderStageContext context, RenderFrame frame) {
     return switch (stage) {
-      case FRAME_BEGIN -> this.submitMetalFrame(context.frameContext());
+      case FRAME_BEGIN -> {
+        if (this.useDirectDrawlistOpaque()) {
+          yield frame;
+        }
+        yield this.submitMetalFrame(context.frameContext());
+      }
       // gl46-only setup point inside Iris beginLevelRendering; gl41metal already submitted its
       // frame at FRAME_BEGIN so this is a pass-through.
       case VIEWPORT_SETUP -> frame;
       case SODIUM_SOLID_SYNC, SODIUM_CUTOUT_SYNC -> {
         if (context.shaderPackActive() || frame != null) {
+          yield frame;
+        }
+        if (this.useDirectDrawlistOpaque()) {
           yield frame;
         }
         yield this.submitMetalFrame(context.frameContext());
@@ -249,6 +258,8 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     if (this.gbuffer == null) {
       return;
     }
+    RenderFrameContext renderContext =
+        stageContext == null ? gl41MetalFrame.context() : stageContext;
     long tWait = this.profiler.begin();
     int sampleSlot =
         this.slotScheduler.selectSlotForSampling(this.gbuffer, gl41MetalFrame.writeSlot());
@@ -260,18 +271,18 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
         NativeBindings.isSlotTranslucentValid(this.gbuffer.nativeHandle(), sampleSlot);
     boolean held = false;
     try {
-      RenderFrameContext renderContext =
-          stageContext == null ? gl41MetalFrame.context() : stageContext;
+      DistantRenderer.FrameMatrices drawMatrices =
+          DistantRenderer.computeFrameMatrices(renderContext);
       this.currentBound =
           slotHasTranslucent
-              ? this.renderCurrentBound(gl41MetalFrame, renderContext)
+              ? this.renderCurrentBound(drawMatrices.drawMvp(), renderContext)
               : LoadedVolumeBound.DISABLED;
       this.drawlistOpaqueRenderer.render(
           this.gbuffer.nativeHandle(),
           sampleSlot,
           renderContext,
-          gl41MetalFrame.drawMvp(),
-          gl41MetalFrame.vanillaDrawMvp(),
+          drawMatrices.drawMvp(),
+          drawMatrices.vanillaDrawMvp(),
           this.config.visibleComposite(),
           this.profiler);
       if (slotHasTranslucent) {
@@ -432,12 +443,14 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     try {
       RenderFrameContext renderContext =
           context.frameContext() != null ? context.frameContext() : this.heldTranslucentContext;
+      DistantRenderer.FrameMatrices drawMatrices =
+          DistantRenderer.computeFrameMatrices(renderContext);
       this.drawlistOpaqueRenderer.renderTranslucent(
           this.gbuffer.nativeHandle(),
           slot,
           renderContext,
-          this.heldTranslucentFrame.drawMvp(),
-          this.heldTranslucentFrame.vanillaDrawMvp(),
+          drawMatrices.drawMvp(),
+          drawMatrices.vanillaDrawMvp(),
           this.currentBound,
           this.config.visibleComposite(),
           this.profiler);
@@ -448,6 +461,10 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   }
 
   private LoadedVolumeBound renderCurrentBound(Frame gl41MetalFrame, RenderFrameContext context) {
+    return this.renderCurrentBound(gl41MetalFrame.drawMvp(), context);
+  }
+
+  private LoadedVolumeBound renderCurrentBound(Matrix4fc drawMvp, RenderFrameContext context) {
     long tBound = this.profiler.begin();
     int worldMinY = -64;
     int worldMaxY = 320;
@@ -459,7 +476,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     int verticalRadiusBlocks = Minecraft.getInstance().options.getEffectiveRenderDistance() * 16;
     LoadedVolumeBound bound =
         this.boundRenderer.render(
-            gl41MetalFrame.drawMvp(),
+            drawMvp,
             context.cameraX(),
             context.cameraY(),
             context.cameraZ(),

@@ -3,6 +3,7 @@
 uniform sampler2D uBlockModelAtlas;
 uniform sampler2D uNearDepthTex;
 uniform vec2 uNearDepthSize;
+uniform vec2 uViewportOrigin;
 uniform int uUseNearDepthMask;
 uniform int uReverseDepth;
 uniform int uSsaoMetadataMode;
@@ -40,23 +41,13 @@ vec3 applyFog(vec3 color, vec3 pos) {
   return mix(color, uFogColor.rgb, clamp(fogLerp * uFogParams.z, 0.0, 1.0));
 }
 
-vec2 clampToFace(vec2 texPos, vec2 faceOrigin, vec2 dx, vec2 dy) {
-  vec2 atlasSize = vec2(textureSize(uBlockModelAtlas, 0));
-  float rho = max(length(dx * atlasSize), length(dy * atlasSize));
-  float mip = clamp(ceil(log2(max(rho, 1.0))), 0.0, 3.0);
-  vec2 margin = exp2(mip) * 0.5 / atlasSize;
-  vec2 faceExtent = 1.0 / (vec2(3.0, 2.0) * 256.0);
-  vec2 low = faceOrigin + margin;
-  vec2 high = faceOrigin + faceExtent - margin;
-  return clamp(texPos, min(low, high), max(low, high));
-}
-
 bool hiddenByNearDepth(float vanillaDepth) {
   if (uUseNearDepthMask == 0) {
     return false;
   }
+  vec2 localCoord = gl_FragCoord.xy - uViewportOrigin;
   ivec2 texel =
-      ivec2(clamp(floor(gl_FragCoord.xy), vec2(0.0), uNearDepthSize - vec2(1.0)));
+      ivec2(clamp(floor(localCoord), vec2(0.0), uNearDepthSize - vec2(1.0)));
   float nearDepth = texelFetch(uNearDepthTex, texel, 0).r;
   const float DEPTH_EPSILON = 0.00001;
   if (uReverseDepth != 0) {
@@ -94,7 +85,6 @@ void main() {
   vec2 uvSmol = vUv / (vec2(3.0, 2.0) * 256.0);
   vec2 dx = dFdx(uvSmol);
   vec2 dy = dFdy(uvSmol);
-  texPos = clampToFace(texPos, faceOrigin, dx, dy);
   vec4 colour = textureGrad(uBlockModelAtlas, texPos, dx, dy);
 
   bool useDiscard = (flags & 1u) != 0u;

@@ -85,9 +85,11 @@ public class MixinIrisRenderingPipeline implements VoxyPatchDataAccess, IrisVoxy
     }
   }
 
-  // MUST be HEAD, not RETURN. For gl41metal, FRAME_BEGIN runs submitMetalFrame, which submits the
-  // Metal distant pass AND publishes this frame's matrices via
-  // VoxyRenderSystem.getLastFrameMatrices().
+  // MUST be HEAD, not RETURN for gl41metal's shader-pack bridge. In that path FRAME_BEGIN runs
+  // submitMetalFrame, which submits the Metal distant pass AND publishes this frame's matrices via
+  // VoxyRenderSystem.getLastFrameMatrices(). Vanilla drawlist/no-pack mode intentionally defers its
+  // traversal submit to OPAQUE so FOV-changing effects (spyglass) use one consistent projection for
+  // traversal and draw.
   // Iris evaluates the pack's global vx* PER_FRAME uniforms (fed by VoxyUniforms) at
   // customUniforms.update(), early inside beginLevelRendering. HEAD publishes frame N BEFORE that
   // call, so the pack's global vx* resolve to frame N - matching the frame-N distant depth the pack

@@ -4,8 +4,10 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.VoxyRenderSystemAccess;
 import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.FogRenderer;
 import net.minecraft.client.renderer.FogRenderer.FogMode;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.material.FogType;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -45,12 +47,13 @@ public class MixinFogRenderer {
       float capturedFogStart = RenderSystem.getShaderFogStart();
       float capturedFogEnd = RenderSystem.getShaderFogEnd();
       if (noFogType) {
-        // Voxy hides vanilla terrain fog and applies its own pass over distant terrain. Use the
-        // user-facing Voxy fog distance as the start and the user-facing Voxy render distance as
-        // the end; using the traversal radius here makes normal fog effectively invisible.
-        capturedFogStart = Math.max(0.0f, VoxyConfig.CONFIG.skyFogDistance);
-        capturedFogEnd =
-            Math.max(capturedFogStart + 1.0f, VoxyConfig.CONFIG.sectionRenderDistance * 32.0f);
+        // Match GL46's terrain-fog contract: skyFogDistance only controls FOG_SKY. Terrain fog
+        // starts at the vanilla render-distance edge and fades to Voxy's full render distance.
+        float vanillaViewDistance =
+            Math.max(Minecraft.getInstance().options.getEffectiveRenderDistance() * 16.0F, 32.0F);
+        float fogRange = Mth.clamp(vanillaViewDistance / 10.0F, 4.0F, 64.0F);
+        capturedFogStart = vanillaViewDistance - fogRange;
+        capturedFogEnd = VoxyConfig.CONFIG.sectionRenderDistance * 32.0f * 16.0f;
       }
 
       vrs.setCapturedFog(capturedFogStart, capturedFogEnd, RenderSystem.getShaderFogColor());
