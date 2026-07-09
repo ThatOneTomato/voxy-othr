@@ -34,6 +34,7 @@ struct UnpackedNode {
 };
 constant uint NULL_NODE = 0x00ffffffu;
 constant uint EMPTY_QUEUE_ID = 0x00fffffeu;
+constant uint EMPTY_QUEUE_ENTRY = 0xffffffffu;
 constant uint NULL_MESH = 0x00ffffffu;
 constant uint EMPTY_MESH = 0x00fffffeu;
 constant uint LOCAL_SIZE_BITS = 5u;
@@ -137,6 +138,24 @@ static inline bool hasChildren(UnpackedNode n) {
 static inline bool hasRequested(UnpackedNode n) { return (n.flags & 1u) != 0u; }
 static inline float crossMag(float2 a, float2 b) {
   return fabs(a.x * b.y - b.x * a.y);
+}
+static inline bool reserveQueue(device atomic_uint* cursor, uint count,
+                                uint capacity, thread uint& index) {
+  uint current = atomic_load_explicit(cursor, memory_order_relaxed);
+  while (true) {
+    if (current > capacity || count > capacity - current) {
+      return false;
+    }
+    uint desired = current + count;
+    uint expected = current;
+    if (atomic_compare_exchange_weak_explicit(
+            cursor, &expected, desired, memory_order_relaxed,
+            memory_order_relaxed)) {
+      index = current;
+      return true;
+    }
+    current = expected;
+  }
 }
 static inline float axisDistanceToAabb(float minValue, float maxValue) {
   if (0.0f < minValue) return minValue;
@@ -310,31 +329,31 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
                         : atomic_load_explicit(&queueMeta[queueIdx * 4u + 3u],
                                                memory_order_relaxed);
   queueCount = min(queueCount, scene.queueSizes.z);
-  if (gid == 0u)
-    atomic_fetch_add_explicit(&stats[7], queueCount, memory_order_relaxed);
   if (gid >= queueCount) return;
   uint nodeId = sourceQueue[gid];
-  if (nodeId == 0xffffffffu) return;
+  if (nodeId == EMPTY_QUEUE_ENTRY) return;
   UnpackedNode n = unpackNode(nodes, nodeId);
   atomic_fetch_add_explicit(&stats[0], 1u, memory_order_relaxed);
   uint visibility = classifyNode(n, scene);
   if (visibility == 0u) return;
   if (visibility == 3u) return;
   bool shouldDescend = n.lodLevel != 0u && visibility == 2u;
+  bool childQueueOverflow = false;
   if (shouldDescend) {
     if (hasChildren(n)) {
       uint childCount = ((n.flags >> 2) & 7u) + 1u;
-      uint index =
-          atomic_fetch_add_explicit(&queueMeta[(queueIdx + 1u) * 4u + 3u],
-                                    childCount, memory_order_relaxed);
-      uint inc = ((index + childCount + LOCAL_SIZE - 1u) >> LOCAL_SIZE_BITS) -
-                 (index >> LOCAL_SIZE_BITS);
-      atomic_fetch_add_explicit(&queueMeta[(queueIdx + 1u) * 4u], inc,
-                                memory_order_relaxed);
-      uint accepted = index < scene.queueSizes.z
-                          ? min(childCount, scene.queueSizes.z - index)
-                          : 0u;
-      for (uint i = 0; i < accepted; i++) sinkQueue[index + i] = n.childPtr + i;
+      uint index = 0u;
+      if (reserveQueue(&queueMeta[(queueIdx + 1u) * 4u + 3u], childCount,
+                       scene.queueSizes.z, index)) {
+        uint inc = ((index + childCount + LOCAL_SIZE - 1u) >> LOCAL_SIZE_BITS) -
+                   (index >> LOCAL_SIZE_BITS);
+        atomic_fetch_add_explicit(&queueMeta[(queueIdx + 1u) * 4u], inc,
+                                  memory_order_relaxed);
+        for (uint i = 0; i < childCount; i++) sinkQueue[index + i] = n.childPtr + i;
+      } else {
+        childQueueOverflow = true;
+        atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
+      }
     } else if (!hasRequested(n)) {
       uint r = atomic_fetch_add_explicit(&requestCounter[0], 1u,
                                          memory_order_relaxed);
@@ -343,22 +362,25 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
         requestData[r * 2u + 1u] = n.rawPos.y;
         nodes[n.nodeId].raw.z |= 1u << 24;
         atomic_fetch_add_explicit(&stats[2], 1u, memory_order_relaxed);
+      } else {
+        atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
       }
     }
   }
-  if (!shouldDescend || !hasChildren(n)) {
+  if (!shouldDescend || !hasChildren(n) || childQueueOverflow) {
     // GL46 shouldRenderSelf gate (traversal_dev.comp): when a node WANTS to
-    // descend (shouldDescend) but its children have not streamed in yet, GL46
-    // only rasterises the coarse self-mesh if the node's FURTHEST XZ corner
-    // (+16^3 buffer) is still within render distance. A giant coarse near-root
-    // node fails this (its far corner spans thousands of blocks), so GL46
-    // simply waits for children instead of drawing it. We previously rendered
-    // that coarse self-mesh unconditionally, and its huge vertical extent
+    // descend (shouldDescend) but its children have not streamed in yet (or the
+    // bounded Metal queue cannot accept all of them), GL46 only rasterises the
+    // coarse self-mesh if the node's FURTHEST XZ corner (+16^3 buffer) is still
+    // within render distance. A giant coarse near-root node fails this (its far
+    // corner spans thousands of blocks), so GL46 simply waits for children
+    // instead of drawing it. We previously rendered that coarse self-mesh
+    // unconditionally, and its huge vertical extent
     // near-clipped/rasterised a depth-ramping smear across the whole sky
     // (vxDepthTexOpaque reconstructed to impossible heights straight overhead).
-    // Only the descend-wanted-but-childless case is gated; the !shouldDescend
-    // case is normal LOD and renders its mesh as GL46 does. renderParams.w <= 0
-    // means "unbounded" (GL46 renderDistance < 0).
+    // Only the descend-wanted fallback case is gated; the !shouldDescend case
+    // is normal LOD and renders its mesh as GL46 does. renderParams.w <= 0 means
+    // "unbounded" (GL46 renderDistance < 0).
     int selfScale = int(1u << n.lodLevel);
     float selfSize = float(32 * selfScale);
     float3 selfBase =
@@ -414,14 +436,18 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
         if (w < scene.queueSizes.x) {
           uint quadBase = atomic_fetch_add_explicit(&worklistCounter[1], qc,
                                                     memory_order_relaxed);
-          uint accepted = quadBase < scene.rasterLimits.x
-                              ? min(qc, scene.rasterLimits.x - quadBase)
-                              : 0u;
+          bool drawlistOutput = scene.rasterLimits.w != 0u;
+          uint accepted = drawlistOutput
+                              ? qc
+                              : (quadBase < scene.rasterLimits.x
+                                     ? min(qc, scene.rasterLimits.x - quadBase)
+                                     : 0u);
           // Every claimed slot MUST be written even when the raster-quad
           // capacity is exhausted (accepted == 0): the per-frame scratch clear
           // no longer wipes the worklist data buffer, so an unwritten slot
           // would replay a stale item from an earlier frame. A zero quad count
-          // makes the object shader skip the item.
+          // makes the object shader skip the item. Drawlist mode does not
+          // consume the raster-quad scratch buffer, so it keeps the full count.
           WorkItem item;
           item.meshId = n.meshPtr;
           item.quadBase = quadBase;
@@ -429,9 +455,11 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
           item.lodAndQuadCount =
               (n.lodLevel << 24) | min(accepted, 0x00ffffffu);
           worklist[w] = item;
-          if (accepted == 0u) return;
+          if (!drawlistOutput && accepted == 0u) return;
           atomic_fetch_add_explicit(&stats[1], 1u, memory_order_relaxed);
           atomic_fetch_add_explicit(&stats[3], accepted, memory_order_relaxed);
+        } else {
+          atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
         }
       }
       // Translucent (group 0) emission. Independent of the opaque worklist: the
@@ -455,6 +483,8 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
               0u;  // distance bucket cached by prepare_translucent_sort
           titem.lodAndQuadCount = (n.lodLevel << 24) | min(tqc, 0x00ffffffu);
           translucentWorklist[tw] = titem;
+        } else {
+          atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
         }
       }
     } else if (!hasRequested(n) && n.lodLevel != 0u) {
@@ -465,6 +495,8 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
         requestData[r * 2u + 1u] = n.rawPos.y;
         nodes[n.nodeId].raw.z |= 1u << 24;
         atomic_fetch_add_explicit(&stats[2], 1u, memory_order_relaxed);
+      } else {
+        atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
       }
     }
   }

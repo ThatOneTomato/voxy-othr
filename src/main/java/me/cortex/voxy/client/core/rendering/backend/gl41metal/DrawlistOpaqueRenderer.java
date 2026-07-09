@@ -127,6 +127,7 @@ import static org.lwjgl.opengl.GL30C.glGenFramebuffers;
 import static org.lwjgl.opengl.GL30C.glGenVertexArrays;
 import static org.lwjgl.opengl.GL30C.glGetFramebufferAttachmentParameteri;
 import static org.lwjgl.opengl.GL30C.glVertexAttribIPointer;
+import static org.lwjgl.opengl.GL31C.GL_MAX_TEXTURE_BUFFER_SIZE;
 import static org.lwjgl.opengl.GL31C.GL_TEXTURE_BINDING_BUFFER;
 import static org.lwjgl.opengl.GL31C.GL_TEXTURE_BUFFER;
 import static org.lwjgl.opengl.GL31C.glDrawElementsInstanced;
@@ -471,6 +472,7 @@ final class DrawlistOpaqueRenderer
     this.quadSectionTexture = glGenTextures();
     this.initBuffers();
     this.initTerrainMirror();
+    this.warnIfTextureBufferCapacityExceeded();
     this.initRangeCommands();
     this.initAtlas();
     Logger.info(
@@ -1701,6 +1703,23 @@ final class DrawlistOpaqueRenderer
 
     glBindTexture(GL_TEXTURE_BUFFER, 0);
     glBindBuffer(GL_TEXTURE_BUFFER, 0);
+  }
+
+  private void warnIfTextureBufferCapacityExceeded() {
+    if (!USE_TERRAIN_MIRROR) {
+      return;
+    }
+    int maxTextureBufferTexels = glGetInteger(GL_MAX_TEXTURE_BUFFER_SIZE);
+    long geometryTexels = this.geometryCapacityBytes / Long.BYTES;
+    if (maxTextureBufferTexels > 0 && geometryTexels > maxTextureBufferTexels) {
+      Logger.warn(
+          "GL41Metal drawlist geometry mirror capacity is "
+              + geometryTexels
+              + " texels, above GL_MAX_TEXTURE_BUFFER_SIZE="
+              + maxTextureBufferTexels
+              + "; lower voxy.gl41metal.geometryCapacityMb or high geometry offsets may be"
+              + " unreachable from GL");
+    }
   }
 
   private void initRangeCommands() {

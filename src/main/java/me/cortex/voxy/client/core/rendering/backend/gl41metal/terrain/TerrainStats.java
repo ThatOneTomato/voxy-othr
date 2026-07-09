@@ -24,6 +24,7 @@ public record TerrainStats(
     int traversalQuadCount,
     int traversalRequestsReady,
     int traversalWorklistCounter,
+    int traversalCapacityFallbacks,
     int pendingRequests,
     int rasterInputQuads,
     int rasterProcessedQuads,
@@ -34,10 +35,10 @@ public record TerrainStats(
     int rasterClippedQuads,
     int rasterWorkItems) {
   static TerrainStats fromNative(long[] values) {
-    if (values.length < 32) {
+    if (values.length < 33) {
       return new TerrainStats(
           0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-          0, 0);
+          0, 0, 0);
     }
     return new TerrainStats(
         (int) values[0],
@@ -63,6 +64,7 @@ public record TerrainStats(
         (int) values[20],
         (int) values[21],
         (int) values[22],
+        (int) values[32],
         (int) values[23],
         (int) values[24],
         (int) values[25],
@@ -107,6 +109,8 @@ public record TerrainStats(
         + this.traversalVisitedNodes
         + ", worklist="
         + this.traversalWorklistCounter
+        + ", capacityFallbacks="
+        + this.traversalCapacityFallbacks
         + ", requests="
         + this.traversalRequestsReady
         + ", emittedRequests="

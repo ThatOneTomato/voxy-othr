@@ -26,9 +26,9 @@ public final class TerrainResources implements AutoCloseable {
   private static final int MAX_NODES =
       readInt("voxy.gl41metal.maxNodes", 1 << 21, 1024, (1 << 24) - 1);
   private static final int MAX_TRAVERSAL_QUEUE =
-      readInt("voxy.gl41metal.maxTraversalQueue", 200_000, 1024, 2_000_000);
+      readInt("voxy.gl41metal.maxTraversalQueue", 2_000_000, 1024, 8_000_000);
   private static final int MAX_TRAVERSAL_REQUESTS =
-      readInt("voxy.gl41metal.maxTraversalRequests", 1024, 1, 50_000);
+      readInt("voxy.gl41metal.maxTraversalRequests", 16_384, 1, 200_000);
   private static final int MAX_WORKLIST_ITEMS =
       readInt("voxy.gl41metal.maxWorklistItems", 400_000, 1024, 2_000_000);
   private static final int MAX_RASTER_QUADS =
@@ -61,6 +61,7 @@ public final class TerrainResources implements AutoCloseable {
   private boolean closed;
   private long validationRuns;
   private TerrainStats lastStats = TerrainStats.fromNative(new long[0]);
+  private int loggedCapacityFallbacks;
   private Object2IntMap<BlockState> irisBlockStateMapping;
   private boolean loggedFirstValidation;
 
@@ -224,6 +225,7 @@ public final class TerrainResources implements AutoCloseable {
   private void resetJavaResidencyState() {
     this.validationRuns = 0;
     this.loggedFirstValidation = false;
+    this.loggedCapacityFallbacks = 0;
     this.lastStats = TerrainStats.fromNative(new long[0]);
   }
 
@@ -233,6 +235,16 @@ public final class TerrainResources implements AutoCloseable {
       this.validationRuns++;
     }
     this.lastStats = TerrainStats.fromNative(NativeBindings.getTerrainStats(handle));
+    int capacityFallbacks = this.lastStats.traversalCapacityFallbacks();
+    if (capacityFallbacks > this.loggedCapacityFallbacks) {
+      this.loggedCapacityFallbacks = capacityFallbacks;
+      Logger.warn(
+          "GL41Metal traversal hit bounded queue/request/worklist capacity and used "
+              + capacityFallbacks
+              + " coarse fallbacks this frame; raise voxy.gl41metal.maxTraversalQueue,"
+              + " voxy.gl41metal.maxTraversalRequests, or voxy.gl41metal.maxWorklistItems if"
+              + " distant chunks still flicker");
+    }
     if (VALIDATE_TERRAIN
         && !this.loggedFirstValidation
         && this.lastStats.validationResidentSections() > 0) {

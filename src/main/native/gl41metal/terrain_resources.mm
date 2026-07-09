@@ -761,7 +761,7 @@ JNIEXPORT jlongArray JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTerrainStats(
     JNIEnv* env, jclass, jlong handle) {
   NativeContext* context = requireContext(env, handle);
-  jlong values[32] = {};
+  jlong values[33] = {};
   if (context != nullptr && context->terrain != nullptr) {
     TerrainResources* terrain = context->terrain.get();
     values[0] = static_cast<jlong>(terrain->residentSections);
@@ -796,10 +796,11 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
     values[29] = static_cast<jlong>(terrain->lastRaster[5]);
     values[30] = static_cast<jlong>(terrain->lastRaster[6]);
     values[31] = static_cast<jlong>(terrain->lastRaster[7]);
+    values[32] = static_cast<jlong>(terrain->lastTraversal[7]);
   }
-  jlongArray result = env->NewLongArray(32);
+  jlongArray result = env->NewLongArray(33);
   if (result != nullptr) {
-    env->SetLongArrayRegion(result, 0, 32, values);
+    env->SetLongArrayRegion(result, 0, 33, values);
   }
   return result;
 }
