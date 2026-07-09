@@ -9,10 +9,16 @@ uniform usamplerBuffer uSectionMeta;
 uniform usamplerBuffer uModelBuffer;
 uniform usamplerBuffer uModelColours;
 uniform usamplerBuffer uQuadSectionIds;
+uniform sampler2D uLightmapTex;
+uniform vec4 uFaceShade;
+uniform float uFaceShadeX;
+uniform int uUseVoxyDepth;
 
 layout(location = 0) out vec2 vUv;
 layout(location = 1) out vec3 vFogPos;
 layout(location = 2) flat out uvec4 vData;
+layout(location = 3) flat out uint vLightPacked;
+layout(location = 4) noperspective out float vVanillaNdcDepth;
 
 const uint MODEL_COUNT = 65536u;
 
@@ -53,6 +59,11 @@ uint extractBiomeId(uvec2 quad) {
 
 uint extractLightId(uvec2 quad) {
   return extractBits(quad, 8u, 55u);
+}
+
+vec2 lightmapUv(uint lightRaw) {
+  vec2 uv = vec2(float(lightRaw & 0xf0u), float((lightRaw & 0x0fu) << 4u));
+  return clamp(uv / 256.0, vec2(0.5 / 16.0), vec2(15.5 / 16.0));
 }
 
 ivec3 extractSectionPos(uvec4 metaA) {
@@ -130,11 +141,34 @@ vec3 applyWorldCurvature(vec3 point) {
   return point;
 }
 
+float faceTint(bool shaded, uint face) {
+  if (!shaded) {
+    return uFaceShade.x;
+  }
+  if ((face >> 1u) == 1u) {
+    return uFaceShade.w;
+  }
+  if ((face >> 1u) == 2u) {
+    return uFaceShadeX;
+  }
+  if (face == 1u) {
+    return uFaceShade.y;
+  }
+  return uFaceShade.z;
+}
+
+uint packRGBA(vec4 colour) {
+  uvec4 packed = uvec4(colour * 255.0) << uvec4(24, 16, 8, 0);
+  return packed.x | packed.y | packed.z | packed.w;
+}
+
 void emitSkipped() {
   gl_Position = vec4(2.0, 2.0, 1.0, 1.0);
   vUv = vec2(0.0);
   vFogPos = vec3(0.0);
   vData = uvec4(0u);
+  vLightPacked = 0u;
+  vVanillaNdcDepth = 1.0;
 }
 
 void main() {
@@ -195,7 +229,10 @@ void main() {
   vec4 vanillaClip = uVanillaMvp * vec4(point, 1.0);
   float vanillaNdcDepth = vanillaClip.z / vanillaClip.w;
   vanillaNdcDepth = clamp(vanillaNdcDepth, -1.0, 1.0 - 2.0 / 16777215.0);
-  gl_Position = vec4(voxyClip.xy, vanillaNdcDepth * voxyClip.w, voxyClip.w);
+  float voxyNdcDepth = voxyClip.z / voxyClip.w;
+  voxyNdcDepth = clamp(voxyNdcDepth, -1.0, 1.0 - 2.0 / 16777215.0);
+  float drawNdcDepth = uUseVoxyDepth != 0 ? voxyNdcDepth : vanillaNdcDepth;
+  gl_Position = vec4(voxyClip.xy, drawNdcDepth * voxyClip.w, voxyClip.w);
 
   uint tintState = (faceData >> 24u) & 3u;
   uint tintPacked = 0xffffffffu;
@@ -211,6 +248,7 @@ void main() {
 
   vUv = fSize.xz + quadSizeAdd * corner01;
   vFogPos = point;
+  vVanillaNdcDepth = vanillaNdcDepth;
   uint useDiscard =
       ((faceData >> 22u) & 1u) |
       ((any(greaterThan(qSize, uvec2(1u))) ? 1u : 0u) & ((faceData >> 23u) & 1u));
@@ -222,4 +260,13 @@ void main() {
           tintPacked,
           modelId | (extractLightId(quad) << 16u),
           customId);
+  vLightPacked = 0u;
+  if (corner == 1u) {
+    uint lightRaw = extractLightId(quad);
+    vec4 light = texture(uLightmapTex, lightmapUv(lightRaw));
+    light.a = 0.0;
+    bool shaded = ((flagsA >> 3u) & 1u) != 0u;
+    light.rgb *= faceTint(shaded, face);
+    vLightPacked = packRGBA(light);
+  }
 }

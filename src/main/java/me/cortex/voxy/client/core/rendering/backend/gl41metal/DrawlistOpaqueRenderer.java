@@ -1,5 +1,6 @@
 package me.cortex.voxy.client.core.rendering.backend.gl41metal;
 
+import static org.lwjgl.opengl.GL11C.GL_ALWAYS;
 import static org.lwjgl.opengl.GL11C.GL_BLEND;
 import static org.lwjgl.opengl.GL11C.GL_CULL_FACE;
 import static org.lwjgl.opengl.GL11C.GL_DEPTH_BUFFER_BIT;
@@ -24,6 +25,7 @@ import static org.lwjgl.opengl.GL11C.GL_TEXTURE_BINDING_2D;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_MAG_FILTER;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_MIN_FILTER;
 import static org.lwjgl.opengl.GL11C.GL_TRIANGLES;
+import static org.lwjgl.opengl.GL11C.GL_TRIANGLE_STRIP;
 import static org.lwjgl.opengl.GL11C.GL_TRUE;
 import static org.lwjgl.opengl.GL11C.GL_UNSIGNED_BYTE;
 import static org.lwjgl.opengl.GL11C.GL_UNSIGNED_INT;
@@ -34,6 +36,7 @@ import static org.lwjgl.opengl.GL11C.glDeleteTextures;
 import static org.lwjgl.opengl.GL11C.glDepthFunc;
 import static org.lwjgl.opengl.GL11C.glDepthMask;
 import static org.lwjgl.opengl.GL11C.glDisable;
+import static org.lwjgl.opengl.GL11C.glDrawArrays;
 import static org.lwjgl.opengl.GL11C.glEnable;
 import static org.lwjgl.opengl.GL11C.glGenTextures;
 import static org.lwjgl.opengl.GL11C.glGetBooleanv;
@@ -88,8 +91,12 @@ import static org.lwjgl.opengl.GL20C.glUniform1f;
 import static org.lwjgl.opengl.GL20C.glUniform1i;
 import static org.lwjgl.opengl.GL20C.glUniform2f;
 import static org.lwjgl.opengl.GL20C.glUniform3i;
+import static org.lwjgl.opengl.GL20C.glUniform4f;
 import static org.lwjgl.opengl.GL20C.glUniformMatrix4fv;
 import static org.lwjgl.opengl.GL20C.glVertexAttribPointer;
+import static org.lwjgl.opengl.GL30C.GL_COLOR;
+import static org.lwjgl.opengl.GL30C.GL_COLOR_ATTACHMENT0;
+import static org.lwjgl.opengl.GL30C.GL_DEPTH;
 import static org.lwjgl.opengl.GL30C.GL_DEPTH_ATTACHMENT;
 import static org.lwjgl.opengl.GL30C.GL_DEPTH_COMPONENT32F;
 import static org.lwjgl.opengl.GL30C.GL_DRAW_FRAMEBUFFER;
@@ -108,6 +115,7 @@ import static org.lwjgl.opengl.GL30C.glBindFramebuffer;
 import static org.lwjgl.opengl.GL30C.glBindVertexArray;
 import static org.lwjgl.opengl.GL30C.glBlitFramebuffer;
 import static org.lwjgl.opengl.GL30C.glCheckFramebufferStatus;
+import static org.lwjgl.opengl.GL30C.glClearBufferfv;
 import static org.lwjgl.opengl.GL30C.glDeleteFramebuffers;
 import static org.lwjgl.opengl.GL30C.glDeleteVertexArrays;
 import static org.lwjgl.opengl.GL30C.glFramebufferTexture2D;
@@ -142,6 +150,9 @@ import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.TerrainRes
 import me.cortex.voxy.client.core.rendering.util.LightMapHelper;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.MemoryBuffer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.Direction;
+import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -158,8 +169,6 @@ final class DrawlistOpaqueRenderer
   private static final int ATLAS_MIP_LEVELS = ModelFactory.LAYERS;
   private static final boolean USE_DRAW_RANGES =
       Boolean.parseBoolean(System.getProperty("voxy.gl41metal.drawlistRanges", "true"));
-  private static final boolean USE_FACE_GROUP_CULL =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.drawlistFaceGroupCull", "false"));
   private static final boolean USE_TERRAIN_MIRROR = USE_DRAW_RANGES;
   private static final boolean MEASURE_DRAW_RANGES =
       !USE_DRAW_RANGES
@@ -199,6 +208,8 @@ final class DrawlistOpaqueRenderer
 
   private final Shader shader;
   private final Shader translucentShader;
+  private final Shader ssaoShader;
+  private final Shader compositeShader;
   private final int voxyMvpUniform;
   private final int vanillaMvpUniform;
   private final int earthRadiusUniform;
@@ -213,10 +224,26 @@ final class DrawlistOpaqueRenderer
   private final int fogParamsUniform;
   private final int fogColorUniform;
   private final int fogShapeUniform;
+  private final int faceShadeUniform;
+  private final int faceShadeXUniform;
   private final int nearDepthUniform;
   private final int nearDepthSizeUniform;
   private final int useNearDepthMaskUniform;
   private final int reverseDepthUniform;
+  private final int ssaoMetadataModeUniform;
+  private final int useVoxyDepthUniform;
+  private final int ssaoColourUniform;
+  private final int ssaoDepthUniform;
+  private final int ssaoMvpUniform;
+  private final int ssaoInvMvpUniform;
+  private final int ssaoStepsUniform;
+  private final int compositeColourUniform;
+  private final int compositeDepthUniform;
+  private final int compositeInvSourceMvpUniform;
+  private final int compositeTargetMvpUniform;
+  private final int compositeFogParamsUniform;
+  private final int compositeFogColorUniform;
+  private final int compositeFogShapeUniform;
   private final int translucentVoxyMvpUniform;
   private final int translucentVanillaMvpUniform;
   private final int translucentEarthRadiusUniform;
@@ -231,6 +258,8 @@ final class DrawlistOpaqueRenderer
   private final int translucentFogParamsUniform;
   private final int translucentFogColorUniform;
   private final int translucentFogShapeUniform;
+  private final int translucentFaceShadeUniform;
+  private final int translucentFaceShadeXUniform;
   private final int translucentBoundDepthUniform;
   private final int translucentBoundSizeUniform;
   private final int translucentBoundEnabledUniform;
@@ -241,6 +270,8 @@ final class DrawlistOpaqueRenderer
   private final int rangeIndexBuffer;
   private final int depthCopyFramebuffer;
   private final int nearDepthFramebuffer;
+  private final int ssaoDrawFramebuffer;
+  private final int ssaoFramebuffer;
   private final int atlasTexture;
   private final int geometryBuffer;
   private final int sectionMetaBuffer;
@@ -252,7 +283,8 @@ final class DrawlistOpaqueRenderer
   private final int modelTexture;
   private final int modelColourTexture;
   private final int quadSectionTexture;
-  private final GpuTimer drawGpuTimer = new GpuTimer();
+  private final GpuTimer opaqueDrawGpuTimer = new GpuTimer(GpuTimer.Phase.OPAQUE);
+  private final GpuTimer translucentDrawGpuTimer = new GpuTimer(GpuTimer.Phase.TRANSLUCENT);
   private final int maxSections;
   private final long geometryCapacityBytes;
   private int instanceCapacity = INITIAL_INSTANCE_CAPACITY;
@@ -266,11 +298,17 @@ final class DrawlistOpaqueRenderer
   private int nearDepthTexture;
   private int nearDepthWidth;
   private int nearDepthHeight;
+  private int ssaoColourTexture;
+  private int ssaoOutputTexture;
+  private int ssaoDepthTexture;
+  private int ssaoWidth;
+  private int ssaoHeight;
   private boolean closed;
   private boolean loggedFirstDraw;
   private boolean loggedOverflow;
   private boolean loggedLodMismatch;
   private boolean loggedNearDepthFallback;
+  private boolean loggedSsaoFallback;
 
   DrawlistOpaqueRenderer(int maxSections, long geometryCapacityBytes) {
     this.maxSections = maxSections;
@@ -292,6 +330,24 @@ final class DrawlistOpaqueRenderer
                 ShaderLoader.parse("voxy:lod/gl41metal/drawlist/opaque.frag", "410 core"))
             .compile()
             .name("Voxy GL41Metal Drawlist Opaque");
+    this.ssaoShader =
+        Shader.make()
+            .addSource(
+                ShaderType.VERTEX, ShaderLoader.parse("voxy:post/fullscreen.vert", "410 core"))
+            .addSource(
+                ShaderType.FRAGMENT,
+                ShaderLoader.parse("voxy:lod/gl41metal/drawlist/ssao.frag", "410 core"))
+            .compile()
+            .name("Voxy GL41Metal Drawlist SSAO");
+    this.compositeShader =
+        Shader.make()
+            .addSource(
+                ShaderType.VERTEX, ShaderLoader.parse("voxy:post/fullscreen.vert", "410 core"))
+            .addSource(
+                ShaderType.FRAGMENT,
+                ShaderLoader.parse("voxy:lod/gl41metal/drawlist/composite.frag", "410 core"))
+            .compile()
+            .name("Voxy GL41Metal Drawlist Composite");
     this.voxyMvpUniform = glGetUniformLocation(this.shader.id(), "uVoxyMvp");
     this.vanillaMvpUniform = glGetUniformLocation(this.shader.id(), "uVanillaMvp");
     this.earthRadiusUniform = glGetUniformLocation(this.shader.id(), "uEarthRadius");
@@ -306,10 +362,27 @@ final class DrawlistOpaqueRenderer
     this.fogParamsUniform = glGetUniformLocation(this.shader.id(), "uFogParams");
     this.fogColorUniform = glGetUniformLocation(this.shader.id(), "uFogColor");
     this.fogShapeUniform = glGetUniformLocation(this.shader.id(), "uFogShape");
+    this.faceShadeUniform = glGetUniformLocation(this.shader.id(), "uFaceShade");
+    this.faceShadeXUniform = glGetUniformLocation(this.shader.id(), "uFaceShadeX");
     this.nearDepthUniform = glGetUniformLocation(this.shader.id(), "uNearDepthTex");
     this.nearDepthSizeUniform = glGetUniformLocation(this.shader.id(), "uNearDepthSize");
     this.useNearDepthMaskUniform = glGetUniformLocation(this.shader.id(), "uUseNearDepthMask");
     this.reverseDepthUniform = glGetUniformLocation(this.shader.id(), "uReverseDepth");
+    this.ssaoMetadataModeUniform = glGetUniformLocation(this.shader.id(), "uSsaoMetadataMode");
+    this.useVoxyDepthUniform = glGetUniformLocation(this.shader.id(), "uUseVoxyDepth");
+    this.ssaoColourUniform = glGetUniformLocation(this.ssaoShader.id(), "uColourTex");
+    this.ssaoDepthUniform = glGetUniformLocation(this.ssaoShader.id(), "uDepthTex");
+    this.ssaoMvpUniform = glGetUniformLocation(this.ssaoShader.id(), "uMvp");
+    this.ssaoInvMvpUniform = glGetUniformLocation(this.ssaoShader.id(), "uInvMvp");
+    this.ssaoStepsUniform = glGetUniformLocation(this.ssaoShader.id(), "uSteps");
+    this.compositeColourUniform = glGetUniformLocation(this.compositeShader.id(), "uColourTex");
+    this.compositeDepthUniform = glGetUniformLocation(this.compositeShader.id(), "uDepthTex");
+    this.compositeInvSourceMvpUniform =
+        glGetUniformLocation(this.compositeShader.id(), "uInvSourceMvp");
+    this.compositeTargetMvpUniform = glGetUniformLocation(this.compositeShader.id(), "uTargetMvp");
+    this.compositeFogParamsUniform = glGetUniformLocation(this.compositeShader.id(), "uFogParams");
+    this.compositeFogColorUniform = glGetUniformLocation(this.compositeShader.id(), "uFogColor");
+    this.compositeFogShapeUniform = glGetUniformLocation(this.compositeShader.id(), "uFogShape");
     if (USE_DRAW_RANGES) {
       this.translucentShader =
           Shader.make()
@@ -356,6 +429,10 @@ final class DrawlistOpaqueRenderer
         translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uFogColor") : -1;
     this.translucentFogShapeUniform =
         translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uFogShape") : -1;
+    this.translucentFaceShadeUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uFaceShade") : -1;
+    this.translucentFaceShadeXUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uFaceShadeX") : -1;
     this.translucentBoundDepthUniform =
         translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uBoundDepthTex") : -1;
     this.translucentBoundSizeUniform =
@@ -368,6 +445,8 @@ final class DrawlistOpaqueRenderer
     this.rangeIndexBuffer = glGenBuffers();
     this.depthCopyFramebuffer = glGenFramebuffers();
     this.nearDepthFramebuffer = glGenFramebuffers();
+    this.ssaoDrawFramebuffer = glGenFramebuffers();
+    this.ssaoFramebuffer = glGenFramebuffers();
     this.atlasTexture = glGenTextures();
     this.geometryBuffer = glGenBuffers();
     this.sectionMetaBuffer = glGenBuffers();
@@ -394,8 +473,6 @@ final class DrawlistOpaqueRenderer
             + STREAM_BUFFER_COUNT
             + ", ranges="
             + USE_DRAW_RANGES
-            + ", faceGroupCull="
-            + USE_FACE_GROUP_CULL
             + ", mirrorGeometryBytes="
             + this.geometryCapacityBytes
             + ", atlas="
@@ -433,7 +510,7 @@ final class DrawlistOpaqueRenderer
       if (MEASURE_DRAW_RANGES) {
         long tRange = profiler.begin();
         profiler.recordDrawlistRangeMeasure(
-            tRange, NativeBindings.measureOpaqueRanges(nativeHandle, slot, USE_FACE_GROUP_CULL));
+            tRange, NativeBindings.measureOpaqueRanges(nativeHandle, slot, false));
       }
       long tBuild = profiler.begin();
       var counters = stack.mallocInt(4);
@@ -443,7 +520,7 @@ final class DrawlistOpaqueRenderer
           this.buildDrawStream(nativeHandle, slot, MemoryUtil.memAddress(counters));
       int instanceCount = counters.get(0);
       int overflowCount = counters.get(1);
-      profiler.recordDrawlistBuild(tBuild, instanceCount, overflowCount);
+      profiler.recordDrawlistOpaqueBuild(tBuild, instanceCount, overflowCount);
       if (overflowCount > 0) {
         int oldCapacity = this.instanceCapacity;
         this.growInstanceCapacity((long) instanceCount + overflowCount);
@@ -507,12 +584,12 @@ final class DrawlistOpaqueRenderer
             this.rangeIndicesAddress(),
             this.rangeBaseVerticesAddress(),
             this.rangeCapacity,
-            USE_FACE_GROUP_CULL,
+            false,
             MemoryUtil.memAddress(counters));
     long rangeQuads = counters.get(2);
     long overflowRanges = counters.get(1);
-    profiler.recordDrawlistBuild(tBuild, rangeQuads, overflowRanges);
-    profiler.recordDrawlistRangeStats(rangeStatsFromCounters(counters));
+    profiler.recordDrawlistOpaqueBuild(tBuild, rangeQuads, overflowRanges);
+    profiler.recordDrawlistOpaqueRangeStats(rangeStatsFromCounters(counters));
     long lodMismatches = counters.get(8);
     if (lodMismatches > 0 && !this.loggedLodMismatch) {
       this.loggedLodMismatch = true;
@@ -602,8 +679,8 @@ final class DrawlistOpaqueRenderer
               MemoryUtil.memAddress(counters));
       long rangeQuads = counters.get(2);
       long overflowRanges = counters.get(1);
-      profiler.recordDrawlistBuild(tBuild, rangeQuads, overflowRanges);
-      profiler.recordDrawlistRangeStats(translucentRangeStatsFromCounters(counters));
+      profiler.recordDrawlistTranslucentBuild(tBuild, rangeQuads, overflowRanges);
+      profiler.recordDrawlistTranslucentRangeStats(translucentRangeStatsFromCounters(counters));
       if (overflowRanges > 0) {
         int oldCapacity = this.rangeCapacity;
         this.growRangeCapacity(rangeCount + overflowRanges);
@@ -628,8 +705,10 @@ final class DrawlistOpaqueRenderer
         return false;
       }
 
+      long tRaster = profiler.begin();
       this.drawTranslucentRanges(
           context, drawMvp, vanillaDrawMvp, bound, colorWriteEnabled, rangeCount, stack, profiler);
+      profiler.recordDrawlistTranslucentRaster(tRaster);
       return true;
     } finally {
       state.restore();
@@ -651,7 +730,7 @@ final class DrawlistOpaqueRenderer
 
   private long buildDrawStream(long nativeHandle, int slot, long countersAddress) {
     return NativeBindings.buildOpaqueInstances(
-        nativeHandle, slot, this.instanceCapacity, USE_FACE_GROUP_CULL, countersAddress);
+        nativeHandle, slot, this.instanceCapacity, false, countersAddress);
   }
 
   @Override
@@ -803,6 +882,8 @@ final class DrawlistOpaqueRenderer
     }
     this.closed = true;
     this.shader.free();
+    this.ssaoShader.free();
+    this.compositeShader.free();
     if (this.translucentShader != null) {
       this.translucentShader.free();
     }
@@ -825,6 +906,18 @@ final class DrawlistOpaqueRenderer
       glDeleteTextures(this.nearDepthTexture);
       this.nearDepthTexture = 0;
     }
+    if (this.ssaoColourTexture != 0) {
+      glDeleteTextures(this.ssaoColourTexture);
+      this.ssaoColourTexture = 0;
+    }
+    if (this.ssaoOutputTexture != 0) {
+      glDeleteTextures(this.ssaoOutputTexture);
+      this.ssaoOutputTexture = 0;
+    }
+    if (this.ssaoDepthTexture != 0) {
+      glDeleteTextures(this.ssaoDepthTexture);
+      this.ssaoDepthTexture = 0;
+    }
     glDeleteTextures(this.geometryTexture);
     glDeleteTextures(this.sectionMetaTexture);
     glDeleteTextures(this.modelTexture);
@@ -832,6 +925,8 @@ final class DrawlistOpaqueRenderer
     glDeleteTextures(this.quadSectionTexture);
     glDeleteFramebuffers(this.depthCopyFramebuffer);
     glDeleteFramebuffers(this.nearDepthFramebuffer);
+    glDeleteFramebuffers(this.ssaoDrawFramebuffer);
+    glDeleteFramebuffers(this.ssaoFramebuffer);
     if (this.rangeCommandBuffer != null) {
       this.rangeCommandBuffer.free();
       this.rangeCommandBuffer = null;
@@ -840,7 +935,8 @@ final class DrawlistOpaqueRenderer
       this.quadSectionScratch.free();
       this.quadSectionScratch = null;
     }
-    this.drawGpuTimer.close();
+    this.opaqueDrawGpuTimer.close();
+    this.translucentDrawGpuTimer.close();
   }
 
   private void drawInstances(
@@ -854,7 +950,14 @@ final class DrawlistOpaqueRenderer
     int previousDepthFunc = glGetInteger(GL_DEPTH_FUNC);
     boolean reverseDepth = previousDepthFunc == GL_GEQUAL || previousDepthFunc == GL_GREATER;
     int nearDepthTexture = this.snapshotSourceDepth(context);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
+    int ssaoSteps = DistantRenderer.computeSsaoSteps(context);
+    boolean useSsao = colorWriteEnabled && nearDepthTexture != 0 && ssaoSteps > 0;
+    if (useSsao) {
+      useSsao = this.prepareSsaoDrawTarget(context, reverseDepth, stack);
+    }
+    if (!useSsao) {
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
+    }
     glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
     glColorMask(colorWriteEnabled, colorWriteEnabled, colorWriteEnabled, colorWriteEnabled);
     glEnable(GL_DEPTH_TEST);
@@ -887,7 +990,14 @@ final class DrawlistOpaqueRenderer
     }
     FogCapture.setVanillaFogUniforms(
         this.fogParamsUniform, this.fogColorUniform, this.fogShapeUniform);
+    this.setFaceShadeUniforms(this.faceShadeUniform, this.faceShadeXUniform);
     this.setNearDepthUniforms(context, nearDepthTexture, reverseDepth);
+    if (this.ssaoMetadataModeUniform >= 0) {
+      glUniform1i(this.ssaoMetadataModeUniform, useSsao ? 1 : 0);
+    }
+    if (this.useVoxyDepthUniform >= 0) {
+      glUniform1i(this.useVoxyDepthUniform, useSsao ? 1 : 0);
+    }
 
     glActiveTexture(GL_TEXTURE0 + BLOCK_ATLAS_UNIT);
     glBindTexture(GL_TEXTURE_2D, this.atlasTexture);
@@ -914,10 +1024,13 @@ final class DrawlistOpaqueRenderer
 
     glBindVertexArray(this.vaos[this.currentStreamBuffer]);
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
-    this.drawGpuTimer.poll(profiler);
-    this.drawGpuTimer.begin();
+    this.opaqueDrawGpuTimer.poll(profiler);
+    this.opaqueDrawGpuTimer.begin();
     glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_BYTE, 0L, instanceCount);
-    this.drawGpuTimer.end();
+    if (useSsao) {
+      this.applySsaoAndComposite(context, drawMvp, vanillaDrawMvp, ssaoSteps, stack);
+    }
+    this.opaqueDrawGpuTimer.end();
   }
 
   private void drawRanges(
@@ -931,7 +1044,14 @@ final class DrawlistOpaqueRenderer
     int previousDepthFunc = glGetInteger(GL_DEPTH_FUNC);
     boolean reverseDepth = previousDepthFunc == GL_GEQUAL || previousDepthFunc == GL_GREATER;
     int nearDepthTexture = this.snapshotSourceDepth(context);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
+    int ssaoSteps = DistantRenderer.computeSsaoSteps(context);
+    boolean useSsao = colorWriteEnabled && nearDepthTexture != 0 && ssaoSteps > 0;
+    if (useSsao) {
+      useSsao = this.prepareSsaoDrawTarget(context, reverseDepth, stack);
+    }
+    if (!useSsao) {
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
+    }
     glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
     glColorMask(colorWriteEnabled, colorWriteEnabled, colorWriteEnabled, colorWriteEnabled);
     glEnable(GL_DEPTH_TEST);
@@ -962,7 +1082,14 @@ final class DrawlistOpaqueRenderer
     glUniform1i(this.quadSectionIdsUniform, QUAD_SECTION_UNIT);
     FogCapture.setVanillaFogUniforms(
         this.fogParamsUniform, this.fogColorUniform, this.fogShapeUniform);
+    this.setFaceShadeUniforms(this.faceShadeUniform, this.faceShadeXUniform);
     this.setNearDepthUniforms(context, nearDepthTexture, reverseDepth);
+    if (this.ssaoMetadataModeUniform >= 0) {
+      glUniform1i(this.ssaoMetadataModeUniform, useSsao ? 1 : 0);
+    }
+    if (this.useVoxyDepthUniform >= 0) {
+      glUniform1i(this.useVoxyDepthUniform, useSsao ? 1 : 0);
+    }
 
     glActiveTexture(GL_TEXTURE0 + BLOCK_ATLAS_UNIT);
     glBindTexture(GL_TEXTURE_2D, this.atlasTexture);
@@ -987,8 +1114,8 @@ final class DrawlistOpaqueRenderer
 
     glBindVertexArray(this.rangeVao);
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
-    this.drawGpuTimer.poll(profiler);
-    this.drawGpuTimer.begin();
+    this.opaqueDrawGpuTimer.poll(profiler);
+    this.opaqueDrawGpuTimer.begin();
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.rangeIndexBuffer);
     nglMultiDrawElementsBaseVertex(
         GL_TRIANGLES,
@@ -997,7 +1124,186 @@ final class DrawlistOpaqueRenderer
         this.rangeIndicesAddress(),
         rangeCount,
         this.rangeBaseVerticesAddress());
-    this.drawGpuTimer.end();
+    if (useSsao) {
+      this.applySsaoAndComposite(context, drawMvp, vanillaDrawMvp, ssaoSteps, stack);
+    }
+    this.opaqueDrawGpuTimer.end();
+  }
+
+  private boolean prepareSsaoDrawTarget(
+      RenderFrameContext context, boolean reverseDepth, MemoryStack stack) {
+    if (!this.ensureSsaoTargets(context.viewportWidth(), context.viewportHeight())) {
+      return false;
+    }
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, this.ssaoDrawFramebuffer);
+    glClearBufferfv(GL_COLOR, 0, stack.floats(0.0f, 0.0f, 0.0f, 0.0f));
+    glClearBufferfv(GL_DEPTH, 0, stack.floats(reverseDepth ? 0.0f : 1.0f));
+    return true;
+  }
+
+  private void applySsaoAndComposite(
+      RenderFrameContext context,
+      Matrix4fc drawMvp,
+      Matrix4fc vanillaDrawMvp,
+      int ssaoSteps,
+      MemoryStack stack) {
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDepthMask(false);
+    glColorMask(true, true, true, true);
+
+    this.ssaoShader.bind();
+    if (this.ssaoColourUniform >= 0) {
+      glUniform1i(this.ssaoColourUniform, 0);
+    }
+    if (this.ssaoDepthUniform >= 0) {
+      glUniform1i(this.ssaoDepthUniform, 1);
+    }
+    if (this.ssaoStepsUniform >= 0) {
+      glUniform1i(this.ssaoStepsUniform, ssaoSteps);
+    }
+    this.uploadMatrix(this.ssaoMvpUniform, drawMvp, stack);
+    this.uploadMatrix(this.ssaoInvMvpUniform, new Matrix4f(drawMvp).invert(), stack);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, this.ssaoColourTexture);
+    glBindSampler(0, 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, this.ssaoDepthTexture);
+    glBindSampler(1, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, this.ssaoFramebuffer);
+    glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
+    glBindVertexArray(this.rangeVao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    this.compositeShader.bind();
+    if (this.compositeColourUniform >= 0) {
+      glUniform1i(this.compositeColourUniform, 0);
+    }
+    if (this.compositeDepthUniform >= 0) {
+      glUniform1i(this.compositeDepthUniform, 1);
+    }
+    this.uploadMatrix(this.compositeInvSourceMvpUniform, new Matrix4f(drawMvp).invert(), stack);
+    this.uploadMatrix(this.compositeTargetMvpUniform, vanillaDrawMvp, stack);
+    FogCapture.setVanillaFogUniforms(
+        this.compositeFogParamsUniform,
+        this.compositeFogColorUniform,
+        this.compositeFogShapeUniform);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, this.ssaoOutputTexture);
+    glBindSampler(0, 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, this.ssaoDepthTexture);
+    glBindSampler(1, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
+    glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_ALWAYS);
+    glDepthMask(true);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+  }
+
+  private void uploadMatrix(int uniform, Matrix4fc matrix, MemoryStack stack) {
+    if (uniform < 0) {
+      return;
+    }
+    FloatBuffer data = stack.mallocFloat(16);
+    matrix.get(data);
+    glUniformMatrix4fv(uniform, false, data);
+  }
+
+  private boolean ensureSsaoTargets(int width, int height) {
+    if (this.ssaoColourTexture != 0 && this.ssaoWidth == width && this.ssaoHeight == height) {
+      return true;
+    }
+    this.deleteSsaoTargets();
+    this.ssaoWidth = width;
+    this.ssaoHeight = height;
+    this.ssaoColourTexture = this.createColourTexture(width, height);
+    this.ssaoOutputTexture = this.createColourTexture(width, height);
+    this.ssaoDepthTexture = this.createDepthTexture(width, height);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, this.ssaoDrawFramebuffer);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this.ssaoColourTexture, 0);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, this.ssaoDepthTexture, 0);
+    int drawStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (drawStatus != GL_FRAMEBUFFER_COMPLETE) {
+      this.logSsaoFallback(
+          "drawlist SSAO draw framebuffer incomplete: 0x" + Integer.toHexString(drawStatus));
+      this.deleteSsaoTargets();
+      return false;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, this.ssaoFramebuffer);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this.ssaoOutputTexture, 0);
+    int ssaoStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (ssaoStatus != GL_FRAMEBUFFER_COMPLETE) {
+      this.logSsaoFallback(
+          "drawlist SSAO output framebuffer incomplete: 0x" + Integer.toHexString(ssaoStatus));
+      this.deleteSsaoTargets();
+      return false;
+    }
+    return true;
+  }
+
+  private int createColourTexture(int width, int height) {
+    int texture = glGenTextures();
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0L);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, org.lwjgl.opengl.GL11C.GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, org.lwjgl.opengl.GL11C.GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    return texture;
+  }
+
+  private int createDepthTexture(int width, int height) {
+    int texture = glGenTextures();
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_DEPTH_COMPONENT32F,
+        width,
+        height,
+        0,
+        GL_DEPTH_COMPONENT,
+        GL_FLOAT,
+        0L);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+    glTexParameteri(GL_TEXTURE_2D, org.lwjgl.opengl.GL11C.GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, org.lwjgl.opengl.GL11C.GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    return texture;
+  }
+
+  private void deleteSsaoTargets() {
+    if (this.ssaoColourTexture != 0) {
+      glDeleteTextures(this.ssaoColourTexture);
+      this.ssaoColourTexture = 0;
+    }
+    if (this.ssaoOutputTexture != 0) {
+      glDeleteTextures(this.ssaoOutputTexture);
+      this.ssaoOutputTexture = 0;
+    }
+    if (this.ssaoDepthTexture != 0) {
+      glDeleteTextures(this.ssaoDepthTexture);
+      this.ssaoDepthTexture = 0;
+    }
+    this.ssaoWidth = 0;
+    this.ssaoHeight = 0;
+  }
+
+  private void logSsaoFallback(String message) {
+    if (this.loggedSsaoFallback) {
+      return;
+    }
+    this.loggedSsaoFallback = true;
+    Logger.warn("Voxy GL41Metal drawlist SSAO disabled for this frame: " + message);
   }
 
   private void drawTranslucentRanges(
@@ -1045,6 +1351,7 @@ final class DrawlistOpaqueRenderer
         this.translucentFogParamsUniform,
         this.translucentFogColorUniform,
         this.translucentFogShapeUniform);
+    this.setFaceShadeUniforms(this.translucentFaceShadeUniform, this.translucentFaceShadeXUniform);
     this.setTranslucentBoundUniforms(bound);
 
     glActiveTexture(GL_TEXTURE0 + BLOCK_ATLAS_UNIT);
@@ -1070,8 +1377,8 @@ final class DrawlistOpaqueRenderer
 
     glBindVertexArray(this.rangeVao);
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
-    this.drawGpuTimer.poll(profiler);
-    this.drawGpuTimer.begin();
+    this.translucentDrawGpuTimer.poll(profiler);
+    this.translucentDrawGpuTimer.begin();
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.rangeIndexBuffer);
     nglMultiDrawElementsBaseVertex(
         GL_TRIANGLES,
@@ -1080,7 +1387,7 @@ final class DrawlistOpaqueRenderer
         this.rangeIndicesAddress(),
         rangeCount,
         this.rangeBaseVerticesAddress());
-    this.drawGpuTimer.end();
+    this.translucentDrawGpuTimer.end();
   }
 
   private void setTranslucentBoundUniforms(LoadedVolumeBound bound) {
@@ -1096,6 +1403,28 @@ final class DrawlistOpaqueRenderer
     }
     if (this.translucentBoundEnabledUniform >= 0) {
       glUniform1i(this.translucentBoundEnabledUniform, enabled ? 1 : 0);
+    }
+  }
+
+  private void setFaceShadeUniforms(int faceShadeUniform, int faceShadeXUniform) {
+    float noShade = 1.0f;
+    float up = 1.0f;
+    float down = 0.5f;
+    float zAxis = 0.8f;
+    float xAxis = 0.6f;
+    var level = Minecraft.getInstance().level;
+    if (level != null) {
+      noShade = level.getShade(Direction.UP, false);
+      up = level.getShade(Direction.UP, true);
+      down = level.getShade(Direction.DOWN, true);
+      zAxis = level.getShade(Direction.NORTH, true);
+      xAxis = level.getShade(Direction.EAST, true);
+    }
+    if (faceShadeUniform >= 0) {
+      glUniform4f(faceShadeUniform, noShade, up, down, zAxis);
+    }
+    if (faceShadeXUniform >= 0) {
+      glUniform1f(faceShadeXUniform, xAxis);
     }
   }
 
@@ -1546,14 +1875,21 @@ final class DrawlistOpaqueRenderer
   }
 
   private static final class GpuTimer implements AutoCloseable {
+    enum Phase {
+      OPAQUE,
+      TRANSLUCENT
+    }
+
     private static final int QUERY_COUNT = 6;
 
     private final int[] queries = new int[QUERY_COUNT];
     private final boolean[] pending = new boolean[QUERY_COUNT];
+    private final Phase phase;
     private int nextQuery;
     private int activeQuery = -1;
 
-    GpuTimer() {
+    GpuTimer(Phase phase) {
+      this.phase = phase;
       if (!ENABLE_DRAW_GPU_TIMER) {
         return;
       }
@@ -1574,7 +1910,12 @@ final class DrawlistOpaqueRenderer
           continue;
         }
         long nanos = glGetQueryObjecti64(this.queries[i], GL_QUERY_RESULT);
-        profiler.recordDrawlistGpuMs(nanos / 1_000_000.0);
+        double ms = nanos / 1_000_000.0;
+        if (this.phase == Phase.TRANSLUCENT) {
+          profiler.recordDrawlistTranslucentGpuMs(ms);
+        } else {
+          profiler.recordDrawlistOpaqueGpuMs(ms);
+        }
         this.pending[i] = false;
       }
     }

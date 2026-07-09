@@ -60,6 +60,9 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
 
   public SSAO.SSAOMode getSSAOMode() {
     if (this.ssaoMode == null) return SSAO.SSAOMode.AUTO;
+    if ("none".equalsIgnoreCase(this.ssaoMode) || "off".equalsIgnoreCase(this.ssaoMode)) {
+      return SSAO.SSAOMode.AUTO;
+    }
     try {
       return SSAO.SSAOMode.valueOf(this.ssaoMode.toUpperCase(Locale.ROOT));
     } catch (Exception e) {

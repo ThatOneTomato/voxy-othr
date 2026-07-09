@@ -31,6 +31,8 @@ public final class FrameProfiler {
   private long drawlistOpaqueRasterAccum;
   private long drawlistRangeMeasureAccum;
   private double drawlistGpuMsAccum;
+  private final DrawlistPhaseStats opaqueDrawlistStats = new DrawlistPhaseStats();
+  private final DrawlistPhaseStats translucentDrawlistStats = new DrawlistPhaseStats();
 
   private long maxTickNanos;
   private long maxMetalSubmitNanos;
@@ -63,6 +65,17 @@ public final class FrameProfiler {
   private long maxDrawlistRawRanges;
   private long maxDrawlistMergedRanges;
   private long maxDrawlistRangeQuads;
+
+  private long currentDrawlistBuildNanos;
+  private long currentDrawlistUploadNanos;
+  private long currentDrawlistRasterNanos;
+  private long currentDrawlistRangeMeasureNanos;
+  private double currentDrawlistGpuMs;
+  private long currentDrawlistInstances;
+  private long currentDrawlistOverflows;
+  private long currentDrawlistRawRanges;
+  private long currentDrawlistMergedRanges;
+  private long currentDrawlistRangeQuads;
 
   private int frames;
   private long windowStartNanos;
@@ -115,44 +128,82 @@ public final class FrameProfiler {
     this.maxBridgeTranslucentNanos = Math.max(this.maxBridgeTranslucentNanos, elapsed);
   }
 
-  void recordDrawlistBuild(long startNanos, long instances, long overflows) {
+  void recordDrawlistOpaqueBuild(long startNanos, long instances, long overflows) {
+    this.recordDrawlistBuild(startNanos, instances, overflows, this.opaqueDrawlistStats);
+  }
+
+  void recordDrawlistTranslucentBuild(long startNanos, long instances, long overflows) {
+    this.recordDrawlistBuild(startNanos, instances, overflows, this.translucentDrawlistStats);
+  }
+
+  private void recordDrawlistBuild(
+      long startNanos, long instances, long overflows, DrawlistPhaseStats phaseStats) {
     long elapsed = System.nanoTime() - startNanos;
     this.drawlistBuildAccum += elapsed;
-    this.maxDrawlistBuildNanos = Math.max(this.maxDrawlistBuildNanos, elapsed);
-    this.drawlistInstanceAccum += Math.max(0, instances);
-    this.drawlistOverflowAccum += Math.max(0, overflows);
-    this.maxDrawlistInstances = Math.max(this.maxDrawlistInstances, Math.max(0, instances));
-    this.maxDrawlistOverflows = Math.max(this.maxDrawlistOverflows, Math.max(0, overflows));
+    long clampedInstances = Math.max(0, instances);
+    long clampedOverflows = Math.max(0, overflows);
+    this.currentDrawlistBuildNanos += elapsed;
+    this.drawlistInstanceAccum += clampedInstances;
+    this.drawlistOverflowAccum += clampedOverflows;
+    this.currentDrawlistInstances += clampedInstances;
+    this.currentDrawlistOverflows += clampedOverflows;
+    phaseStats.recordBuild(elapsed, instances, overflows);
   }
 
   void recordDrawlistUpload(long startNanos) {
     long elapsed = System.nanoTime() - startNanos;
     this.drawlistUploadAccum += elapsed;
-    this.maxDrawlistUploadNanos = Math.max(this.maxDrawlistUploadNanos, elapsed);
+    this.currentDrawlistUploadNanos += elapsed;
   }
 
   void recordDrawlistOpaqueRaster(long startNanos) {
-    long elapsed = System.nanoTime() - startNanos;
-    this.drawlistOpaqueRasterAccum += elapsed;
-    this.maxDrawlistOpaqueRasterNanos = Math.max(this.maxDrawlistOpaqueRasterNanos, elapsed);
+    this.recordDrawlistRaster(startNanos, this.opaqueDrawlistStats);
   }
 
-  void recordDrawlistGpuMs(double ms) {
+  void recordDrawlistTranslucentRaster(long startNanos) {
+    this.recordDrawlistRaster(startNanos, this.translucentDrawlistStats);
+  }
+
+  private void recordDrawlistRaster(long startNanos, DrawlistPhaseStats phaseStats) {
+    long elapsed = System.nanoTime() - startNanos;
+    this.drawlistOpaqueRasterAccum += elapsed;
+    this.currentDrawlistRasterNanos += elapsed;
+    phaseStats.recordRaster(elapsed);
+  }
+
+  void recordDrawlistOpaqueGpuMs(double ms) {
+    this.recordDrawlistGpuMs(ms, this.opaqueDrawlistStats);
+  }
+
+  void recordDrawlistTranslucentGpuMs(double ms) {
+    this.recordDrawlistGpuMs(ms, this.translucentDrawlistStats);
+  }
+
+  private void recordDrawlistGpuMs(double ms, DrawlistPhaseStats phaseStats) {
     this.drawlistGpuMsAccum += ms;
-    this.maxDrawlistGpuMs = Math.max(this.maxDrawlistGpuMs, ms);
+    this.currentDrawlistGpuMs += ms;
+    phaseStats.recordGpu(ms);
   }
 
   void recordDrawlistRangeMeasure(long startNanos, long[] stats) {
     long elapsed = System.nanoTime() - startNanos;
     this.drawlistRangeMeasureAccum += elapsed;
-    this.maxDrawlistRangeMeasureNanos = Math.max(this.maxDrawlistRangeMeasureNanos, elapsed);
+    this.currentDrawlistRangeMeasureNanos += elapsed;
     if (stats == null || stats.length < 8) {
       return;
     }
-    this.recordDrawlistRangeStats(stats);
+    this.recordDrawlistRangeStats(stats, this.opaqueDrawlistStats);
   }
 
-  void recordDrawlistRangeStats(long[] stats) {
+  void recordDrawlistOpaqueRangeStats(long[] stats) {
+    this.recordDrawlistRangeStats(stats, this.opaqueDrawlistStats);
+  }
+
+  void recordDrawlistTranslucentRangeStats(long[] stats) {
+    this.recordDrawlistRangeStats(stats, this.translucentDrawlistStats);
+  }
+
+  private void recordDrawlistRangeStats(long[] stats, DrawlistPhaseStats phaseStats) {
     if (stats == null || stats.length < 8) {
       return;
     }
@@ -164,9 +215,10 @@ public final class FrameProfiler {
     this.drawlistMergedRangeAccum += mergedRanges;
     this.drawlistRangeQuadAccum += rangeQuads;
     this.drawlistVisibleWorkItemAccum += visibleWorkItems;
-    this.maxDrawlistRawRanges = Math.max(this.maxDrawlistRawRanges, rawRanges);
-    this.maxDrawlistMergedRanges = Math.max(this.maxDrawlistMergedRanges, mergedRanges);
-    this.maxDrawlistRangeQuads = Math.max(this.maxDrawlistRangeQuads, rangeQuads);
+    this.currentDrawlistRawRanges += rawRanges;
+    this.currentDrawlistMergedRanges += mergedRanges;
+    this.currentDrawlistRangeQuads += rangeQuads;
+    phaseStats.recordRangeStats(rawRanges, mergedRanges, rangeQuads, visibleWorkItems);
   }
 
   void recordMetalGpuMs(double ms) {
@@ -183,9 +235,12 @@ public final class FrameProfiler {
   }
 
   void endFrame() {
+    this.recordDrawlistFrameMaxes();
     this.frames++;
     if (this.frames >= WINDOW_SIZE) {
       this.rotateWindow();
+    } else {
+      this.resetCurrentDrawlistFrame();
     }
   }
 
@@ -258,6 +313,23 @@ public final class FrameProfiler {
             s.avgNonVoxyWallMs(),
             s.avgVoxyTotalMs(),
             s.avgFps()));
+    debug.add(
+        String.format(
+            Locale.ROOT,
+            "Voxy drawlist split avg(ms) o/t: build=%.2f/%.2f raster=%.2f/%.2f"
+                + " gpu=%.2f/%.2f quads=%.0f/%.0f ranges=%.0f/%.0f q/r=%.1f/%.1f",
+            s.opaqueDrawlist.avgBuildMs(),
+            s.translucentDrawlist.avgBuildMs(),
+            s.opaqueDrawlist.avgRasterMs(),
+            s.translucentDrawlist.avgRasterMs(),
+            s.opaqueDrawlist.avgGpuMs(),
+            s.translucentDrawlist.avgGpuMs(),
+            s.opaqueDrawlist.avgQuads(),
+            s.translucentDrawlist.avgQuads(),
+            s.opaqueDrawlist.avgMergedRanges(),
+            s.translucentDrawlist.avgMergedRanges(),
+            s.opaqueDrawlist.avgQuadsPerMergedRange(),
+            s.translucentDrawlist.avgQuadsPerMergedRange()));
   }
 
   private void rotateWindow() {
@@ -306,7 +378,9 @@ public final class FrameProfiler {
             this.drawlistVisibleWorkItemAccum / (double) n,
             this.maxDrawlistRawRanges,
             this.maxDrawlistMergedRanges,
-            this.maxDrawlistRangeQuads);
+            this.maxDrawlistRangeQuads,
+            this.opaqueDrawlistStats.snapshot(n),
+            this.translucentDrawlistStats.snapshot(n));
     this.snapshot = s;
 
     if (LOG_INTERVAL_MS > 0) {
@@ -326,7 +400,9 @@ public final class FrameProfiler {
                     + " drawRaster=%.2f drawRange=%.2f drawGpu=%.2f metalGPU=%.2f"
                     + " | drawInst avg/max=%.0f/%d overflow avg/max=%.0f/%d"
                     + " | drawRanges raw/merged avg=%.0f/%.0f max=%d/%d"
-                    + " q/r=%.1f cmdKB=%.1f",
+                    + " q/r=%.1f cmdKB=%.1f"
+                    + " | split o/t build=%.2f/%.2f raster=%.2f/%.2f gpu=%.2f/%.2f"
+                    + " quads=%.0f/%.0f ranges=%.0f/%.0f q/r=%.1f/%.1f",
                 s.frames,
                 s.windowMs,
                 s.avgTickMs,
@@ -365,7 +441,19 @@ public final class FrameProfiler {
                 s.maxDrawlistRawRanges,
                 s.maxDrawlistMergedRanges,
                 s.avgQuadsPerMergedRange(),
-                s.avgRangeCommandBytes() / 1024.0));
+                s.avgRangeCommandBytes() / 1024.0,
+                s.opaqueDrawlist.avgBuildMs(),
+                s.translucentDrawlist.avgBuildMs(),
+                s.opaqueDrawlist.avgRasterMs(),
+                s.translucentDrawlist.avgRasterMs(),
+                s.opaqueDrawlist.avgGpuMs(),
+                s.translucentDrawlist.avgGpuMs(),
+                s.opaqueDrawlist.avgQuads(),
+                s.translucentDrawlist.avgQuads(),
+                s.opaqueDrawlist.avgMergedRanges(),
+                s.translucentDrawlist.avgMergedRanges(),
+                s.opaqueDrawlist.avgQuadsPerMergedRange(),
+                s.translucentDrawlist.avgQuadsPerMergedRange()));
       }
     }
 
@@ -408,8 +496,43 @@ public final class FrameProfiler {
     this.maxDrawlistRawRanges = 0;
     this.maxDrawlistMergedRanges = 0;
     this.maxDrawlistRangeQuads = 0;
+    this.opaqueDrawlistStats.reset();
+    this.translucentDrawlistStats.reset();
+    this.resetCurrentDrawlistFrame();
     this.frames = 0;
     this.windowStartNanos = System.nanoTime();
+  }
+
+  private void recordDrawlistFrameMaxes() {
+    this.maxDrawlistBuildNanos =
+        Math.max(this.maxDrawlistBuildNanos, this.currentDrawlistBuildNanos);
+    this.maxDrawlistUploadNanos =
+        Math.max(this.maxDrawlistUploadNanos, this.currentDrawlistUploadNanos);
+    this.maxDrawlistOpaqueRasterNanos =
+        Math.max(this.maxDrawlistOpaqueRasterNanos, this.currentDrawlistRasterNanos);
+    this.maxDrawlistRangeMeasureNanos =
+        Math.max(this.maxDrawlistRangeMeasureNanos, this.currentDrawlistRangeMeasureNanos);
+    this.maxDrawlistGpuMs = Math.max(this.maxDrawlistGpuMs, this.currentDrawlistGpuMs);
+    this.maxDrawlistInstances = Math.max(this.maxDrawlistInstances, this.currentDrawlistInstances);
+    this.maxDrawlistOverflows = Math.max(this.maxDrawlistOverflows, this.currentDrawlistOverflows);
+    this.maxDrawlistRawRanges = Math.max(this.maxDrawlistRawRanges, this.currentDrawlistRawRanges);
+    this.maxDrawlistMergedRanges =
+        Math.max(this.maxDrawlistMergedRanges, this.currentDrawlistMergedRanges);
+    this.maxDrawlistRangeQuads =
+        Math.max(this.maxDrawlistRangeQuads, this.currentDrawlistRangeQuads);
+  }
+
+  private void resetCurrentDrawlistFrame() {
+    this.currentDrawlistBuildNanos = 0;
+    this.currentDrawlistUploadNanos = 0;
+    this.currentDrawlistRasterNanos = 0;
+    this.currentDrawlistRangeMeasureNanos = 0;
+    this.currentDrawlistGpuMs = 0;
+    this.currentDrawlistInstances = 0;
+    this.currentDrawlistOverflows = 0;
+    this.currentDrawlistRawRanges = 0;
+    this.currentDrawlistMergedRanges = 0;
+    this.currentDrawlistRangeQuads = 0;
   }
 
   private static double toMs(long nanos) {
@@ -418,6 +541,129 @@ public final class FrameProfiler {
 
   private static double toAvgMs(long accumNanos, int count) {
     return count > 0 ? (accumNanos / 1_000_000.0) / count : 0.0;
+  }
+
+  private static final class DrawlistPhaseStats {
+    private long buildAccum;
+    private long rasterAccum;
+    private double gpuMsAccum;
+    private long maxBuildNanos;
+    private long maxRasterNanos;
+    private double maxGpuMs;
+    private long quadAccum;
+    private long overflowAccum;
+    private long maxQuads;
+    private long maxOverflows;
+    private long rawRangeAccum;
+    private long mergedRangeAccum;
+    private long rangeQuadAccum;
+    private long visibleWorkItemAccum;
+    private long maxRawRanges;
+    private long maxMergedRanges;
+    private long maxRangeQuads;
+
+    void recordBuild(long elapsedNanos, long quads, long overflows) {
+      long clampedQuads = Math.max(0, quads);
+      long clampedOverflows = Math.max(0, overflows);
+      this.buildAccum += elapsedNanos;
+      this.maxBuildNanos = Math.max(this.maxBuildNanos, elapsedNanos);
+      this.quadAccum += clampedQuads;
+      this.overflowAccum += clampedOverflows;
+      this.maxQuads = Math.max(this.maxQuads, clampedQuads);
+      this.maxOverflows = Math.max(this.maxOverflows, clampedOverflows);
+    }
+
+    void recordRaster(long elapsedNanos) {
+      this.rasterAccum += elapsedNanos;
+      this.maxRasterNanos = Math.max(this.maxRasterNanos, elapsedNanos);
+    }
+
+    void recordGpu(double ms) {
+      this.gpuMsAccum += ms;
+      this.maxGpuMs = Math.max(this.maxGpuMs, ms);
+    }
+
+    void recordRangeStats(
+        long rawRanges, long mergedRanges, long rangeQuads, long visibleWorkItems) {
+      this.rawRangeAccum += rawRanges;
+      this.mergedRangeAccum += mergedRanges;
+      this.rangeQuadAccum += rangeQuads;
+      this.visibleWorkItemAccum += visibleWorkItems;
+      this.maxRawRanges = Math.max(this.maxRawRanges, rawRanges);
+      this.maxMergedRanges = Math.max(this.maxMergedRanges, mergedRanges);
+      this.maxRangeQuads = Math.max(this.maxRangeQuads, rangeQuads);
+    }
+
+    DrawlistPhaseSnapshot snapshot(int frames) {
+      return new DrawlistPhaseSnapshot(
+          toAvgMs(this.buildAccum, frames),
+          toAvgMs(this.rasterAccum, frames),
+          frames > 0 ? this.gpuMsAccum / frames : 0.0,
+          toMs(this.maxBuildNanos),
+          toMs(this.maxRasterNanos),
+          this.maxGpuMs,
+          frames > 0 ? this.quadAccum / (double) frames : 0.0,
+          frames > 0 ? this.overflowAccum / (double) frames : 0.0,
+          this.maxQuads,
+          this.maxOverflows,
+          frames > 0 ? this.rawRangeAccum / (double) frames : 0.0,
+          frames > 0 ? this.mergedRangeAccum / (double) frames : 0.0,
+          frames > 0 ? this.rangeQuadAccum / (double) frames : 0.0,
+          frames > 0 ? this.visibleWorkItemAccum / (double) frames : 0.0,
+          this.maxRawRanges,
+          this.maxMergedRanges,
+          this.maxRangeQuads);
+    }
+
+    void reset() {
+      this.buildAccum = 0;
+      this.rasterAccum = 0;
+      this.gpuMsAccum = 0;
+      this.maxBuildNanos = 0;
+      this.maxRasterNanos = 0;
+      this.maxGpuMs = 0;
+      this.quadAccum = 0;
+      this.overflowAccum = 0;
+      this.maxQuads = 0;
+      this.maxOverflows = 0;
+      this.rawRangeAccum = 0;
+      this.mergedRangeAccum = 0;
+      this.rangeQuadAccum = 0;
+      this.visibleWorkItemAccum = 0;
+      this.maxRawRanges = 0;
+      this.maxMergedRanges = 0;
+      this.maxRangeQuads = 0;
+    }
+  }
+
+  record DrawlistPhaseSnapshot(
+      double avgBuildMs,
+      double avgRasterMs,
+      double avgGpuMs,
+      double maxBuildMs,
+      double maxRasterMs,
+      double maxGpuMs,
+      double avgQuads,
+      double avgOverflows,
+      long maxQuads,
+      long maxOverflows,
+      double avgRawRanges,
+      double avgMergedRanges,
+      double avgRangeQuads,
+      double avgVisibleWorkItems,
+      long maxRawRanges,
+      long maxMergedRanges,
+      long maxRangeQuads) {
+    static final DrawlistPhaseSnapshot EMPTY =
+        new DrawlistPhaseSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+    double avgQuadsPerMergedRange() {
+      return this.avgMergedRanges > 0 ? this.avgRangeQuads / this.avgMergedRanges : 0.0;
+    }
+
+    double avgRangeCommandBytes() {
+      return this.avgMergedRanges * 16.0;
+    }
   }
 
   record ProfileSnapshot(
@@ -461,11 +707,54 @@ public final class FrameProfiler {
       double avgDrawlistVisibleWorkItems,
       long maxDrawlistRawRanges,
       long maxDrawlistMergedRanges,
-      long maxDrawlistRangeQuads) {
+      long maxDrawlistRangeQuads,
+      DrawlistPhaseSnapshot opaqueDrawlist,
+      DrawlistPhaseSnapshot translucentDrawlist) {
     static final ProfileSnapshot EMPTY =
         new ProfileSnapshot(
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            DrawlistPhaseSnapshot.EMPTY,
+            DrawlistPhaseSnapshot.EMPTY);
 
     double avgVoxyTotalMs() {
       return avgTickMs

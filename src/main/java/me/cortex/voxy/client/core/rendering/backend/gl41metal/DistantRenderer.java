@@ -63,11 +63,11 @@ public final class DistantRenderer {
     }
   }
 
-  // Distant SSAO sample count for this frame; 0 disables the Metal pass. VANILLA path only,
-  // matching gl46 where SSAO exists solely in NormalRenderPipeline and the Iris pipeline has
-  // none: with a shader pack active the pack owns ALL distant lighting/AO, and folding our AO
-  // into the albedo underneath it double-darkens LOD terrain (patchy dark forests vs near).
-  private static int computeSsaoSteps(RenderFrameContext context) {
+  // Distant SSAO sample count for this frame. This is VANILLA-only, matching GL46 where SSAO exists
+  // in NormalRenderPipeline and the Iris pipeline has none: with a shader pack active the pack owns
+  // distant lighting/AO, and folding our AO into the albedo underneath it double-darkens LOD
+  // terrain.
+  static int computeSsaoSteps(RenderFrameContext context) {
     if (context.matrices() == null) {
       return 0;
     }
