@@ -124,6 +124,8 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       case TRANSLUCENT -> {
         if (context.shaderPackActive()) {
           this.sampleTranslucent(context);
+        } else if (this.useDirectDrawlistOpaque()) {
+          this.sampleDrawlistTranslucent(context);
         } else {
           this.releaseHeldTranslucentSlot();
         }
@@ -254,9 +256,16 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     if (sampleSlot < 0) {
       return;
     }
+    boolean slotHasTranslucent =
+        NativeBindings.isSlotTranslucentValid(this.gbuffer.nativeHandle(), sampleSlot);
+    boolean held = false;
     try {
       RenderFrameContext renderContext =
           stageContext == null ? gl41MetalFrame.context() : stageContext;
+      this.currentBound =
+          slotHasTranslucent
+              ? this.renderCurrentBound(gl41MetalFrame, renderContext)
+              : LoadedVolumeBound.DISABLED;
       this.drawlistOpaqueRenderer.render(
           this.gbuffer.nativeHandle(),
           sampleSlot,
@@ -265,8 +274,16 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           gl41MetalFrame.vanillaDrawMvp(),
           this.config.visibleComposite(),
           this.profiler);
+      if (slotHasTranslucent) {
+        this.heldTranslucentSlot = sampleSlot;
+        this.heldTranslucentFrame = gl41MetalFrame;
+        this.heldTranslucentContext = renderContext;
+        held = true;
+      }
     } finally {
-      this.slotScheduler.queueSampledSlotRetirement(this.gbuffer, sampleSlot);
+      if (!held) {
+        this.slotScheduler.queueSampledSlotRetirement(this.gbuffer, sampleSlot);
+      }
     }
   }
 
@@ -304,27 +321,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           stageContext == null ? gl41MetalFrame.context() : stageContext;
       DistantGbufferSlot slot = this.gbuffer.slot(sampleSlot);
 
-      long tBound = this.profiler.begin();
-      int worldMinY = -64;
-      int worldMaxY = 320;
-      var level = Minecraft.getInstance().level;
-      if (level != null) {
-        worldMinY = level.getMinSection() << 4;
-        worldMaxY = level.getMaxSection() << 4;
-      }
-      int verticalRadiusBlocks = Minecraft.getInstance().options.getEffectiveRenderDistance() * 16;
-      this.currentBound =
-          this.boundRenderer.render(
-              gl41MetalFrame.drawMvp(),
-              renderContext.cameraX(),
-              renderContext.cameraY(),
-              renderContext.cameraZ(),
-              worldMinY,
-              worldMaxY,
-              verticalRadiusBlocks,
-              renderContext.viewportWidth(),
-              renderContext.viewportHeight());
-      this.profiler.recordBoundRender(tBound);
+      this.currentBound = this.renderCurrentBound(gl41MetalFrame, renderContext);
 
       long tBridge = this.profiler.begin();
       if (bridgePayload != null) {
@@ -420,6 +417,59 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       this.profiler.recordBridgeTranslucent(tTrans);
       this.releaseHeldTranslucentSlot();
     }
+  }
+
+  private void sampleDrawlistTranslucent(RenderStageContext context) {
+    int slot = this.heldTranslucentSlot;
+    if (slot < 0
+        || this.gbuffer == null
+        || this.heldTranslucentFrame == null
+        || this.drawlistOpaqueRenderer == null) {
+      this.releaseHeldTranslucentSlot();
+      return;
+    }
+    long tTrans = this.profiler.begin();
+    try {
+      RenderFrameContext renderContext =
+          context.frameContext() != null ? context.frameContext() : this.heldTranslucentContext;
+      this.drawlistOpaqueRenderer.renderTranslucent(
+          this.gbuffer.nativeHandle(),
+          slot,
+          renderContext,
+          this.heldTranslucentFrame.drawMvp(),
+          this.heldTranslucentFrame.vanillaDrawMvp(),
+          this.currentBound,
+          this.config.visibleComposite(),
+          this.profiler);
+    } finally {
+      this.profiler.recordBridgeTranslucent(tTrans);
+      this.releaseHeldTranslucentSlot();
+    }
+  }
+
+  private LoadedVolumeBound renderCurrentBound(Frame gl41MetalFrame, RenderFrameContext context) {
+    long tBound = this.profiler.begin();
+    int worldMinY = -64;
+    int worldMaxY = 320;
+    var level = Minecraft.getInstance().level;
+    if (level != null) {
+      worldMinY = level.getMinSection() << 4;
+      worldMaxY = level.getMaxSection() << 4;
+    }
+    int verticalRadiusBlocks = Minecraft.getInstance().options.getEffectiveRenderDistance() * 16;
+    LoadedVolumeBound bound =
+        this.boundRenderer.render(
+            gl41MetalFrame.drawMvp(),
+            context.cameraX(),
+            context.cameraY(),
+            context.cameraZ(),
+            worldMinY,
+            worldMaxY,
+            verticalRadiusBlocks,
+            context.viewportWidth(),
+            context.viewportHeight());
+    this.profiler.recordBoundRender(tBound);
+    return bound;
   }
 
   /** Fence-deferred retirement of the held translucent slot, if any. */

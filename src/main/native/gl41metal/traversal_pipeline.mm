@@ -105,9 +105,10 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
         willOpaqueRaster && terrain->translucentMeshPipeline != nil &&
         terrain->translucentCountPipeline != nil && terrain->translucentPrefixSumPipeline != nil &&
         terrain->translucentScatterPipeline != nil && terrain->translucentQuadsResident > 0;
+    bool willDrawlistTranslucent = !sharedGbufferOutput && terrain->translucentQuadsResident > 0;
     bool willSsao = willOpaqueRaster && ssaoSteps > 0 && terrain->ssaoPipeline != nil &&
                     ssaoMatricesAddress != 0;
-    slot.translucentValid = willTranslucentRaster;
+    slot.translucentValid = willTranslucentRaster || willDrawlistTranslucent;
 
     // --- Per-pass GPU timing: each logical pass gets its own MTLCommandBuffer so its
     //     GPUEndTime - GPUStartTime gives isolated per-pass GPU time. All CBs are

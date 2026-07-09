@@ -189,6 +189,19 @@ public final class NativeBindings {
   // [8]=work items whose worklist LOD differs from section metadata detail.
   public static native long[] measureOpaqueRanges(long handle, int slot, boolean faceGroupCull);
 
+  // countersAddress points at seven uint64 values:
+  // [0]=written range count, [1]=overflow range count, [2]=range-covered quad count,
+  // [3]=translucent worklist item count, [4]=sorted translucent ranges before capacity clamp,
+  // [5]=max range quads, [6]=visible work item count.
+  public static native int buildTranslucentRanges(
+      long handle,
+      int slot,
+      long countsAddress,
+      long indicesAddress,
+      long baseVerticesAddress,
+      int capacity,
+      long countersAddress);
+
   public static native int waitCurrent(long handle, int currentSlot, int timeoutMs);
 
   // Whether the slot's submit ran the translucent Metal pass. False when no translucent geometry

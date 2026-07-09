@@ -13,8 +13,11 @@ import static org.lwjgl.opengl.GL11C.GL_LEQUAL;
 import static org.lwjgl.opengl.GL11C.GL_LINEAR_MIPMAP_LINEAR;
 import static org.lwjgl.opengl.GL11C.GL_NEAREST;
 import static org.lwjgl.opengl.GL11C.GL_NONE;
+import static org.lwjgl.opengl.GL11C.GL_ONE;
+import static org.lwjgl.opengl.GL11C.GL_ONE_MINUS_SRC_ALPHA;
 import static org.lwjgl.opengl.GL11C.GL_RGBA;
 import static org.lwjgl.opengl.GL11C.GL_RGBA8;
+import static org.lwjgl.opengl.GL11C.GL_SRC_ALPHA;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_2D;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_BINDING_2D;
@@ -53,7 +56,12 @@ import static org.lwjgl.opengl.GL13C.GL_ACTIVE_TEXTURE;
 import static org.lwjgl.opengl.GL13C.GL_TEXTURE0;
 import static org.lwjgl.opengl.GL13C.GL_TEXTURE1;
 import static org.lwjgl.opengl.GL13C.glActiveTexture;
+import static org.lwjgl.opengl.GL14C.GL_BLEND_DST_ALPHA;
+import static org.lwjgl.opengl.GL14C.GL_BLEND_DST_RGB;
+import static org.lwjgl.opengl.GL14C.GL_BLEND_SRC_ALPHA;
+import static org.lwjgl.opengl.GL14C.GL_BLEND_SRC_RGB;
 import static org.lwjgl.opengl.GL14C.GL_TEXTURE_COMPARE_MODE;
+import static org.lwjgl.opengl.GL14C.glBlendFuncSeparate;
 import static org.lwjgl.opengl.GL15C.GL_ARRAY_BUFFER;
 import static org.lwjgl.opengl.GL15C.GL_ARRAY_BUFFER_BINDING;
 import static org.lwjgl.opengl.GL15C.GL_DYNAMIC_DRAW;
@@ -128,6 +136,7 @@ import me.cortex.voxy.client.core.model.ModelFactory;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameContext;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.FogCapture;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.MaterialStore;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.TerrainResources;
 import me.cortex.voxy.client.core.rendering.util.LightMapHelper;
@@ -164,6 +173,7 @@ final class DrawlistOpaqueRenderer
   private static final int MODEL_COLOUR_UNIT = 5;
   private static final int QUAD_SECTION_UNIT = 6;
   private static final int NEAR_DEPTH_UNIT = 7;
+  private static final int BOUND_DEPTH_UNIT = 8;
   private static final boolean ENABLE_DRAW_GPU_TIMER =
       Boolean.parseBoolean(System.getProperty("voxy.gl41metal.drawGpuTimer", "true"));
   private static final int STREAM_BUFFER_COUNT =
@@ -188,6 +198,7 @@ final class DrawlistOpaqueRenderer
       readInt("voxy.gl41metal.drawlistRangeIndexQuads", 262_144, 1024, 8_000_000);
 
   private final Shader shader;
+  private final Shader translucentShader;
   private final int voxyMvpUniform;
   private final int vanillaMvpUniform;
   private final int earthRadiusUniform;
@@ -206,6 +217,23 @@ final class DrawlistOpaqueRenderer
   private final int nearDepthSizeUniform;
   private final int useNearDepthMaskUniform;
   private final int reverseDepthUniform;
+  private final int translucentVoxyMvpUniform;
+  private final int translucentVanillaMvpUniform;
+  private final int translucentEarthRadiusUniform;
+  private final int translucentBlockAtlasUniform;
+  private final int translucentLightmapUniform;
+  private final int translucentBaseSectionFrameUniform;
+  private final int translucentGeometryQuadsUniform;
+  private final int translucentSectionMetaUniform;
+  private final int translucentModelBufferUniform;
+  private final int translucentModelColourUniform;
+  private final int translucentQuadSectionIdsUniform;
+  private final int translucentFogParamsUniform;
+  private final int translucentFogColorUniform;
+  private final int translucentFogShapeUniform;
+  private final int translucentBoundDepthUniform;
+  private final int translucentBoundSizeUniform;
+  private final int translucentBoundEnabledUniform;
   private final int[] vaos = new int[STREAM_BUFFER_COUNT];
   private final int[] instanceBuffers = new int[STREAM_BUFFER_COUNT];
   private final int rangeVao;
@@ -282,6 +310,58 @@ final class DrawlistOpaqueRenderer
     this.nearDepthSizeUniform = glGetUniformLocation(this.shader.id(), "uNearDepthSize");
     this.useNearDepthMaskUniform = glGetUniformLocation(this.shader.id(), "uUseNearDepthMask");
     this.reverseDepthUniform = glGetUniformLocation(this.shader.id(), "uReverseDepth");
+    if (USE_DRAW_RANGES) {
+      this.translucentShader =
+          Shader.make()
+              .addSource(
+                  ShaderType.VERTEX,
+                  ShaderLoader.parse(
+                      "voxy:lod/gl41metal/drawlist/translucent_ranges.vert", "410 core"))
+              .addSource(
+                  ShaderType.FRAGMENT,
+                  ShaderLoader.parse("voxy:lod/gl41metal/drawlist/translucent.frag", "410 core"))
+              .compile()
+              .name("Voxy GL41Metal Drawlist Translucent");
+    } else {
+      this.translucentShader = null;
+    }
+    int translucentProgram = this.translucentShader != null ? this.translucentShader.id() : 0;
+    this.translucentVoxyMvpUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uVoxyMvp") : -1;
+    this.translucentVanillaMvpUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uVanillaMvp") : -1;
+    this.translucentEarthRadiusUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uEarthRadius") : -1;
+    this.translucentBlockAtlasUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uBlockModelAtlas") : -1;
+    this.translucentLightmapUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uLightmapTex") : -1;
+    this.translucentBaseSectionFrameUniform =
+        translucentProgram != 0
+            ? glGetUniformLocation(translucentProgram, "uBaseSectionFrame")
+            : -1;
+    this.translucentGeometryQuadsUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uGeometryQuads") : -1;
+    this.translucentSectionMetaUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uSectionMeta") : -1;
+    this.translucentModelBufferUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uModelBuffer") : -1;
+    this.translucentModelColourUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uModelColours") : -1;
+    this.translucentQuadSectionIdsUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uQuadSectionIds") : -1;
+    this.translucentFogParamsUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uFogParams") : -1;
+    this.translucentFogColorUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uFogColor") : -1;
+    this.translucentFogShapeUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uFogShape") : -1;
+    this.translucentBoundDepthUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uBoundDepthTex") : -1;
+    this.translucentBoundSizeUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uBoundSize") : -1;
+    this.translucentBoundEnabledUniform =
+        translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uBoundEnabled") : -1;
 
     this.rangeVao = glGenVertexArrays();
     this.indexBuffer = glGenBuffers();
@@ -490,6 +570,85 @@ final class DrawlistOpaqueRenderer
     };
   }
 
+  boolean renderTranslucent(
+      long nativeHandle,
+      int slot,
+      RenderFrameContext context,
+      Matrix4fc drawMvp,
+      Matrix4fc vanillaDrawMvp,
+      LoadedVolumeBound bound,
+      boolean colorWriteEnabled,
+      FrameProfiler profiler) {
+    if (!USE_DRAW_RANGES || this.translucentShader == null) {
+      return false;
+    }
+    if (FogCapture.vanillaFogHidesDistant()) {
+      return false;
+    }
+    StateSnapshot state = StateSnapshot.capture();
+    try (MemoryStack stack = MemoryStack.stackPush()) {
+      long tBuild = profiler.begin();
+      this.ensureRangeCommandBuffer(this.rangeCapacity);
+      var counters = stack.mallocLong(7);
+      MemoryUtil.memSet(MemoryUtil.memAddress(counters), 0, 7L * Long.BYTES);
+      int rangeCount =
+          NativeBindings.buildTranslucentRanges(
+              nativeHandle,
+              slot,
+              this.rangeCountsAddress(),
+              this.rangeIndicesAddress(),
+              this.rangeBaseVerticesAddress(),
+              this.rangeCapacity,
+              MemoryUtil.memAddress(counters));
+      long rangeQuads = counters.get(2);
+      long overflowRanges = counters.get(1);
+      profiler.recordDrawlistBuild(tBuild, rangeQuads, overflowRanges);
+      profiler.recordDrawlistRangeStats(translucentRangeStatsFromCounters(counters));
+      if (overflowRanges > 0) {
+        int oldCapacity = this.rangeCapacity;
+        this.growRangeCapacity(rangeCount + overflowRanges);
+        Logger.warn(
+            "Voxy GL41Metal translucent drawlist ranges overflowed "
+                + oldCapacity
+                + " ranges; grew to "
+                + this.rangeCapacity
+                + " and skipped this frame");
+        return false;
+      }
+      if (rangeCount <= 0 || rangeQuads <= 0) {
+        return false;
+      }
+      long maxRangeQuads = counters.get(5);
+      if (maxRangeQuads > this.rangeIndexQuadCapacity) {
+        this.growRangeIndexCapacity(maxRangeQuads);
+        Logger.warn(
+            "Voxy GL41Metal translucent range index buffer grew to "
+                + this.rangeIndexQuadCapacity
+                + " quads; skipped this frame");
+        return false;
+      }
+
+      this.drawTranslucentRanges(
+          context, drawMvp, vanillaDrawMvp, bound, colorWriteEnabled, rangeCount, stack, profiler);
+      return true;
+    } finally {
+      state.restore();
+    }
+  }
+
+  private static long[] translucentRangeStatsFromCounters(java.nio.LongBuffer counters) {
+    return new long[] {
+      counters.get(3),
+      counters.get(4),
+      counters.get(4),
+      counters.get(2),
+      0,
+      0,
+      counters.get(5),
+      counters.get(6)
+    };
+  }
+
   private long buildDrawStream(long nativeHandle, int slot, long countersAddress) {
     return NativeBindings.buildOpaqueInstances(
         nativeHandle, slot, this.instanceCapacity, USE_FACE_GROUP_CULL, countersAddress);
@@ -644,6 +803,9 @@ final class DrawlistOpaqueRenderer
     }
     this.closed = true;
     this.shader.free();
+    if (this.translucentShader != null) {
+      this.translucentShader.free();
+    }
     for (int vao : this.vaos) {
       glDeleteVertexArrays(vao);
     }
@@ -836,6 +998,111 @@ final class DrawlistOpaqueRenderer
         rangeCount,
         this.rangeBaseVerticesAddress());
     this.drawGpuTimer.end();
+  }
+
+  private void drawTranslucentRanges(
+      RenderFrameContext context,
+      Matrix4fc drawMvp,
+      Matrix4fc vanillaDrawMvp,
+      LoadedVolumeBound bound,
+      boolean colorWriteEnabled,
+      int rangeCount,
+      MemoryStack stack,
+      FrameProfiler profiler) {
+    int previousDepthFunc = glGetInteger(GL_DEPTH_FUNC);
+    boolean reverseDepth = previousDepthFunc == GL_GEQUAL || previousDepthFunc == GL_GREATER;
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
+    glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(reverseDepth ? GL_GEQUAL : GL_LEQUAL);
+    glDepthMask(true);
+    glColorMask(colorWriteEnabled, colorWriteEnabled, colorWriteEnabled, colorWriteEnabled);
+    glEnable(GL_BLEND);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_CULL_FACE);
+
+    this.translucentShader.bind();
+    FloatBuffer matrix = stack.mallocFloat(16);
+    drawMvp.get(matrix);
+    glUniformMatrix4fv(this.translucentVoxyMvpUniform, false, matrix);
+    matrix.clear();
+    vanillaDrawMvp.get(matrix);
+    glUniformMatrix4fv(this.translucentVanillaMvpUniform, false, matrix);
+    glUniform1f(this.translucentEarthRadiusUniform, DistantRenderer.computeEarthRadius());
+    glUniform1i(this.translucentBlockAtlasUniform, BLOCK_ATLAS_UNIT);
+    glUniform1i(this.translucentLightmapUniform, LIGHTMAP_UNIT);
+    glUniform3i(
+        this.translucentBaseSectionFrameUniform,
+        floorSection(context.cameraX()),
+        floorSection(context.cameraY()),
+        floorSection(context.cameraZ()));
+    glUniform1i(this.translucentGeometryQuadsUniform, GEOMETRY_BUFFER_UNIT);
+    glUniform1i(this.translucentSectionMetaUniform, SECTION_META_UNIT);
+    glUniform1i(this.translucentModelBufferUniform, MODEL_BUFFER_UNIT);
+    glUniform1i(this.translucentModelColourUniform, MODEL_COLOUR_UNIT);
+    glUniform1i(this.translucentQuadSectionIdsUniform, QUAD_SECTION_UNIT);
+    FogCapture.setVanillaFogUniforms(
+        this.translucentFogParamsUniform,
+        this.translucentFogColorUniform,
+        this.translucentFogShapeUniform);
+    this.setTranslucentBoundUniforms(bound);
+
+    glActiveTexture(GL_TEXTURE0 + BLOCK_ATLAS_UNIT);
+    glBindTexture(GL_TEXTURE_2D, this.atlasTexture);
+    glBindSampler(BLOCK_ATLAS_UNIT, 0);
+    LightMapHelper.bind(LIGHTMAP_UNIT);
+    glActiveTexture(GL_TEXTURE0 + GEOMETRY_BUFFER_UNIT);
+    glBindTexture(GL_TEXTURE_BUFFER, this.geometryTexture);
+    glBindSampler(GEOMETRY_BUFFER_UNIT, 0);
+    glActiveTexture(GL_TEXTURE0 + SECTION_META_UNIT);
+    glBindTexture(GL_TEXTURE_BUFFER, this.sectionMetaTexture);
+    glBindSampler(SECTION_META_UNIT, 0);
+    glActiveTexture(GL_TEXTURE0 + MODEL_BUFFER_UNIT);
+    glBindTexture(GL_TEXTURE_BUFFER, this.modelTexture);
+    glBindSampler(MODEL_BUFFER_UNIT, 0);
+    glActiveTexture(GL_TEXTURE0 + MODEL_COLOUR_UNIT);
+    glBindTexture(GL_TEXTURE_BUFFER, this.modelColourTexture);
+    glBindSampler(MODEL_COLOUR_UNIT, 0);
+    glActiveTexture(GL_TEXTURE0 + QUAD_SECTION_UNIT);
+    glBindTexture(GL_TEXTURE_BUFFER, this.quadSectionTexture);
+    glBindSampler(QUAD_SECTION_UNIT, 0);
+    this.bindBoundDepthTexture(bound);
+
+    glBindVertexArray(this.rangeVao);
+    glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
+    this.drawGpuTimer.poll(profiler);
+    this.drawGpuTimer.begin();
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.rangeIndexBuffer);
+    nglMultiDrawElementsBaseVertex(
+        GL_TRIANGLES,
+        this.rangeCountsAddress(),
+        GL_UNSIGNED_INT,
+        this.rangeIndicesAddress(),
+        rangeCount,
+        this.rangeBaseVerticesAddress());
+    this.drawGpuTimer.end();
+  }
+
+  private void setTranslucentBoundUniforms(LoadedVolumeBound bound) {
+    boolean enabled = bound != null && bound.enabled();
+    if (this.translucentBoundDepthUniform >= 0) {
+      glUniform1i(this.translucentBoundDepthUniform, BOUND_DEPTH_UNIT);
+    }
+    if (this.translucentBoundSizeUniform >= 0) {
+      glUniform2f(
+          this.translucentBoundSizeUniform,
+          enabled ? bound.width() : 0,
+          enabled ? bound.height() : 0);
+    }
+    if (this.translucentBoundEnabledUniform >= 0) {
+      glUniform1i(this.translucentBoundEnabledUniform, enabled ? 1 : 0);
+    }
+  }
+
+  private void bindBoundDepthTexture(LoadedVolumeBound bound) {
+    glActiveTexture(GL_TEXTURE0 + BOUND_DEPTH_UNIT);
+    glBindTexture(GL_TEXTURE_2D, bound != null && bound.enabled() ? bound.texture() : 0);
+    glBindSampler(BOUND_DEPTH_UNIT, 0);
   }
 
   private void setNearDepthUniforms(
@@ -1356,15 +1623,21 @@ final class DrawlistOpaqueRenderer
       int texture0,
       int texture1,
       int texture7,
+      int texture8,
       int sampler0,
       int sampler1,
       int sampler7,
+      int sampler8,
       int[] textureBuffers,
       int[] textureBufferSamplers,
       boolean depthEnabled,
       boolean blendEnabled,
       boolean cullEnabled,
       int depthFunc,
+      int blendSrcRgb,
+      int blendDstRgb,
+      int blendSrcAlpha,
+      int blendDstAlpha,
       boolean depthMask,
       boolean colorMaskR,
       boolean colorMaskG,
@@ -1435,6 +1708,9 @@ final class DrawlistOpaqueRenderer
       glActiveTexture(GL_TEXTURE0 + NEAR_DEPTH_UNIT);
       int texture7 = glGetInteger(GL_TEXTURE_BINDING_2D);
       int sampler7 = glGetInteger(GL_SAMPLER_BINDING);
+      glActiveTexture(GL_TEXTURE0 + BOUND_DEPTH_UNIT);
+      int texture8 = glGetInteger(GL_TEXTURE_BINDING_2D);
+      int sampler8 = glGetInteger(GL_SAMPLER_BINDING);
       int[] textureBuffers = new int[5];
       int[] textureBufferSamplers = new int[5];
       for (int i = 0; i < textureBuffers.length; i++) {
@@ -1455,15 +1731,21 @@ final class DrawlistOpaqueRenderer
           texture0,
           texture1,
           texture7,
+          texture8,
           sampler0,
           sampler1,
           sampler7,
+          sampler8,
           textureBuffers,
           textureBufferSamplers,
           depthEnabled,
           blendEnabled,
           cullEnabled,
           depthFunc,
+          glGetInteger(GL_BLEND_SRC_RGB),
+          glGetInteger(GL_BLEND_DST_RGB),
+          glGetInteger(GL_BLEND_SRC_ALPHA),
+          glGetInteger(GL_BLEND_DST_ALPHA),
           depthMask,
           colorMaskR,
           colorMaskG,
@@ -1498,6 +1780,8 @@ final class DrawlistOpaqueRenderer
         glDisable(GL_CULL_FACE);
       }
       glDepthFunc(this.depthFunc);
+      glBlendFuncSeparate(
+          this.blendSrcRgb, this.blendDstRgb, this.blendSrcAlpha, this.blendDstAlpha);
       glDepthMask(this.depthMask);
       glColorMask(this.colorMaskR, this.colorMaskG, this.colorMaskB, this.colorMaskA);
       if (this.viewportWidth > 0 && this.viewportHeight > 0) {
@@ -1512,6 +1796,9 @@ final class DrawlistOpaqueRenderer
       glActiveTexture(GL_TEXTURE0 + NEAR_DEPTH_UNIT);
       glBindTexture(GL_TEXTURE_2D, this.texture7);
       glBindSampler(NEAR_DEPTH_UNIT, this.sampler7);
+      glActiveTexture(GL_TEXTURE0 + BOUND_DEPTH_UNIT);
+      glBindTexture(GL_TEXTURE_2D, this.texture8);
+      glBindSampler(BOUND_DEPTH_UNIT, this.sampler8);
       for (int i = 0; i < this.textureBuffers.length; i++) {
         int unit = GEOMETRY_BUFFER_UNIT + i;
         glActiveTexture(GL_TEXTURE0 + unit);

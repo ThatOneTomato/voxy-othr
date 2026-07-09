@@ -2,10 +2,9 @@
 
 uniform sampler2D uBlockModelAtlas;
 uniform sampler2D uLightmapTex;
-uniform sampler2D uNearDepthTex;
-uniform vec2 uNearDepthSize;
-uniform int uUseNearDepthMask;
-uniform int uReverseDepth;
+uniform sampler2D uBoundDepthTex;
+uniform vec2 uBoundSize;
+uniform int uBoundEnabled;
 uniform vec4 uFogParams;
 uniform vec4 uFogColor;
 uniform int uFogShape;
@@ -13,6 +12,7 @@ uniform int uFogShape;
 layout(location = 0) in vec2 vUv;
 layout(location = 1) in vec3 vFogPos;
 layout(location = 2) flat in uvec4 vData;
+layout(location = 3) noperspective in float vVoxyDepth;
 
 layout(location = 0) out vec4 outColor;
 
@@ -59,32 +59,25 @@ vec3 applyFog(vec3 color, vec3 pos) {
   return mix(color, uFogColor.rgb, clamp(fogLerp * uFogParams.z, 0.0, 1.0));
 }
 
-bool hiddenByNearDepth(float vanillaDepth) {
-  if (uUseNearDepthMask == 0) {
+bool insideLoadedBound(float voxyDepth) {
+  if (uBoundEnabled == 0) {
     return false;
   }
   ivec2 texel =
-      ivec2(clamp(floor(gl_FragCoord.xy), vec2(0.0), uNearDepthSize - vec2(1.0)));
-  float nearDepth = texelFetch(uNearDepthTex, texel, 0).r;
-  const float DEPTH_EPSILON = 0.00001;
-  if (uReverseDepth != 0) {
-    if (nearDepth <= 0.000001) {
-      return false;
-    }
-    return vanillaDepth <= nearDepth + DEPTH_EPSILON;
-  }
-  if (nearDepth >= 0.999999) {
-    return false;
-  }
-  return vanillaDepth >= nearDepth - DEPTH_EPSILON;
+      ivec2(clamp(floor(gl_FragCoord.xy), vec2(0.0), uBoundSize - vec2(1.0)));
+  float bound = texelFetch(uBoundDepthTex, texel, 0).r;
+  const float BOUND_EPSILON = 0.00001;
+  return voxyDepth <= bound - BOUND_EPSILON;
 }
 
 void main() {
-  if (hiddenByNearDepth(gl_FragCoord.z)) {
+  if (insideLoadedBound(vVoxyDepth)) {
     discard;
   }
+
   uint flags = vData.x;
   uint face = (flags >> 16u) & 7u;
+
   uint modelId = vData.z & 0xffffu;
   uint lightRaw = (vData.z >> 16u) & 0xffu;
   vec2 tile = floor(vUv);
@@ -107,10 +100,9 @@ void main() {
   vec2 uvSmol = vUv / (vec2(3.0, 2.0) * 256.0);
   vec4 colour = textureGrad(uBlockModelAtlas, texPos, dFdx(uvSmol), dFdy(uvSmol));
 
-  bool useDiscard = (flags & 1u) != 0u;
   uint tintState = (flags >> 2u) & 3u;
   vec4 topMip = textureLod(uBlockModelAtlas, texPos, 0.0);
-  if (useDiscard && topMip.a <= 0.1) {
+  if (topMip.a == 0.0) {
     discard;
   }
 
@@ -129,9 +121,9 @@ void main() {
 
   vec4 light = texture(uLightmapTex, lightmapUv(lightRaw));
   bool shaded = ((flags >> 6u) & 1u) != 0u;
-  colour.a = 1.0;
-  colour *= tint * light;
+  float alpha = colour.a;
+  colour = vec4(colour.rgb, 1.0) * tint * light;
   colour.rgb *= faceTint(shaded, face);
   colour.rgb = applyFog(colour.rgb, vFogPos);
-  outColor = vec4(colour.rgb, 1.0);
+  outColor = vec4(colour.rgb, alpha);
 }

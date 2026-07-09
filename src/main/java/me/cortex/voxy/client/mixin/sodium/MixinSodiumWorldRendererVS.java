@@ -31,6 +31,9 @@ public class MixinSodiumWorldRendererVS {
       double z,
       CallbackInfo ci) {
     this.voxy$capturedMatrices = matrices;
+    if (renderLayer == RenderType.translucent() && !IrisUtil.irisShaderPackEnabled()) {
+      this.renderVoxyTranslucent(matrices, x, y, z);
+    }
   }
 
   @Inject(
@@ -72,5 +75,23 @@ public class MixinSodiumWorldRendererVS {
         }
       }
     }
+  }
+
+  @Unique
+  private void renderVoxyTranslucent(ChunkRenderMatrices matrices, double x, double y, double z) {
+    var renderer =
+        ((VoxyRenderSystemAccess) Minecraft.getInstance().levelRenderer).voxy$getRenderSystem();
+    if (renderer == null) {
+      return;
+    }
+    renderer.runFrameStage(
+        RenderStage.TRANSLUCENT,
+        RenderFrameStageState.currentFrame(),
+        matrices,
+        x,
+        y,
+        z,
+        IrisUtil.IRIS_INSTALLED,
+        false);
   }
 }
