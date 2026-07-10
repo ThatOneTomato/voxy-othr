@@ -99,6 +99,14 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       return;
     }
     bool sharedGbufferOutput = outputMode != OUTPUT_MODE_DRAWLIST;
+    if (sharedGbufferOutput &&
+        (!context->sharedTexturesEnabled || slot.gbuffer0 == nullptr || slot.gbuffer1 == nullptr ||
+         slot.gbuffer2 == nullptr || slot.tgbuffer0 == nullptr || slot.tgbuffer1 == nullptr ||
+         slot.tgbufferAccum == nullptr || slot.renderDepth == nil)) {
+      resetSubmittedSlot(context, slotIndex);
+      throwJava(env, "GL41Metal shared-gbuffer submit has no shared textures");
+      return;
+    }
     bool willOpaqueRaster = sharedGbufferOutput && terrain->opaqueMeshPipeline != nil &&
                             terrain->meshArgsPipeline != nil && terrain->atlas != nil;
     bool willTranslucentRaster =

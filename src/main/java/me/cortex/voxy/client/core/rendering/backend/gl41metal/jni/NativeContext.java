@@ -5,15 +5,17 @@ public final class NativeContext implements AutoCloseable {
   private final int slotCount;
   private int width;
   private int height;
+  private boolean sharedTexturesEnabled;
   private final int textureTarget;
   private final String deviceName;
   private boolean closed;
 
-  public NativeContext(int slotCount, int width, int height) {
-    this.handle = NativeBindings.createContext(slotCount, width, height);
+  public NativeContext(int slotCount, int width, int height, boolean sharedTexturesEnabled) {
+    this.handle = NativeBindings.createContext(slotCount, width, height, sharedTexturesEnabled);
     this.slotCount = slotCount;
     this.width = width;
     this.height = height;
+    this.sharedTexturesEnabled = sharedTexturesEnabled;
     this.textureTarget = NativeBindings.getTextureTarget(this.handle);
     this.deviceName = NativeBindings.getDeviceName(this.handle);
   }
@@ -34,15 +36,18 @@ public final class NativeContext implements AutoCloseable {
     return this.height;
   }
 
-  // Resizes the screen-sized gbuffer/depth textures in place; the handle and all terrain resources
-  // are preserved.
-  public void resize(int width, int height) {
+  public boolean sharedTexturesEnabled() {
+    return this.sharedTexturesEnabled;
+  }
+
+  public void configureSharedTextures(int width, int height, boolean enabled) {
     if (this.closed) {
-      throw new IllegalStateException("Cannot resize a closed GL41Metal native context");
+      throw new IllegalStateException("Cannot configure a closed GL41Metal native context");
     }
-    NativeBindings.resizeContext(this.handle, width, height);
+    NativeBindings.configureSharedTextures(this.handle, width, height, enabled);
     this.width = width;
     this.height = height;
+    this.sharedTexturesEnabled = enabled;
   }
 
   public int textureTarget() {

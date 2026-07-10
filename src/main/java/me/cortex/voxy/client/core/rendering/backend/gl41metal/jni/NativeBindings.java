@@ -18,8 +18,6 @@ public final class NativeBindings {
   private static final Path SHADER_LIBRARY_PATH;
   public static final int OUTPUT_MODE_SHARED_GBUFFER = 0;
   public static final int OUTPUT_MODE_DRAWLIST = 1;
-  public static final int OPAQUE_DRAW_INSTANCE_BYTES = 48;
-  public static final int OPAQUE_DRAW_COUNTERS_BYTES = 4 * Integer.BYTES;
 
   static {
     String failure = null;
@@ -92,21 +90,27 @@ public final class NativeBindings {
   public static native String getUnsupportedReason();
 
   public static native long createContext(
-      int slotCount, int width, int height, String shaderLibraryPath);
+      int slotCount,
+      int width,
+      int height,
+      boolean sharedTexturesEnabled,
+      String shaderLibraryPath);
 
-  public static long createContext(int slotCount, int width, int height) {
+  public static long createContext(
+      int slotCount, int width, int height, boolean sharedTexturesEnabled) {
     if (SHADER_LIBRARY_PATH == null) {
       throw new IllegalStateException("GL41Metal shader library was not loaded");
     }
-    return createContext(slotCount, width, height, SHADER_LIBRARY_PATH.toString());
+    return createContext(
+        slotCount, width, height, sharedTexturesEnabled, SHADER_LIBRARY_PATH.toString());
   }
 
   public static native void destroyContext(long handle);
 
-  // Resizes the per-slot screen-sized gbuffer/depth textures in place while preserving the same
-  // context handle and all terrain/world/atlas resources. Used on viewport resize so distant LOD
-  // residency is not wiped and re-streamed.
-  public static native void resizeContext(long handle, int width, int height);
+  // Reconfigures the optional per-slot shared gbuffer/depth textures while preserving the native
+  // context and all viewport-independent traversal/terrain resources.
+  public static native void configureSharedTextures(
+      long handle, int width, int height, boolean sharedTexturesEnabled);
 
   public static native String getDeviceName(long handle);
 
@@ -161,17 +165,11 @@ public final class NativeBindings {
       int ssaoSteps,
       int outputMode);
 
-  // countersAddress points at four uint32 values:
-  // [0]=written instance count, [1]=overflow count, [2]=worklist item count, [3]=accepted quad
-  // hint.
-  public static native long buildOpaqueInstances(
-      long handle, int slot, int capacity, boolean faceGroupCull, long countersAddress);
-
   // countersAddress points at nine uint64 values:
   // [0]=written merged range count, [1]=overflow range count, [2]=range-covered quad count,
   // [3]=max merged range quads, [4]=worklist item count, [5]=raw face-group range count,
   // [6]=total merged range count before capacity clamp, [7]=visible work item count,
-  // [8]=work items whose worklist LOD differs from section metadata detail.
+  // [8]=work items whose traversal-time section snapshot no longer matches current metadata.
   public static native int buildOpaqueRanges(
       long handle,
       int slot,
@@ -179,15 +177,7 @@ public final class NativeBindings {
       long indicesAddress,
       long baseVerticesAddress,
       int capacity,
-      boolean faceGroupCull,
       long countersAddress);
-
-  // Returns:
-  // [0]=worklist items, [1]=raw visible face-group ranges, [2]=same-section merged ranges,
-  // [3]=quads covered by those ranges, [4]=worklist accepted-quad hint,
-  // [5]=max raw range quads, [6]=max merged range quads, [7]=visible work items,
-  // [8]=work items whose worklist LOD differs from section metadata detail.
-  public static native long[] measureOpaqueRanges(long handle, int slot, boolean faceGroupCull);
 
   // countersAddress points at seven uint64 values:
   // [0]=written range count, [1]=overflow range count, [2]=range-covered quad count,

@@ -31,6 +31,10 @@ public final class FrameProfiler {
   private long drawlistOpaqueRasterAccum;
   private long drawlistRangeMeasureAccum;
   private double drawlistGpuMsAccum;
+  private double drawlistGeometryGpuMsAccum;
+  private double drawlistDepthCopyGpuMsAccum;
+  private double drawlistSsaoGpuMsAccum;
+  private double drawlistCompositeGpuMsAccum;
   private final DrawlistPhaseStats opaqueDrawlistStats = new DrawlistPhaseStats();
   private final DrawlistPhaseStats translucentDrawlistStats = new DrawlistPhaseStats();
 
@@ -54,9 +58,9 @@ public final class FrameProfiler {
   private double gpuSsaoAccum;
   private double gpuTranslucentAccum;
 
-  private long drawlistInstanceAccum;
+  private long drawlistQuadAccum;
   private long drawlistOverflowAccum;
-  private long maxDrawlistInstances;
+  private long maxDrawlistQuads;
   private long maxDrawlistOverflows;
   private long drawlistRawRangeAccum;
   private long drawlistMergedRangeAccum;
@@ -71,7 +75,7 @@ public final class FrameProfiler {
   private long currentDrawlistRasterNanos;
   private long currentDrawlistRangeMeasureNanos;
   private double currentDrawlistGpuMs;
-  private long currentDrawlistInstances;
+  private long currentDrawlistQuads;
   private long currentDrawlistOverflows;
   private long currentDrawlistRawRanges;
   private long currentDrawlistMergedRanges;
@@ -128,26 +132,26 @@ public final class FrameProfiler {
     this.maxBridgeTranslucentNanos = Math.max(this.maxBridgeTranslucentNanos, elapsed);
   }
 
-  void recordDrawlistOpaqueBuild(long startNanos, long instances, long overflows) {
-    this.recordDrawlistBuild(startNanos, instances, overflows, this.opaqueDrawlistStats);
+  void recordDrawlistOpaqueBuild(long startNanos, long quads, long overflows) {
+    this.recordDrawlistBuild(startNanos, quads, overflows, this.opaqueDrawlistStats);
   }
 
-  void recordDrawlistTranslucentBuild(long startNanos, long instances, long overflows) {
-    this.recordDrawlistBuild(startNanos, instances, overflows, this.translucentDrawlistStats);
+  void recordDrawlistTranslucentBuild(long startNanos, long quads, long overflows) {
+    this.recordDrawlistBuild(startNanos, quads, overflows, this.translucentDrawlistStats);
   }
 
   private void recordDrawlistBuild(
-      long startNanos, long instances, long overflows, DrawlistPhaseStats phaseStats) {
+      long startNanos, long quads, long overflows, DrawlistPhaseStats phaseStats) {
     long elapsed = System.nanoTime() - startNanos;
     this.drawlistBuildAccum += elapsed;
-    long clampedInstances = Math.max(0, instances);
+    long clampedQuads = Math.max(0, quads);
     long clampedOverflows = Math.max(0, overflows);
     this.currentDrawlistBuildNanos += elapsed;
-    this.drawlistInstanceAccum += clampedInstances;
+    this.drawlistQuadAccum += clampedQuads;
     this.drawlistOverflowAccum += clampedOverflows;
-    this.currentDrawlistInstances += clampedInstances;
+    this.currentDrawlistQuads += clampedQuads;
     this.currentDrawlistOverflows += clampedOverflows;
-    phaseStats.recordBuild(elapsed, instances, overflows);
+    phaseStats.recordBuild(elapsed, quads, overflows);
   }
 
   void recordDrawlistUpload(long startNanos) {
@@ -173,6 +177,26 @@ public final class FrameProfiler {
 
   void recordDrawlistOpaqueGpuMs(double ms) {
     this.recordDrawlistGpuMs(ms, this.opaqueDrawlistStats);
+  }
+
+  void recordDrawlistGeometryGpuMs(double ms) {
+    this.drawlistGeometryGpuMsAccum += ms;
+    this.recordDrawlistOpaqueGpuMs(ms);
+  }
+
+  void recordDrawlistDepthCopyGpuMs(double ms) {
+    this.drawlistDepthCopyGpuMsAccum += ms;
+    this.recordDrawlistOpaqueGpuMs(ms);
+  }
+
+  void recordDrawlistSsaoGpuMs(double ms) {
+    this.drawlistSsaoGpuMsAccum += ms;
+    this.recordDrawlistOpaqueGpuMs(ms);
+  }
+
+  void recordDrawlistCompositeGpuMs(double ms) {
+    this.drawlistCompositeGpuMsAccum += ms;
+    this.recordDrawlistOpaqueGpuMs(ms);
   }
 
   void recordDrawlistTranslucentGpuMs(double ms) {
@@ -283,7 +307,7 @@ public final class FrameProfiler {
             "Voxy perf max(ms): tick=%.2f submit=%.2f wait=%.2f bound=%.2f"
                 + " opaqueGL=%.2f transGL=%.2f drawBuild=%.2f drawUpload=%.2f"
                 + " drawRaster=%.2f drawRange=%.2f drawGpu=%.2f metalGPU=%.2f"
-                + " | drawInst avg/max=%.0f/%d overflow avg/max=%.0f/%d"
+                + " | drawQuads avg/max=%.0f/%d overflow avg/max=%.0f/%d"
                 + " | drawRanges raw/merged avg=%.0f/%.0f max=%d/%d"
                 + " q/r=%.1f cmdKB=%.1f"
                 + " | frameWall=%.2f nonVoxyWall=%.2f voxyTotal=%.2f @%.0ffps",
@@ -299,8 +323,8 @@ public final class FrameProfiler {
             s.maxDrawlistRangeMeasureMs,
             s.maxDrawlistGpuMs,
             s.maxMetalGpuMs,
-            s.avgDrawlistInstances,
-            s.maxDrawlistInstances,
+            s.avgDrawlistQuads,
+            s.maxDrawlistQuads,
             s.avgDrawlistOverflows,
             s.maxDrawlistOverflows,
             s.avgDrawlistRawRanges,
@@ -330,6 +354,7 @@ public final class FrameProfiler {
             s.translucentDrawlist.avgMergedRanges(),
             s.opaqueDrawlist.avgQuadsPerMergedRange(),
             s.translucentDrawlist.avgQuadsPerMergedRange()));
+    debug.add("Voxy drawlist GL GPU pass split is available in the periodic profiler log");
   }
 
   private void rotateWindow() {
@@ -368,9 +393,9 @@ public final class FrameProfiler {
             this.gpuOpaqueRasterAccum / n,
             this.gpuSsaoAccum / n,
             this.gpuTranslucentAccum / n,
-            this.drawlistInstanceAccum / (double) n,
+            this.drawlistQuadAccum / (double) n,
             this.drawlistOverflowAccum / (double) n,
-            this.maxDrawlistInstances,
+            this.maxDrawlistQuads,
             this.maxDrawlistOverflows,
             this.drawlistRawRangeAccum / (double) n,
             this.drawlistMergedRangeAccum / (double) n,
@@ -398,11 +423,12 @@ public final class FrameProfiler {
                     + " | frameWall=%.2f nonVoxyWall=%.2f voxyTotal=%.2f ms"
                     + " | max wait=%.2f opaqueGL=%.2f drawBuild=%.2f drawUpload=%.2f"
                     + " drawRaster=%.2f drawRange=%.2f drawGpu=%.2f metalGPU=%.2f"
-                    + " | drawInst avg/max=%.0f/%d overflow avg/max=%.0f/%d"
+                    + " | drawQuads avg/max=%.0f/%d overflow avg/max=%.0f/%d"
                     + " | drawRanges raw/merged avg=%.0f/%.0f max=%d/%d"
                     + " q/r=%.1f cmdKB=%.1f"
                     + " | split o/t build=%.2f/%.2f raster=%.2f/%.2f gpu=%.2f/%.2f"
-                    + " quads=%.0f/%.0f ranges=%.0f/%.0f q/r=%.1f/%.1f",
+                    + " quads=%.0f/%.0f ranges=%.0f/%.0f q/r=%.1f/%.1f"
+                    + " | glGpu geom=%.2f depth=%.2f ao=%.2f comp=%.2f",
                 s.frames,
                 s.windowMs,
                 s.avgTickMs,
@@ -432,8 +458,8 @@ public final class FrameProfiler {
                 s.maxDrawlistRangeMeasureMs,
                 s.maxDrawlistGpuMs,
                 s.maxMetalGpuMs,
-                s.avgDrawlistInstances,
-                s.maxDrawlistInstances,
+                s.avgDrawlistQuads,
+                s.maxDrawlistQuads,
                 s.avgDrawlistOverflows,
                 s.maxDrawlistOverflows,
                 s.avgDrawlistRawRanges,
@@ -453,7 +479,11 @@ public final class FrameProfiler {
                 s.opaqueDrawlist.avgMergedRanges(),
                 s.translucentDrawlist.avgMergedRanges(),
                 s.opaqueDrawlist.avgQuadsPerMergedRange(),
-                s.translucentDrawlist.avgQuadsPerMergedRange()));
+                s.translucentDrawlist.avgQuadsPerMergedRange(),
+                this.drawlistGeometryGpuMsAccum / n,
+                this.drawlistDepthCopyGpuMsAccum / n,
+                this.drawlistSsaoGpuMsAccum / n,
+                this.drawlistCompositeGpuMsAccum / n));
       }
     }
 
@@ -468,6 +498,10 @@ public final class FrameProfiler {
     this.drawlistOpaqueRasterAccum = 0;
     this.drawlistRangeMeasureAccum = 0;
     this.drawlistGpuMsAccum = 0;
+    this.drawlistGeometryGpuMsAccum = 0;
+    this.drawlistDepthCopyGpuMsAccum = 0;
+    this.drawlistSsaoGpuMsAccum = 0;
+    this.drawlistCompositeGpuMsAccum = 0;
     this.metalGpuMsAccum = 0;
     this.gpuTraversalAccum = 0;
     this.gpuOpaqueRasterAccum = 0;
@@ -485,9 +519,9 @@ public final class FrameProfiler {
     this.maxDrawlistRangeMeasureNanos = 0;
     this.maxDrawlistGpuMs = 0;
     this.maxMetalGpuMs = 0;
-    this.drawlistInstanceAccum = 0;
+    this.drawlistQuadAccum = 0;
     this.drawlistOverflowAccum = 0;
-    this.maxDrawlistInstances = 0;
+    this.maxDrawlistQuads = 0;
     this.maxDrawlistOverflows = 0;
     this.drawlistRawRangeAccum = 0;
     this.drawlistMergedRangeAccum = 0;
@@ -513,7 +547,7 @@ public final class FrameProfiler {
     this.maxDrawlistRangeMeasureNanos =
         Math.max(this.maxDrawlistRangeMeasureNanos, this.currentDrawlistRangeMeasureNanos);
     this.maxDrawlistGpuMs = Math.max(this.maxDrawlistGpuMs, this.currentDrawlistGpuMs);
-    this.maxDrawlistInstances = Math.max(this.maxDrawlistInstances, this.currentDrawlistInstances);
+    this.maxDrawlistQuads = Math.max(this.maxDrawlistQuads, this.currentDrawlistQuads);
     this.maxDrawlistOverflows = Math.max(this.maxDrawlistOverflows, this.currentDrawlistOverflows);
     this.maxDrawlistRawRanges = Math.max(this.maxDrawlistRawRanges, this.currentDrawlistRawRanges);
     this.maxDrawlistMergedRanges =
@@ -528,7 +562,7 @@ public final class FrameProfiler {
     this.currentDrawlistRasterNanos = 0;
     this.currentDrawlistRangeMeasureNanos = 0;
     this.currentDrawlistGpuMs = 0;
-    this.currentDrawlistInstances = 0;
+    this.currentDrawlistQuads = 0;
     this.currentDrawlistOverflows = 0;
     this.currentDrawlistRawRanges = 0;
     this.currentDrawlistMergedRanges = 0;
@@ -697,9 +731,9 @@ public final class FrameProfiler {
       double avgGpuOpaqueRasterMs,
       double avgGpuSsaoMs,
       double avgGpuTranslucentMs,
-      double avgDrawlistInstances,
+      double avgDrawlistQuads,
       double avgDrawlistOverflows,
-      long maxDrawlistInstances,
+      long maxDrawlistQuads,
       long maxDrawlistOverflows,
       double avgDrawlistRawRanges,
       double avgDrawlistMergedRanges,

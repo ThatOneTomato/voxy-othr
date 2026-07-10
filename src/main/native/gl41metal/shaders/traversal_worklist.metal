@@ -93,7 +93,6 @@ static inline bool group_visible_from_camera(uint group, SectionMeta meta,
                                              constant SceneUniform& scene) {
   if (group == 1u) return true;
   if (group == 0u) return false;
-  if (scene.rasterLimits.w != 0u) return true;
   uint detail = extract_detail(meta);
   int3 relative =
       extract_section_pos(meta) - int3(scene.baseSectionFrame.x >> detail,
@@ -116,17 +115,25 @@ static inline bool group_visible_from_camera(uint group, SectionMeta meta,
       return false;
   }
 }
-static inline uint visibleOpaqueQuadCount(device const SectionMeta* sections,
-                                          uint meshId,
-                                          constant SceneUniform& scene) {
-  SectionMeta meta = sections[meshId];
+static inline uint visible_opaque_group_mask(SectionMeta meta,
+                                             constant SceneUniform& scene) {
+  uint mask = 0u;
+  for (uint group = 1u; group < 8u; group++) {
+    if (group_visible_from_camera(group, meta, scene)) mask |= 1u << group;
+  }
+  return mask;
+}
+static inline uint visible_opaque_quad_count(SectionMeta meta, uint groupMask) {
   uint count = 0u;
   for (uint group = 1u; group < 8u; group++) {
-    if (group_visible_from_camera(group, meta, scene)) {
+    if ((groupMask & (1u << group)) != 0u) {
       count += group_count(meta, group);
     }
   }
   return count;
+}
+static inline uint section_fingerprint(SectionMeta meta) {
+  return (meta.a.x ^ (meta.a.y * 0x9e3779b9u)) & 0x00ffffffu;
 }
 static inline bool hasMesh(UnpackedNode n) { return n.meshPtr != NULL_MESH; }
 static inline bool isEmptyMesh(UnpackedNode n) {
@@ -148,9 +155,9 @@ static inline bool reserveQueue(device atomic_uint* cursor, uint count,
     }
     uint desired = current + count;
     uint expected = current;
-    if (atomic_compare_exchange_weak_explicit(
-            cursor, &expected, desired, memory_order_relaxed,
-            memory_order_relaxed)) {
+    if (atomic_compare_exchange_weak_explicit(cursor, &expected, desired,
+                                              memory_order_relaxed,
+                                              memory_order_relaxed)) {
       index = current;
       return true;
     }
@@ -349,7 +356,8 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
                    (index >> LOCAL_SIZE_BITS);
         atomic_fetch_add_explicit(&queueMeta[(queueIdx + 1u) * 4u], inc,
                                   memory_order_relaxed);
-        for (uint i = 0; i < childCount; i++) sinkQueue[index + i] = n.childPtr + i;
+        for (uint i = 0; i < childCount; i++)
+          sinkQueue[index + i] = n.childPtr + i;
       } else {
         childQueueOverflow = true;
         atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
@@ -379,8 +387,8 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
     // near-clipped/rasterised a depth-ramping smear across the whole sky
     // (vxDepthTexOpaque reconstructed to impossible heights straight overhead).
     // Only the descend-wanted fallback case is gated; the !shouldDescend case
-    // is normal LOD and renders its mesh as GL46 does. renderParams.w <= 0 means
-    // "unbounded" (GL46 renderDistance < 0).
+    // is normal LOD and renders its mesh as GL46 does. renderParams.w <= 0
+    // means "unbounded" (GL46 renderDistance < 0).
     int selfScale = int(1u << n.lodLevel);
     float selfSize = float(32 * selfScale);
     float3 selfBase =
@@ -427,9 +435,11 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
       // request was already issued in the descend branch); we must NOT fall
       // through to the request else-if below, which would double-request. qc==0
       // skips the worklist append while staying in the hasMesh branch.
+      SectionMeta section = sections[n.meshPtr];
+      uint opaqueGroupMask = visible_opaque_group_mask(section, scene);
       uint qc = blockSelfRender
                     ? 0u
-                    : visibleOpaqueQuadCount(sections, n.meshPtr, scene);
+                    : visible_opaque_quad_count(section, opaqueGroupMask);
       if (qc != 0u) {
         uint w = atomic_fetch_add_explicit(&worklistCounter[0], 1u,
                                            memory_order_relaxed);
@@ -450,8 +460,11 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
           // consume the raster-quad scratch buffer, so it keeps the full count.
           WorkItem item;
           item.meshId = n.meshPtr;
-          item.quadBase = quadBase;
-          item.reserved = 0u;
+          item.quadBase = drawlistOutput ? section.a.w : quadBase;
+          item.reserved =
+              drawlistOutput
+                  ? opaqueGroupMask | (section_fingerprint(section) << 8u)
+                  : 0u;
           item.lodAndQuadCount =
               (n.lodLevel << 24) | min(accepted, 0x00ffffffu);
           worklist[w] = item;

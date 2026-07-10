@@ -12,17 +12,21 @@ public final class SharedDistantGbuffer implements AutoCloseable {
     this.slots = slots;
   }
 
-  public static SharedDistantGbuffer create(int slotCount, int width, int height) {
-    NativeContext context = new NativeContext(slotCount, width, height);
+  public static SharedDistantGbuffer create(
+      int slotCount, int width, int height, boolean sharedTexturesEnabled) {
+    NativeContext context = new NativeContext(slotCount, width, height, sharedTexturesEnabled);
     return new SharedDistantGbuffer(context, buildSlots(context));
   }
 
-  // Resizes the underlying screen-sized textures in place. The native handle and all terrain
-  // resources are preserved, so distant LOD residency survives the resize; only the GL texture
-  // names backing the gbuffer slots change, so the slot views are rebuilt.
-  public void resize(int width, int height) {
-    this.context.resize(width, height);
+  // Enables, disables, or resizes the optional bridge textures while preserving the native handle
+  // and terrain residency. Slot views are rebuilt because GL texture names may change.
+  public void configure(int width, int height, boolean sharedTexturesEnabled) {
+    this.context.configureSharedTextures(width, height, sharedTexturesEnabled);
     this.slots = buildSlots(this.context);
+  }
+
+  public boolean sharedTexturesEnabled() {
+    return this.context.sharedTexturesEnabled();
   }
 
   private static DistantGbufferSlot[] buildSlots(NativeContext context) {
@@ -75,8 +79,12 @@ public final class SharedDistantGbuffer implements AutoCloseable {
         + this.width()
         + "x"
         + this.height()
-        + ", formats=gbuffer0=RGBA32F(uv+tile),gbuffer1=RGBA32F(depth+ids),"
-        + "gbuffer2=RGBA32F(packed albedo/light/tint/face/flags/coverage)";
+        + ", sharedTextures="
+        + this.sharedTexturesEnabled()
+        + (this.sharedTexturesEnabled()
+            ? ", formats=gbuffer0=RGBA32F(uv+tile),gbuffer1=RGBA32F(depth+ids),"
+                + "gbuffer2=RGBA32F(packed albedo/light/tint/face/flags/coverage)"
+            : "");
   }
 
   @Override

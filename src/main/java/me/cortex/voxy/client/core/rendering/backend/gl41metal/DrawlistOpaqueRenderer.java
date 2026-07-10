@@ -31,7 +31,7 @@ import static org.lwjgl.opengl.GL11C.GL_TRIANGLES;
 import static org.lwjgl.opengl.GL11C.GL_TRIANGLE_STRIP;
 import static org.lwjgl.opengl.GL11C.GL_TRUE;
 import static org.lwjgl.opengl.GL11C.GL_UNSIGNED_BYTE;
-import static org.lwjgl.opengl.GL11C.GL_UNSIGNED_INT;
+import static org.lwjgl.opengl.GL11C.GL_UNSIGNED_SHORT;
 import static org.lwjgl.opengl.GL11C.GL_VIEWPORT;
 import static org.lwjgl.opengl.GL11C.glBindTexture;
 import static org.lwjgl.opengl.GL11C.glColorMask;
@@ -77,7 +77,6 @@ import static org.lwjgl.opengl.GL15C.GL_ELEMENT_ARRAY_BUFFER_BINDING;
 import static org.lwjgl.opengl.GL15C.GL_QUERY_RESULT;
 import static org.lwjgl.opengl.GL15C.GL_QUERY_RESULT_AVAILABLE;
 import static org.lwjgl.opengl.GL15C.GL_STATIC_DRAW;
-import static org.lwjgl.opengl.GL15C.GL_STREAM_DRAW;
 import static org.lwjgl.opengl.GL15C.glBeginQuery;
 import static org.lwjgl.opengl.GL15C.glBindBuffer;
 import static org.lwjgl.opengl.GL15C.glBufferData;
@@ -89,7 +88,6 @@ import static org.lwjgl.opengl.GL15C.glGenQueries;
 import static org.lwjgl.opengl.GL15C.glGetQueryObjecti;
 import static org.lwjgl.opengl.GL15C.nglBufferSubData;
 import static org.lwjgl.opengl.GL20C.GL_CURRENT_PROGRAM;
-import static org.lwjgl.opengl.GL20C.glEnableVertexAttribArray;
 import static org.lwjgl.opengl.GL20C.glGetUniformLocation;
 import static org.lwjgl.opengl.GL20C.glUniform1f;
 import static org.lwjgl.opengl.GL20C.glUniform1i;
@@ -97,7 +95,6 @@ import static org.lwjgl.opengl.GL20C.glUniform2f;
 import static org.lwjgl.opengl.GL20C.glUniform3i;
 import static org.lwjgl.opengl.GL20C.glUniform4f;
 import static org.lwjgl.opengl.GL20C.glUniformMatrix4fv;
-import static org.lwjgl.opengl.GL20C.glVertexAttribPointer;
 import static org.lwjgl.opengl.GL30C.GL_COLOR;
 import static org.lwjgl.opengl.GL30C.GL_COLOR_ATTACHMENT0;
 import static org.lwjgl.opengl.GL30C.GL_DEPTH;
@@ -126,11 +123,9 @@ import static org.lwjgl.opengl.GL30C.glFramebufferTexture2D;
 import static org.lwjgl.opengl.GL30C.glGenFramebuffers;
 import static org.lwjgl.opengl.GL30C.glGenVertexArrays;
 import static org.lwjgl.opengl.GL30C.glGetFramebufferAttachmentParameteri;
-import static org.lwjgl.opengl.GL30C.glVertexAttribIPointer;
 import static org.lwjgl.opengl.GL31C.GL_MAX_TEXTURE_BUFFER_SIZE;
 import static org.lwjgl.opengl.GL31C.GL_TEXTURE_BINDING_BUFFER;
 import static org.lwjgl.opengl.GL31C.GL_TEXTURE_BUFFER;
-import static org.lwjgl.opengl.GL31C.glDrawElementsInstanced;
 import static org.lwjgl.opengl.GL31C.glTexBuffer;
 import static org.lwjgl.opengl.GL32C.GL_FIRST_VERTEX_CONVENTION;
 import static org.lwjgl.opengl.GL32C.glProvokingVertex;
@@ -139,7 +134,6 @@ import static org.lwjgl.opengl.GL33C.GL_SAMPLER_BINDING;
 import static org.lwjgl.opengl.GL33C.GL_TIME_ELAPSED;
 import static org.lwjgl.opengl.GL33C.glBindSampler;
 import static org.lwjgl.opengl.GL33C.glGetQueryObjecti64;
-import static org.lwjgl.opengl.GL33C.glVertexAttribDivisor;
 
 import java.nio.FloatBuffer;
 import me.cortex.voxy.client.core.gl.shader.Shader;
@@ -172,13 +166,6 @@ final class DrawlistOpaqueRenderer
   private static final int ATLAS_WIDTH = ModelFactory.MODEL_TEXTURE_SIZE * 3 * MODEL_GRID_SIZE;
   private static final int ATLAS_HEIGHT = ModelFactory.MODEL_TEXTURE_SIZE * 2 * MODEL_GRID_SIZE;
   private static final int ATLAS_MIP_LEVELS = ModelFactory.LAYERS;
-  private static final boolean USE_DRAW_RANGES =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.drawlistRanges", "true"));
-  private static final boolean USE_TERRAIN_MIRROR = USE_DRAW_RANGES;
-  private static final boolean MEASURE_DRAW_RANGES =
-      !USE_DRAW_RANGES
-          && Boolean.parseBoolean(System.getProperty("voxy.gl41metal.measureDrawRanges", "true"));
-  private static final int STREAM_STRIDE = NativeBindings.OPAQUE_DRAW_INSTANCE_BYTES;
   private static final int BLOCK_ATLAS_UNIT = 0;
   private static final int LIGHTMAP_UNIT = 1;
   private static final int GEOMETRY_BUFFER_UNIT = 2;
@@ -190,16 +177,6 @@ final class DrawlistOpaqueRenderer
   private static final int BOUND_DEPTH_UNIT = 8;
   private static final boolean ENABLE_DRAW_GPU_TIMER =
       Boolean.parseBoolean(System.getProperty("voxy.gl41metal.drawGpuTimer", "true"));
-  private static final int STREAM_BUFFER_COUNT =
-      readInt("voxy.gl41metal.drawlistStreamBuffers", 3, 1, 8);
-  private static final int MAX_INSTANCE_LIMIT =
-      readInt("voxy.gl41metal.drawlistMaxInstances", 8_000_000, 1024, 32_000_000);
-  private static final int INITIAL_INSTANCE_CAPACITY =
-      readInt(
-          "voxy.gl41metal.drawlistInitialInstances",
-          Math.min(1_000_000, MAX_INSTANCE_LIMIT),
-          1024,
-          MAX_INSTANCE_LIMIT);
   private static final int MAX_RANGE_LIMIT =
       readInt("voxy.gl41metal.drawlistMaxRanges", 1_000_000, 1024, 4_000_000);
   private static final int INITIAL_RANGE_CAPACITY =
@@ -208,8 +185,7 @@ final class DrawlistOpaqueRenderer
           Math.min(32_768, MAX_RANGE_LIMIT),
           1024,
           MAX_RANGE_LIMIT);
-  private static final int INITIAL_RANGE_INDEX_QUADS =
-      readInt("voxy.gl41metal.drawlistRangeIndexQuads", 262_144, 1024, 8_000_000);
+  private static final int RANGE_INDEX_QUADS = 16_380;
 
   private final Shader shader;
   private final Shader translucentShader;
@@ -271,10 +247,7 @@ final class DrawlistOpaqueRenderer
   private final int translucentBoundSizeUniform;
   private final int translucentViewportOriginUniform;
   private final int translucentBoundEnabledUniform;
-  private final int[] vaos = new int[STREAM_BUFFER_COUNT];
-  private final int[] instanceBuffers = new int[STREAM_BUFFER_COUNT];
   private final int rangeVao;
-  private final int indexBuffer;
   private final int rangeIndexBuffer;
   private final int depthCopyFramebuffer;
   private final int nearDepthFramebuffer;
@@ -291,15 +264,14 @@ final class DrawlistOpaqueRenderer
   private final int modelTexture;
   private final int modelColourTexture;
   private final int quadSectionTexture;
-  private final GpuTimer opaqueDrawGpuTimer = new GpuTimer(GpuTimer.Phase.OPAQUE);
+  private final GpuTimer geometryGpuTimer = new GpuTimer(GpuTimer.Phase.GEOMETRY);
+  private final GpuTimer depthCopyGpuTimer = new GpuTimer(GpuTimer.Phase.DEPTH_COPY);
+  private final GpuTimer ssaoGpuTimer = new GpuTimer(GpuTimer.Phase.SSAO);
+  private final GpuTimer compositeGpuTimer = new GpuTimer(GpuTimer.Phase.COMPOSITE);
   private final GpuTimer translucentDrawGpuTimer = new GpuTimer(GpuTimer.Phase.TRANSLUCENT);
   private final int maxSections;
   private final long geometryCapacityBytes;
-  private int instanceCapacity = INITIAL_INSTANCE_CAPACITY;
   private int rangeCapacity = INITIAL_RANGE_CAPACITY;
-  private int rangeIndexQuadCapacity = INITIAL_RANGE_INDEX_QUADS;
-  private int nextStreamBuffer;
-  private int currentStreamBuffer;
   private MemoryBuffer rangeCommandBuffer;
   private MemoryBuffer quadSectionScratch;
   private int quadSectionScratchCapacity;
@@ -313,7 +285,6 @@ final class DrawlistOpaqueRenderer
   private int ssaoHeight;
   private boolean closed;
   private boolean loggedFirstDraw;
-  private boolean loggedOverflow;
   private boolean loggedLodMismatch;
   private boolean loggedNearDepthFallback;
   private boolean loggedSsaoFallback;
@@ -321,18 +292,11 @@ final class DrawlistOpaqueRenderer
   DrawlistOpaqueRenderer(int maxSections, long geometryCapacityBytes) {
     this.maxSections = maxSections;
     this.geometryCapacityBytes = geometryCapacityBytes;
-    var shaderBuilder = Shader.make();
-    if (USE_DRAW_RANGES) {
-      shaderBuilder.addSource(
-          ShaderType.VERTEX,
-          ShaderLoader.parse("voxy:lod/gl41metal/drawlist/opaque_ranges.vert", "410 core"));
-    } else {
-      shaderBuilder.addSource(
-          ShaderType.VERTEX,
-          ShaderLoader.parse("voxy:lod/gl41metal/drawlist/opaque.vert", "410 core"));
-    }
     this.shader =
-        shaderBuilder
+        Shader.make()
+            .addSource(
+                ShaderType.VERTEX,
+                ShaderLoader.parse("voxy:lod/gl41metal/drawlist/opaque_ranges.vert", "410 core"))
             .addSource(
                 ShaderType.FRAGMENT,
                 ShaderLoader.parse("voxy:lod/gl41metal/drawlist/opaque.frag", "410 core"))
@@ -393,21 +357,17 @@ final class DrawlistOpaqueRenderer
     this.compositeFogParamsUniform = glGetUniformLocation(this.compositeShader.id(), "uFogParams");
     this.compositeFogColorUniform = glGetUniformLocation(this.compositeShader.id(), "uFogColor");
     this.compositeFogShapeUniform = glGetUniformLocation(this.compositeShader.id(), "uFogShape");
-    if (USE_DRAW_RANGES) {
-      this.translucentShader =
-          Shader.make()
-              .addSource(
-                  ShaderType.VERTEX,
-                  ShaderLoader.parse(
-                      "voxy:lod/gl41metal/drawlist/translucent_ranges.vert", "410 core"))
-              .addSource(
-                  ShaderType.FRAGMENT,
-                  ShaderLoader.parse("voxy:lod/gl41metal/drawlist/translucent.frag", "410 core"))
-              .compile()
-              .name("Voxy GL41Metal Drawlist Translucent");
-    } else {
-      this.translucentShader = null;
-    }
+    this.translucentShader =
+        Shader.make()
+            .addSource(
+                ShaderType.VERTEX,
+                ShaderLoader.parse(
+                    "voxy:lod/gl41metal/drawlist/translucent_ranges.vert", "410 core"))
+            .addSource(
+                ShaderType.FRAGMENT,
+                ShaderLoader.parse("voxy:lod/gl41metal/drawlist/translucent.frag", "410 core"))
+            .compile()
+            .name("Voxy GL41Metal Drawlist Translucent");
     int translucentProgram = this.translucentShader != null ? this.translucentShader.id() : 0;
     this.translucentVoxyMvpUniform =
         translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uVoxyMvp") : -1;
@@ -453,7 +413,6 @@ final class DrawlistOpaqueRenderer
         translucentProgram != 0 ? glGetUniformLocation(translucentProgram, "uBoundEnabled") : -1;
 
     this.rangeVao = glGenVertexArrays();
-    this.indexBuffer = glGenBuffers();
     this.rangeIndexBuffer = glGenBuffers();
     this.depthCopyFramebuffer = glGenFramebuffers();
     this.nearDepthFramebuffer = glGenFramebuffers();
@@ -470,23 +429,12 @@ final class DrawlistOpaqueRenderer
     this.modelTexture = glGenTextures();
     this.modelColourTexture = glGenTextures();
     this.quadSectionTexture = glGenTextures();
-    this.initBuffers();
     this.initTerrainMirror();
     this.warnIfTextureBufferCapacityExceeded();
     this.initRangeCommands();
     this.initAtlas();
     Logger.info(
-        "Voxy GL41Metal drawlist opaque renderer initialized: maxInstances="
-            + MAX_INSTANCE_LIMIT
-            + ", initialInstances="
-            + this.instanceCapacity
-            + ", instanceBytes="
-            + ((long) this.instanceCapacity * STREAM_STRIDE)
-            + ", streamBuffers="
-            + STREAM_BUFFER_COUNT
-            + ", ranges="
-            + USE_DRAW_RANGES
-            + ", mirrorGeometryBytes="
+        "Voxy GL41Metal drawlist renderer initialized: mirrorGeometryBytes="
             + this.geometryCapacityBytes
             + ", atlas="
             + ATLAS_WIDTH
@@ -509,68 +457,8 @@ final class DrawlistOpaqueRenderer
     }
     StateSnapshot state = StateSnapshot.capture();
     try (MemoryStack stack = MemoryStack.stackPush()) {
-      if (USE_DRAW_RANGES) {
-        return this.renderRanges(
-            nativeHandle,
-            slot,
-            context,
-            drawMvp,
-            vanillaDrawMvp,
-            colorWriteEnabled,
-            profiler,
-            stack);
-      }
-      if (MEASURE_DRAW_RANGES) {
-        long tRange = profiler.begin();
-        profiler.recordDrawlistRangeMeasure(
-            tRange, NativeBindings.measureOpaqueRanges(nativeHandle, slot, false));
-      }
-      long tBuild = profiler.begin();
-      var counters = stack.mallocInt(4);
-      MemoryUtil.memSet(
-          MemoryUtil.memAddress(counters), 0, NativeBindings.OPAQUE_DRAW_COUNTERS_BYTES);
-      long instanceAddress =
-          this.buildDrawStream(nativeHandle, slot, MemoryUtil.memAddress(counters));
-      int instanceCount = counters.get(0);
-      int overflowCount = counters.get(1);
-      profiler.recordDrawlistOpaqueBuild(tBuild, instanceCount, overflowCount);
-      if (overflowCount > 0) {
-        int oldCapacity = this.instanceCapacity;
-        this.growInstanceCapacity((long) instanceCount + overflowCount);
-        if (!this.loggedOverflow) {
-          this.loggedOverflow = true;
-          Logger.warn(
-              "Voxy GL41Metal drawlist overflowed "
-                  + oldCapacity
-                  + " instances; grew to "
-                  + this.instanceCapacity
-                  + " and skipped this frame");
-        }
-        return false;
-      }
-      if (instanceCount <= 0) {
-        return false;
-      }
-      if (instanceAddress == 0) {
-        profiler.recordDrawlistUpload(profiler.begin());
-        return false;
-      }
-      long tUpload = profiler.begin();
-      long uploadBytes = (long) instanceCount * STREAM_STRIDE;
-      int streamBuffer = this.acquireStreamBuffer();
-      glBindBuffer(GL_ARRAY_BUFFER, this.instanceBuffers[streamBuffer]);
-      nglBufferSubData(GL_ARRAY_BUFFER, 0, uploadBytes, instanceAddress);
-      profiler.recordDrawlistUpload(tUpload);
-
-      long tRaster = profiler.begin();
-      this.drawInstances(
-          context, drawMvp, vanillaDrawMvp, colorWriteEnabled, instanceCount, stack, profiler);
-      profiler.recordDrawlistOpaqueRaster(tRaster);
-      if (!this.loggedFirstDraw) {
-        this.loggedFirstDraw = true;
-        Logger.info("Voxy GL41Metal drawlist rendered first opaque direct-GL frame");
-      }
-      return true;
+      return this.renderRanges(
+          nativeHandle, slot, context, drawMvp, vanillaDrawMvp, colorWriteEnabled, profiler, stack);
     } finally {
       state.restore();
     }
@@ -597,19 +485,18 @@ final class DrawlistOpaqueRenderer
             this.rangeIndicesAddress(),
             this.rangeBaseVerticesAddress(),
             this.rangeCapacity,
-            false,
             MemoryUtil.memAddress(counters));
     long rangeQuads = counters.get(2);
     long overflowRanges = counters.get(1);
     profiler.recordDrawlistOpaqueBuild(tBuild, rangeQuads, overflowRanges);
     profiler.recordDrawlistOpaqueRangeStats(rangeStatsFromCounters(counters));
-    long lodMismatches = counters.get(8);
-    if (lodMismatches > 0 && !this.loggedLodMismatch) {
+    long snapshotMismatches = counters.get(8);
+    if (snapshotMismatches > 0 && !this.loggedLodMismatch) {
       this.loggedLodMismatch = true;
       Logger.warn(
-          "Voxy GL41Metal drawlist ranges saw "
-              + lodMismatches
-              + " work items whose worklist LOD differs from section metadata detail");
+          "Voxy GL41Metal drawlist ranges conservatively kept all face groups for "
+              + snapshotMismatches
+              + " work items whose traversal-time section snapshot changed");
     }
     if (overflowRanges > 0) {
       int oldCapacity = this.rangeCapacity;
@@ -626,16 +513,10 @@ final class DrawlistOpaqueRenderer
       return false;
     }
     long maxRangeQuads = counters.get(3);
-    if (maxRangeQuads > this.rangeIndexQuadCapacity) {
-      this.growRangeIndexCapacity(maxRangeQuads);
-      Logger.warn(
-          "Voxy GL41Metal drawlist range index buffer grew to "
-              + this.rangeIndexQuadCapacity
-              + " quads; skipped this frame");
-      return false;
+    if (maxRangeQuads > RANGE_INDEX_QUADS) {
+      throw new IllegalStateException("GL41Metal native range exceeded the 16-bit index capacity");
     }
 
-    profiler.recordDrawlistUpload(profiler.begin());
     long tRaster = profiler.begin();
     this.drawRanges(
         context, drawMvp, vanillaDrawMvp, colorWriteEnabled, rangeCount, stack, profiler);
@@ -669,9 +550,6 @@ final class DrawlistOpaqueRenderer
       LoadedVolumeBound bound,
       boolean colorWriteEnabled,
       FrameProfiler profiler) {
-    if (!USE_DRAW_RANGES || this.translucentShader == null) {
-      return false;
-    }
     if (FogCapture.vanillaFogHidesDistant()) {
       return false;
     }
@@ -709,13 +587,9 @@ final class DrawlistOpaqueRenderer
         return false;
       }
       long maxRangeQuads = counters.get(5);
-      if (maxRangeQuads > this.rangeIndexQuadCapacity) {
-        this.growRangeIndexCapacity(maxRangeQuads);
-        Logger.warn(
-            "Voxy GL41Metal translucent range index buffer grew to "
-                + this.rangeIndexQuadCapacity
-                + " quads; skipped this frame");
-        return false;
+      if (maxRangeQuads > RANGE_INDEX_QUADS) {
+        throw new IllegalStateException(
+            "GL41Metal native translucent range exceeded the 16-bit index capacity");
       }
 
       long tRaster = profiler.begin();
@@ -741,17 +615,9 @@ final class DrawlistOpaqueRenderer
     };
   }
 
-  private long buildDrawStream(long nativeHandle, int slot, long countersAddress) {
-    return NativeBindings.buildOpaqueInstances(
-        nativeHandle, slot, this.instanceCapacity, false, countersAddress);
-  }
-
   @Override
   public void uploadSectionMetadata(int sectionId, long metadataAddress) {
-    if (!USE_TERRAIN_MIRROR
-        || sectionId < 0
-        || sectionId >= this.maxSections
-        || metadataAddress == 0) {
+    if (sectionId < 0 || sectionId >= this.maxSections || metadataAddress == 0) {
       return;
     }
     glBindBuffer(GL_TEXTURE_BUFFER, this.sectionMetaBuffer);
@@ -760,14 +626,12 @@ final class DrawlistOpaqueRenderer
         (long) sectionId * SECTION_METADATA_BYTES,
         SECTION_METADATA_BYTES,
         metadataAddress);
-    if (USE_DRAW_RANGES) {
-      this.uploadQuadSectionIds(sectionId, metadataAddress);
-    }
+    this.uploadQuadSectionIds(sectionId, metadataAddress);
   }
 
   @Override
   public void uploadGeometry(int geometryElementOffset, long geometryAddress, long geometryBytes) {
-    if (!USE_TERRAIN_MIRROR || geometryAddress == 0 || geometryBytes <= 0) {
+    if (geometryAddress == 0 || geometryBytes <= 0) {
       return;
     }
     long byteOffset = (long) geometryElementOffset * Long.BYTES;
@@ -783,7 +647,7 @@ final class DrawlistOpaqueRenderer
 
   @Override
   public void uploadModelData(int modelId, long modelAddress, long modelBytes) {
-    if (!USE_TERRAIN_MIRROR || modelId < 0 || modelId >= MODEL_COUNT || modelAddress == 0) {
+    if (modelId < 0 || modelId >= MODEL_COUNT || modelAddress == 0) {
       return;
     }
     if (modelBytes < MODEL_BYTES) {
@@ -800,7 +664,7 @@ final class DrawlistOpaqueRenderer
       long colourBytes,
       long modelBiomePairsAddress,
       long modelBiomePairsBytes) {
-    if (!USE_TERRAIN_MIRROR || modelBiomePairsAddress == 0 || modelBiomePairsBytes <= 0) {
+    if (modelBiomePairsAddress == 0 || modelBiomePairsBytes <= 0) {
       return;
     }
     if (colourAddress != 0 && colourBytes > 0) {
@@ -897,17 +761,8 @@ final class DrawlistOpaqueRenderer
     this.shader.free();
     this.ssaoShader.free();
     this.compositeShader.free();
-    if (this.translucentShader != null) {
-      this.translucentShader.free();
-    }
-    for (int vao : this.vaos) {
-      glDeleteVertexArrays(vao);
-    }
+    this.translucentShader.free();
     glDeleteVertexArrays(this.rangeVao);
-    for (int buffer : this.instanceBuffers) {
-      glDeleteBuffers(buffer);
-    }
-    glDeleteBuffers(this.indexBuffer);
     glDeleteBuffers(this.rangeIndexBuffer);
     glDeleteBuffers(this.geometryBuffer);
     glDeleteBuffers(this.sectionMetaBuffer);
@@ -948,103 +803,11 @@ final class DrawlistOpaqueRenderer
       this.quadSectionScratch.free();
       this.quadSectionScratch = null;
     }
-    this.opaqueDrawGpuTimer.close();
+    this.geometryGpuTimer.close();
+    this.depthCopyGpuTimer.close();
+    this.ssaoGpuTimer.close();
+    this.compositeGpuTimer.close();
     this.translucentDrawGpuTimer.close();
-  }
-
-  private void drawInstances(
-      RenderFrameContext context,
-      Matrix4fc drawMvp,
-      Matrix4fc vanillaDrawMvp,
-      boolean colorWriteEnabled,
-      int instanceCount,
-      MemoryStack stack,
-      FrameProfiler profiler) {
-    int previousDepthFunc = glGetInteger(GL_DEPTH_FUNC);
-    boolean reverseDepth = previousDepthFunc == GL_GEQUAL || previousDepthFunc == GL_GREATER;
-    this.disableHostClipState();
-    int nearDepthTexture = this.snapshotSourceDepth(context);
-    int ssaoSteps = DistantRenderer.computeSsaoSteps(context);
-    boolean useSsao = colorWriteEnabled && nearDepthTexture != 0 && ssaoSteps > 0;
-    if (useSsao) {
-      useSsao = this.prepareSsaoDrawTarget(context, reverseDepth, stack);
-    }
-    if (!useSsao) {
-      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, context.sourceFramebuffer());
-    }
-    this.setDrawViewport(context, useSsao);
-    glColorMask(colorWriteEnabled, colorWriteEnabled, colorWriteEnabled, colorWriteEnabled);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(reverseDepth ? GL_GEQUAL : GL_LEQUAL);
-    glDepthMask(true);
-    glDisable(GL_BLEND);
-    glDisable(GL_CULL_FACE);
-
-    this.shader.bind();
-    FloatBuffer matrix = stack.mallocFloat(16);
-    drawMvp.get(matrix);
-    glUniformMatrix4fv(this.voxyMvpUniform, false, matrix);
-    matrix.clear();
-    vanillaDrawMvp.get(matrix);
-    glUniformMatrix4fv(this.vanillaMvpUniform, false, matrix);
-    glUniform1f(this.earthRadiusUniform, DistantRenderer.computeEarthRadius());
-    glUniform1i(this.blockAtlasUniform, BLOCK_ATLAS_UNIT);
-    glUniform1i(this.lightmapUniform, LIGHTMAP_UNIT);
-    if (USE_DRAW_RANGES) {
-      glUniform3i(
-          this.baseSectionFrameUniform,
-          floorSection(context.cameraX()),
-          floorSection(context.cameraY()),
-          floorSection(context.cameraZ()));
-      glUniform1i(this.geometryQuadsUniform, GEOMETRY_BUFFER_UNIT);
-      glUniform1i(this.sectionMetaUniform, SECTION_META_UNIT);
-      glUniform1i(this.modelBufferUniform, MODEL_BUFFER_UNIT);
-      glUniform1i(this.modelColourUniform, MODEL_COLOUR_UNIT);
-      glUniform1i(this.quadSectionIdsUniform, QUAD_SECTION_UNIT);
-    }
-    FogCapture.setVanillaFogUniforms(
-        this.fogParamsUniform, this.fogColorUniform, this.fogShapeUniform);
-    this.setFaceShadeUniforms(this.faceShadeUniform, this.faceShadeXUniform);
-    this.setNearDepthUniforms(context, nearDepthTexture, reverseDepth, useSsao);
-    if (this.ssaoMetadataModeUniform >= 0) {
-      glUniform1i(this.ssaoMetadataModeUniform, useSsao ? 1 : 0);
-    }
-    if (this.useVoxyDepthUniform >= 0) {
-      glUniform1i(this.useVoxyDepthUniform, useSsao ? 1 : 0);
-    }
-
-    glActiveTexture(GL_TEXTURE0 + BLOCK_ATLAS_UNIT);
-    glBindTexture(GL_TEXTURE_2D, this.atlasTexture);
-    glBindSampler(BLOCK_ATLAS_UNIT, 0);
-    LightMapHelper.bind(LIGHTMAP_UNIT);
-    if (USE_DRAW_RANGES) {
-      glActiveTexture(GL_TEXTURE0 + GEOMETRY_BUFFER_UNIT);
-      glBindTexture(GL_TEXTURE_BUFFER, this.geometryTexture);
-      glBindSampler(GEOMETRY_BUFFER_UNIT, 0);
-      glActiveTexture(GL_TEXTURE0 + SECTION_META_UNIT);
-      glBindTexture(GL_TEXTURE_BUFFER, this.sectionMetaTexture);
-      glBindSampler(SECTION_META_UNIT, 0);
-      glActiveTexture(GL_TEXTURE0 + MODEL_BUFFER_UNIT);
-      glBindTexture(GL_TEXTURE_BUFFER, this.modelTexture);
-      glBindSampler(MODEL_BUFFER_UNIT, 0);
-      glActiveTexture(GL_TEXTURE0 + MODEL_COLOUR_UNIT);
-      glBindTexture(GL_TEXTURE_BUFFER, this.modelColourTexture);
-      glBindSampler(MODEL_COLOUR_UNIT, 0);
-      glActiveTexture(GL_TEXTURE0 + QUAD_SECTION_UNIT);
-      glBindTexture(GL_TEXTURE_BUFFER, this.quadSectionTexture);
-      glBindSampler(QUAD_SECTION_UNIT, 0);
-    }
-    this.bindNearDepthTexture(nearDepthTexture);
-
-    glBindVertexArray(this.vaos[this.currentStreamBuffer]);
-    glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
-    this.opaqueDrawGpuTimer.poll(profiler);
-    this.opaqueDrawGpuTimer.begin();
-    glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_BYTE, 0L, instanceCount);
-    if (useSsao) {
-      this.applySsaoAndComposite(context, drawMvp, vanillaDrawMvp, ssaoSteps, stack);
-    }
-    this.opaqueDrawGpuTimer.end();
   }
 
   private void drawRanges(
@@ -1058,7 +821,10 @@ final class DrawlistOpaqueRenderer
     int previousDepthFunc = glGetInteger(GL_DEPTH_FUNC);
     boolean reverseDepth = previousDepthFunc == GL_GEQUAL || previousDepthFunc == GL_GREATER;
     this.disableHostClipState();
+    this.pollOpaqueGpuTimers(profiler);
+    this.depthCopyGpuTimer.begin();
     int nearDepthTexture = this.snapshotSourceDepth(context);
+    this.depthCopyGpuTimer.end();
     int ssaoSteps = DistantRenderer.computeSsaoSteps(context);
     boolean useSsao = colorWriteEnabled && nearDepthTexture != 0 && ssaoSteps > 0;
     if (useSsao) {
@@ -1129,20 +895,26 @@ final class DrawlistOpaqueRenderer
 
     glBindVertexArray(this.rangeVao);
     glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
-    this.opaqueDrawGpuTimer.poll(profiler);
-    this.opaqueDrawGpuTimer.begin();
+    this.geometryGpuTimer.begin();
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.rangeIndexBuffer);
     nglMultiDrawElementsBaseVertex(
         GL_TRIANGLES,
         this.rangeCountsAddress(),
-        GL_UNSIGNED_INT,
+        GL_UNSIGNED_SHORT,
         this.rangeIndicesAddress(),
         rangeCount,
         this.rangeBaseVerticesAddress());
+    this.geometryGpuTimer.end();
     if (useSsao) {
       this.applySsaoAndComposite(context, drawMvp, vanillaDrawMvp, ssaoSteps, stack);
     }
-    this.opaqueDrawGpuTimer.end();
+  }
+
+  private void pollOpaqueGpuTimers(FrameProfiler profiler) {
+    this.geometryGpuTimer.poll(profiler);
+    this.depthCopyGpuTimer.poll(profiler);
+    this.ssaoGpuTimer.poll(profiler);
+    this.compositeGpuTimer.poll(profiler);
   }
 
   private boolean prepareSsaoDrawTarget(
@@ -1213,7 +985,9 @@ final class DrawlistOpaqueRenderer
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, this.ssaoFramebuffer);
     glViewport(0, 0, context.viewportWidth(), context.viewportHeight());
     glBindVertexArray(this.rangeVao);
+    this.ssaoGpuTimer.begin();
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    this.ssaoGpuTimer.end();
 
     this.compositeShader.bind();
     if (this.compositeColourUniform >= 0) {
@@ -1239,7 +1013,9 @@ final class DrawlistOpaqueRenderer
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_ALWAYS);
     glDepthMask(true);
+    this.compositeGpuTimer.begin();
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    this.compositeGpuTimer.end();
   }
 
   private void uploadMatrix(int uniform, Matrix4fc matrix, MemoryStack stack) {
@@ -1423,7 +1199,7 @@ final class DrawlistOpaqueRenderer
     nglMultiDrawElementsBaseVertex(
         GL_TRIANGLES,
         this.rangeCountsAddress(),
-        GL_UNSIGNED_INT,
+        GL_UNSIGNED_SHORT,
         this.rangeIndicesAddress(),
         rangeCount,
         this.rangeBaseVerticesAddress());
@@ -1620,44 +1396,7 @@ final class DrawlistOpaqueRenderer
     Logger.warn("Voxy GL41Metal drawlist near-depth mask unavailable; using hardware depth only");
   }
 
-  private void initBuffers() {
-    for (int i = 0; i < STREAM_BUFFER_COUNT; i++) {
-      this.vaos[i] = glGenVertexArrays();
-      this.instanceBuffers[i] = glGenBuffers();
-
-      glBindVertexArray(this.vaos[i]);
-      glBindBuffer(GL_ARRAY_BUFFER, this.instanceBuffers[i]);
-      glBufferData(GL_ARRAY_BUFFER, (long) this.instanceCapacity * STREAM_STRIDE, GL_STREAM_DRAW);
-
-      glEnableVertexAttribArray(0);
-      glVertexAttribPointer(0, 4, GL_FLOAT, false, STREAM_STRIDE, 0L);
-      glEnableVertexAttribArray(1);
-      glVertexAttribPointer(1, 4, GL_FLOAT, false, STREAM_STRIDE, 16L);
-      glVertexAttribDivisor(1, 1);
-      glEnableVertexAttribArray(2);
-      glVertexAttribIPointer(2, 4, GL_UNSIGNED_INT, STREAM_STRIDE, 32L);
-      glVertexAttribDivisor(2, 1);
-      glVertexAttribDivisor(0, 1);
-
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-      if (i == 0) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-          glBufferData(
-              GL_ELEMENT_ARRAY_BUFFER,
-              stack.bytes((byte) 1, (byte) 2, (byte) 0, (byte) 1, (byte) 3, (byte) 2),
-              GL_STATIC_DRAW);
-        }
-      }
-    }
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-  }
-
   private void initTerrainMirror() {
-    if (!USE_TERRAIN_MIRROR) {
-      return;
-    }
     glBindBuffer(GL_TEXTURE_BUFFER, this.geometryBuffer);
     glBufferData(GL_TEXTURE_BUFFER, this.geometryCapacityBytes, GL_DYNAMIC_DRAW);
     glBindTexture(GL_TEXTURE_BUFFER, this.geometryTexture);
@@ -1706,9 +1445,6 @@ final class DrawlistOpaqueRenderer
   }
 
   private void warnIfTextureBufferCapacityExceeded() {
-    if (!USE_TERRAIN_MIRROR) {
-      return;
-    }
     int maxTextureBufferTexels = glGetInteger(GL_MAX_TEXTURE_BUFFER_SIZE);
     long geometryTexels = this.geometryCapacityBytes / Long.BYTES;
     if (maxTextureBufferTexels > 0 && geometryTexels > maxTextureBufferTexels) {
@@ -1723,11 +1459,8 @@ final class DrawlistOpaqueRenderer
   }
 
   private void initRangeCommands() {
-    if (!USE_DRAW_RANGES) {
-      return;
-    }
     this.ensureRangeCommandBuffer(this.rangeCapacity);
-    this.uploadRangeIndexBuffer(this.rangeIndexQuadCapacity);
+    this.uploadRangeIndexBuffer();
   }
 
   private void ensureRangeCommandBuffer(int capacity) {
@@ -1769,24 +1502,21 @@ final class DrawlistOpaqueRenderer
     return (value + alignment - 1L) & -alignment;
   }
 
-  private void uploadRangeIndexBuffer(int quadCapacity) {
-    long indexCount = (long) quadCapacity * 6L;
-    long bytes = indexCount * Integer.BYTES;
-    if (bytes > Integer.MAX_VALUE) {
-      throw new IllegalArgumentException("GL41Metal range index buffer is too large");
-    }
+  private void uploadRangeIndexBuffer() {
+    long indexCount = (long) RANGE_INDEX_QUADS * 6L;
+    long bytes = indexCount * Short.BYTES;
     MemoryBuffer indices = new MemoryBuffer(bytes);
     try {
       long ptr = indices.address;
-      for (int quad = 0; quad < quadCapacity; quad++) {
+      for (int quad = 0; quad < RANGE_INDEX_QUADS; quad++) {
         int base = quad * 4;
-        long offset = ptr + (long) quad * 6L * Integer.BYTES;
-        MemoryUtil.memPutInt(offset, base + 1);
-        MemoryUtil.memPutInt(offset + Integer.BYTES, base + 2);
-        MemoryUtil.memPutInt(offset + 2L * Integer.BYTES, base);
-        MemoryUtil.memPutInt(offset + 3L * Integer.BYTES, base + 1);
-        MemoryUtil.memPutInt(offset + 4L * Integer.BYTES, base + 3);
-        MemoryUtil.memPutInt(offset + 5L * Integer.BYTES, base + 2);
+        long offset = ptr + (long) quad * 6L * Short.BYTES;
+        MemoryUtil.memPutShort(offset, (short) (base + 1));
+        MemoryUtil.memPutShort(offset + Short.BYTES, (short) (base + 2));
+        MemoryUtil.memPutShort(offset + 2L * Short.BYTES, (short) base);
+        MemoryUtil.memPutShort(offset + 3L * Short.BYTES, (short) (base + 1));
+        MemoryUtil.memPutShort(offset + 4L * Short.BYTES, (short) (base + 3));
+        MemoryUtil.memPutShort(offset + 5L * Short.BYTES, (short) (base + 2));
       }
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.rangeIndexBuffer);
       glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.asByteBuffer(), GL_STATIC_DRAW);
@@ -1863,24 +1593,6 @@ final class DrawlistOpaqueRenderer
     glBindTexture(GL_TEXTURE_2D, 0);
   }
 
-  private void growInstanceCapacity(long requiredInstances) {
-    if (requiredInstances <= this.instanceCapacity || this.instanceCapacity >= MAX_INSTANCE_LIMIT) {
-      return;
-    }
-    long target = this.instanceCapacity;
-    while (target < requiredInstances && target < MAX_INSTANCE_LIMIT) {
-      target = Math.max(target * 2L, requiredInstances);
-      target = Math.min(target, MAX_INSTANCE_LIMIT);
-    }
-    if (target <= this.instanceCapacity) {
-      return;
-    }
-    this.instanceCapacity = (int) target;
-    this.allocateInstanceBuffers();
-    Logger.info(
-        "Grew GL41Metal drawlist instance capacity to " + this.instanceCapacity + " instances");
-  }
-
   private void growRangeCapacity(long requiredRanges) {
     if (requiredRanges <= this.rangeCapacity || this.rangeCapacity >= MAX_RANGE_LIMIT) {
       return;
@@ -1896,45 +1608,6 @@ final class DrawlistOpaqueRenderer
     this.rangeCapacity = (int) target;
     this.ensureRangeCommandBuffer(this.rangeCapacity);
     Logger.info("Grew GL41Metal drawlist range capacity to " + this.rangeCapacity + " ranges");
-  }
-
-  private void growRangeIndexCapacity(long requiredQuads) {
-    if (requiredQuads <= this.rangeIndexQuadCapacity) {
-      return;
-    }
-    long target = this.rangeIndexQuadCapacity;
-    while (target < requiredQuads) {
-      target = Math.max(target * 2L, requiredQuads);
-      target = Math.min(target, 8_000_000L);
-      if (target >= 8_000_000L) {
-        break;
-      }
-    }
-    if (target <= this.rangeIndexQuadCapacity) {
-      return;
-    }
-    this.rangeIndexQuadCapacity = (int) target;
-    this.uploadRangeIndexBuffer(this.rangeIndexQuadCapacity);
-    Logger.info(
-        "Grew GL41Metal drawlist range index capacity to "
-            + this.rangeIndexQuadCapacity
-            + " quads");
-  }
-
-  private int acquireStreamBuffer() {
-    int streamBuffer = this.nextStreamBuffer;
-    this.nextStreamBuffer = (streamBuffer + 1) % STREAM_BUFFER_COUNT;
-    this.currentStreamBuffer = streamBuffer;
-    return streamBuffer;
-  }
-
-  private void allocateInstanceBuffers() {
-    long bufferBytes = (long) this.instanceCapacity * STREAM_STRIDE;
-    for (int buffer : this.instanceBuffers) {
-      glBindBuffer(GL_ARRAY_BUFFER, buffer);
-      glBufferData(GL_ARRAY_BUFFER, bufferBytes, GL_STREAM_DRAW);
-    }
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
   }
 
   private static int floorSection(double value) {
@@ -1957,7 +1630,10 @@ final class DrawlistOpaqueRenderer
 
   private static final class GpuTimer implements AutoCloseable {
     enum Phase {
-      OPAQUE,
+      GEOMETRY,
+      DEPTH_COPY,
+      SSAO,
+      COMPOSITE,
       TRANSLUCENT
     }
 
@@ -1992,10 +1668,12 @@ final class DrawlistOpaqueRenderer
         }
         long nanos = glGetQueryObjecti64(this.queries[i], GL_QUERY_RESULT);
         double ms = nanos / 1_000_000.0;
-        if (this.phase == Phase.TRANSLUCENT) {
-          profiler.recordDrawlistTranslucentGpuMs(ms);
-        } else {
-          profiler.recordDrawlistOpaqueGpuMs(ms);
+        switch (this.phase) {
+          case GEOMETRY -> profiler.recordDrawlistGeometryGpuMs(ms);
+          case DEPTH_COPY -> profiler.recordDrawlistDepthCopyGpuMs(ms);
+          case SSAO -> profiler.recordDrawlistSsaoGpuMs(ms);
+          case COMPOSITE -> profiler.recordDrawlistCompositeGpuMs(ms);
+          case TRANSLUCENT -> profiler.recordDrawlistTranslucentGpuMs(ms);
         }
         this.pending[i] = false;
       }

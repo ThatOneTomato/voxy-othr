@@ -439,7 +439,6 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       this.releaseHeldTranslucentSlot();
       return;
     }
-    long tTrans = this.profiler.begin();
     try {
       RenderFrameContext renderContext =
           context.frameContext() != null ? context.frameContext() : this.heldTranslucentContext;
@@ -455,7 +454,6 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           this.config.visibleComposite(),
           this.profiler);
     } finally {
-      this.profiler.recordBridgeTranslucent(tTrans);
       this.releaseHeldTranslucentSlot();
     }
   }
@@ -582,24 +580,29 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     if (width <= 0 || height <= 0) {
       throw new IllegalArgumentException("Invalid GL41Metal viewport size " + width + "x" + height);
     }
-    if (this.gbuffer != null && this.gbuffer.width() == width && this.gbuffer.height() == height) {
+    boolean sharedTexturesEnabled = !this.useDirectDrawlistOpaque();
+    if (this.gbuffer != null
+        && this.gbuffer.width() == width
+        && this.gbuffer.height() == height
+        && this.gbuffer.sharedTexturesEnabled() == sharedTexturesEnabled) {
       return;
     }
     if (this.gbuffer != null) {
-      // Resize the screen-sized gbuffer textures in place, preserving the native context handle and
-      // all terrain/world/atlas residency. The bridge's own depth textures self-heal on size change
-      // and the slot scheduler is reset because the native slots are forced back to Free.
+      // Reconfigure optional screen-sized bridge textures in place while preserving traversal and
+      // terrain residency. Drawlist-only frames keep just the slot/worklist resources.
       // Any held translucent slot is dropped (not retired): the native slots are about to be reset
       // to Free, so retiring a now-stale slot id would be wrong.
       this.dropHeldTranslucentSlot();
       this.slotScheduler.closeRetiringSlots(this.gbuffer);
-      this.gbuffer.resize(width, height);
+      this.gbuffer.configure(width, height, sharedTexturesEnabled);
       this.slotScheduler.reset();
-      Logger.info("Voxy GL41Metal shared gbuffer resized: " + this.gbuffer.description());
+      Logger.info(
+          "Voxy GL41Metal native frame resources reconfigured: " + this.gbuffer.description());
       return;
     }
-    this.gbuffer = SharedDistantGbuffer.create(this.config.slotCount(), width, height);
+    this.gbuffer =
+        SharedDistantGbuffer.create(this.config.slotCount(), width, height, sharedTexturesEnabled);
     this.slotScheduler.reset();
-    Logger.info("Voxy GL41Metal shared gbuffer initialized: " + this.gbuffer.description());
+    Logger.info("Voxy GL41Metal native frame resources initialized: " + this.gbuffer.description());
   }
 }

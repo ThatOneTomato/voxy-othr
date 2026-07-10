@@ -16,7 +16,6 @@ constexpr size_t QUAD_DRAW_REF_BYTES = 16;
 constexpr size_t SCENE_UNIFORM_BYTES = 224;
 constexpr int OUTPUT_MODE_SHARED_GBUFFER = 0;
 constexpr int OUTPUT_MODE_DRAWLIST = 1;
-constexpr size_t OPAQUE_DRAW_INSTANCE_BYTES = 48;
 
 // Distance-bucket count for the translucent section sort, mirroring GL46
 // buildtranslucents.comp's TRANSLUCENT_WRITE_BASE (1024). Translucent sections
@@ -64,29 +63,5 @@ static_assert(offsetof(SsaoUniformHost, proj) == 0);
 static_assert(offsetof(SsaoUniformHost, invProj) == 64);
 static_assert(offsetof(SsaoUniformHost, modelView) == 128);
 static_assert(offsetof(SsaoUniformHost, params) == 192);
-
-// CPU-built opaque direct-GL drawlist instance. This is intentionally a compact
-// pre-decoded quad record, not expanded vertices:
-//   baseAndLod       = camera-relative quad corner origin xyz + lodScale
-//   sizeAndUv        = quad axis size xy + local UV base xy
-//   flagsFace        = bit0 discard, bits2-3 tint state, bit6 shade flag,
-//                      bits8-11 qSizeX-1, bits12-15 qSizeY-1, bits16-18 face
-//   tintPacked       = raw RGBA8 tint colour, 0xffffffff means no tint
-//   modelLight       = bits0-15 model id, bits16-23 raw light (sky<<4 | block)
-//   customId         = Iris/pack custom model id; vanilla shader ignores it
-struct alignas(16) OpaqueDrawInstance {
-  float baseAndLod[4];
-  float sizeAndUv[4];
-  uint32_t flagsFace;
-  uint32_t tintPacked;
-  uint32_t modelLight;
-  uint32_t customId;
-};
-
-static_assert(sizeof(OpaqueDrawInstance) == OPAQUE_DRAW_INSTANCE_BYTES);
-static_assert(offsetof(OpaqueDrawInstance, baseAndLod) == 0);
-static_assert(offsetof(OpaqueDrawInstance, sizeAndUv) == 16);
-static_assert(offsetof(OpaqueDrawInstance, flagsFace) == 32);
-static_assert(offsetof(OpaqueDrawInstance, customId) == 44);
 
 }  // namespace gl41metal
