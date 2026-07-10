@@ -460,11 +460,13 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
           // consume the raster-quad scratch buffer, so it keeps the full count.
           WorkItem item;
           item.meshId = n.meshPtr;
-          item.quadBase = drawlistOutput ? section.a.w : quadBase;
+          // Metal mesh raster derives its source offsets from section metadata
+          // and ignores these two fields. Always preserve the traversal
+          // snapshot so direct GL opaque/translucent draws can use the same
+          // worklist even while shared-gbuffer fallback remains enabled.
+          item.quadBase = section.a.w;
           item.reserved =
-              drawlistOutput
-                  ? opaqueGroupMask | (section_fingerprint(section) << 8u)
-                  : 0u;
+              opaqueGroupMask | (section_fingerprint(section) << 8u);
           item.lodAndQuadCount =
               (n.lodLevel << 24) | min(accepted, 0x00ffffffu);
           worklist[w] = item;

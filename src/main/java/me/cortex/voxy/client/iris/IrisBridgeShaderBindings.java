@@ -168,7 +168,8 @@ public final class IrisBridgeShaderBindings {
       int uniformSize,
       LongConsumer uniformUpdater,
       Runnable resourceBinder,
-      IntConsumer programSetup) {}
+      IntConsumer programSetup,
+      int samplerCount) {}
 
   public static Bindings build(
       IrisRenderingPipeline pipeline,
@@ -246,7 +247,8 @@ public final class IrisBridgeShaderBindings {
         capturedUniforms == null ? 0 : capturedUniforms.size(),
         capturedUniforms == null ? ptr -> {} : capturedUniforms.updater(),
         binder,
-        programSetup);
+        programSetup,
+        capturedImageSet == null ? 0 : capturedImageSet.samplerNames().length);
   }
 
   private static String convertToGlslType(UniformType type) {

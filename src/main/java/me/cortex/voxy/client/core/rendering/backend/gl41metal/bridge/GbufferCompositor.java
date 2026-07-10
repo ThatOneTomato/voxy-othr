@@ -13,6 +13,7 @@ import static org.lwjgl.opengl.GL11C.GL_LEQUAL;
 import static org.lwjgl.opengl.GL11C.GL_NEAREST;
 import static org.lwjgl.opengl.GL11C.GL_NONE;
 import static org.lwjgl.opengl.GL11C.GL_REPLACE;
+import static org.lwjgl.opengl.GL11C.GL_SCISSOR_TEST;
 import static org.lwjgl.opengl.GL11C.GL_STENCIL_BUFFER_BIT;
 import static org.lwjgl.opengl.GL11C.GL_STENCIL_TEST;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE;
@@ -146,14 +147,14 @@ final class GbufferCompositor {
   private int irisPrivateDepthTexture;
   private int irisPrivateDepthWidth;
   private int irisPrivateDepthHeight;
-  // Private depth-STENCIL used ONLY for the translucent near-coverage stencil mask. It is distinct
-  // from irisPrivateDepthTexture so the translucent pass never clobbers the opaque Voxy-NDC depth
-  // the pack still samples as vxDepthTexOpaque in its later composite/post passes. Its depth
-  // component is throwaway (the translucent composite does not depth-test distant layers - Metal
-  // already resolved their order back-to-front into tgbuffer0/1).
+  // Private depth-STENCIL for the translucent near-coverage mask. It is distinct from
+  // irisPrivateDepthTexture so the translucent pass never clobbers vxDepthTexOpaque. The old
+  // shared-gbuffer composite only uses its stencil; the direct drawlist path also stores actual
+  // translucent geometry depth here for vxDepthTexTrans.
   private int translucentMaskDepthStencil;
   private int translucentMaskWidth;
   private int translucentMaskHeight;
+  private boolean directTranslucentDepthValid;
 
   GbufferCompositor(BridgePrograms programs) {
     this.programs = programs;
@@ -191,6 +192,7 @@ final class GbufferCompositor {
       int sourceDepthHeight,
       boolean reverseDepth,
       boolean vanilla) {
+    this.directTranslucentDepthValid = false;
     if (vanilla) {
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, job.sourceFramebuffer());
       glViewport(0, 0, job.outputWidth(), job.outputHeight());
@@ -503,6 +505,31 @@ final class GbufferCompositor {
       return true;
     }
 
+    if (!this.prepareDirectIrisOpaque(
+        stack, job, sourceDepthTexture, sourceDepthWidth, sourceDepthHeight, reverseDepth)) {
+      return false;
+    }
+
+    colorProgram.shader().bind();
+    this.setReconstructionUniforms(stack, colorProgram, slot, job, voxyMvp, vanillaMvp);
+    this.bindGbufferTextures(slot);
+    this.bindShaderPackResources(job);
+
+    glBindVertexArray(this.fullscreenVao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    this.finishDirectIrisOpaque();
+    return true;
+  }
+
+  boolean prepareDirectIrisOpaque(
+      MemoryStack stack,
+      DistantBridgeJob job,
+      int sourceDepthTexture,
+      int sourceDepthWidth,
+      int sourceDepthHeight,
+      boolean reverseDepth) {
+    this.directTranslucentDepthValid = false;
     int privateDepth = this.ensureIrisPrivateDepth(job.outputWidth(), job.outputHeight());
     if (privateDepth == 0) {
       return false;
@@ -511,16 +538,13 @@ final class GbufferCompositor {
     if (maskShader == null) {
       return false;
     }
-    // Bind the bridge FBO with the Iris colour targets + our private depth-STENCIL attachment.
     if (!this.bindTargetFramebuffer(stack, job, privateDepth, true)) {
       return false;
     }
     glViewport(0, 0, job.outputWidth(), job.outputHeight());
+    glDisable(GL_SCISSOR_TEST);
 
-    // (1) Clear the private depth to the far value (1.0 = "no Voxy / non-LOD" sentinel for the
-    // pack)
-    // and the coverage stencil to 0. Colour is left untouched: the Iris targets already hold the
-    // near scene Sodium/Iris rendered.
+    // Keep the colour targets produced by Iris, but reset Voxy-only depth and near coverage.
     glDepthMask(true);
     glStencilMask(0xFF);
     glColorMask(false, false, false, false);
@@ -528,8 +552,6 @@ final class GbufferCompositor {
     glClearStencil(0);
     glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-    // (2) Coverage mask pass: stencil := 1 wherever the near scene has geometry (near depth is not
-    // sky). Discarded (sky) pixels keep stencil 0. Depth/colour writes stay off.
     glDisable(GL_DEPTH_TEST);
     glDepthMask(false);
     glEnable(GL_STENCIL_TEST);
@@ -545,17 +567,6 @@ final class GbufferCompositor {
     glBindVertexArray(this.fullscreenVao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
-    // No loaded-volume bound clip for opaque: the near-coverage stencil above already occludes
-    // distant opaque pixel-wise wherever near geometry exists, and distant opaque harmlessly fills
-    // gaps behind near cutout blocks. The coarse per-section bound is reserved for translucent
-    // water
-    // (which writes no opaque depth). See runTranslucentPass / buildFragmentShader.
-
-    // (3) Colour pass: shade distant terrain only where the near scene is empty (stencil==0). The
-    // private depth is non-reverse Voxy NDC with far=1.0, so depth test is always GL_LEQUAL here
-    // regardless of the host's reverse-Z state (it only orders overlapping distant fragments). The
-    // colour program writes gl_FragDepth = g.depth (Voxy NDC) into the private depth (see
-    // GLSL_COLOR_MAIN_NO_MASK), which is exactly what the pack samples as vxDepthTex*.
     boolean colorWrite = job.colorWriteEnabled();
     glColorMask(colorWrite, colorWrite, colorWrite, colorWrite);
     glEnable(GL_DEPTH_TEST);
@@ -565,20 +576,122 @@ final class GbufferCompositor {
     glStencilFunc(GL_EQUAL, 0, 0xFF);
     glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
     glDisable(GL_BLEND);
+    return true;
+  }
 
-    colorProgram.shader().bind();
-    this.setReconstructionUniforms(stack, colorProgram, slot, job, voxyMvp, vanillaMvp);
-    this.bindGbufferTextures(slot);
+  void bindDirectIrisResources(DistantBridgeJob job) {
     this.bindShaderPackResources(job);
+  }
 
-    glBindVertexArray(this.fullscreenVao);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-    // StateSnapshot.restore() does not track stencil state, so leave it disabled with a default
-    // mask for the rest of the host frame.
+  void finishDirectIrisOpaque() {
     glDisable(GL_STENCIL_TEST);
     glStencilMask(0xFF);
+  }
+
+  boolean prepareDirectIrisTranslucent(
+      MemoryStack stack,
+      DistantBridgeJob job,
+      int sourceDepthTexture,
+      int sourceDepthWidth,
+      int sourceDepthHeight,
+      boolean reverseDepth) {
+    int translucentDepth = this.ensureTranslucentMaskDepth(job.outputWidth(), job.outputHeight());
+    if (translucentDepth == 0
+        || this.irisPrivateDepthTexture == 0
+        || !this.copyIrisOpaqueDepthToTranslucent(
+            job.outputWidth(), job.outputHeight(), translucentDepth)) {
+      return false;
+    }
+    var maskShader = this.programs.stencilMask();
+    if (maskShader == null || !this.bindTargetFramebuffer(stack, job, translucentDepth, true)) {
+      return false;
+    }
+    glViewport(0, 0, job.outputWidth(), job.outputHeight());
+    glDisable(GL_SCISSOR_TEST);
+
+    // Preserve the copied opaque depth but rebuild coverage from the current noTranslucents depth.
+    glColorMask(false, false, false, false);
+    glDepthMask(false);
+    glStencilMask(0xFF);
+    glClearStencil(0);
+    glClear(GL_STENCIL_BUFFER_BIT);
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glEnable(GL_STENCIL_TEST);
+    glStencilFunc(GL_ALWAYS, 1, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+    maskShader.shader().bind();
+    glUniform1i(maskShader.nearDepthUniform(), SOURCE_DEPTH_TEXTURE_UNIT);
+    glUniform2f(maskShader.nearSizeUniform(), sourceDepthWidth, sourceDepthHeight);
+    glUniform2f(maskShader.targetSizeUniform(), job.outputWidth(), job.outputHeight());
+    glUniform1i(maskShader.reverseDepthUniform(), reverseDepth ? 1 : 0);
+    this.bind2DTexture(SOURCE_DEPTH_TEXTURE_UNIT, sourceDepthTexture);
+    glBindVertexArray(this.fullscreenVao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    this.directTranslucentDepthValid = true;
     return true;
+  }
+
+  void beginDirectIrisTranslucentColor(DistantBridgeJob job) {
+    boolean colorWrite = job.colorWriteEnabled();
+    glColorMask(colorWrite, colorWrite, colorWrite, colorWrite);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(true);
+    glStencilMask(0x00);
+    glStencilFunc(GL_EQUAL, 0, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glEnable(GL_BLEND);
+    org.lwjgl.opengl.GL14C.glBlendFuncSeparate(
+        org.lwjgl.opengl.GL11C.GL_SRC_ALPHA,
+        org.lwjgl.opengl.GL11C.GL_ONE_MINUS_SRC_ALPHA,
+        org.lwjgl.opengl.GL11C.GL_ONE,
+        org.lwjgl.opengl.GL11C.GL_ONE_MINUS_SRC_ALPHA);
+    job.blendSetup().run();
+    this.bindShaderPackResources(job);
+  }
+
+  void finishDirectIrisTranslucent() {
+    glDisable(GL_STENCIL_TEST);
+    glStencilMask(0xFF);
+  }
+
+  private boolean copyIrisOpaqueDepthToTranslucent(int width, int height, int translucentDepth) {
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, this.depthCopyFramebuffer);
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2D(
+        GL_READ_FRAMEBUFFER,
+        GL_DEPTH_STENCIL_ATTACHMENT,
+        GL_TEXTURE_2D,
+        this.irisPrivateDepthTexture,
+        0);
+    glReadBuffer(GL_NONE);
+    boolean readComplete = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, this.nearDepthFramebuffer);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2D(
+        GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, translucentDepth, 0);
+    org.lwjgl.opengl.GL11C.glDrawBuffer(GL_NONE);
+    boolean drawComplete = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    if (readComplete && drawComplete) {
+      glBlitFramebuffer(
+          0,
+          0,
+          width,
+          height,
+          0,
+          0,
+          width,
+          height,
+          GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT,
+          GL_NEAREST);
+    }
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2D(
+        GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, this.nearDepthTexture, 0);
+    return readComplete && drawComplete;
   }
 
   /**
@@ -765,16 +878,21 @@ final class GbufferCompositor {
     return this.irisPrivateDepthTexture;
   }
 
-  /** See {@link DistantTerrainBridge#voxyDistantDepthTextureId()}. */
-  int irisPrivateDepthTextureId() {
+  int irisOpaqueDepthTextureId() {
     return this.irisPrivateDepthTexture;
+  }
+
+  int irisTranslucentDepthTextureId() {
+    return this.directTranslucentDepthValid
+        ? this.translucentMaskDepthStencil
+        : this.irisPrivateDepthTexture;
   }
 
   /**
    * Lazily (re)allocates the translucent pass's private depth-STENCIL attachment. Distinct from
    * {@link #irisPrivateDepthTexture} so the translucent stencil mask never clobbers the opaque
-   * Voxy-NDC depth the pack samples as vxDepthTexOpaque. Only the stencil component is used (the
-   * near-coverage mask); the depth component is throwaway.
+   * Voxy-NDC depth the pack samples as vxDepthTexOpaque. The stencil stores the near-coverage mask;
+   * the direct drawlist path also writes translucent geometry depth for vxDepthTexTrans.
    */
   private int ensureTranslucentMaskDepth(int width, int height) {
     if (width <= 0 || height <= 0) {

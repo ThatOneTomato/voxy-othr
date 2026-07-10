@@ -20,6 +20,8 @@ public record ShaderPatchBridgePayload(
     int uniformBufferBytes,
     LongConsumer uniformUpdater,
     String opaqueFragmentPatch,
+    String vertexTaaPatch,
+    int packSamplerCount,
     Runnable blendSetup,
     Runnable resourceBinder,
     IntConsumer programSetup) {
@@ -34,6 +36,8 @@ public record ShaderPatchBridgePayload(
     shaderHeader = shaderHeader == null ? "" : shaderHeader;
     uniformUpdater = uniformUpdater == null ? NOOP_UNIFORM_UPDATER : uniformUpdater;
     opaqueFragmentPatch = opaqueFragmentPatch == null ? "" : opaqueFragmentPatch;
+    vertexTaaPatch = vertexTaaPatch == null ? "{ return vec2(0.0); }" : vertexTaaPatch;
+    packSamplerCount = Math.max(0, packSamplerCount);
     blendSetup = blendSetup == null ? NOOP : blendSetup;
     resourceBinder = resourceBinder == null ? NOOP : resourceBinder;
     programSetup = programSetup == null ? NOOP_PROGRAM_SETUP : programSetup;
@@ -55,6 +59,8 @@ public record ShaderPatchBridgePayload(
         0,
         NOOP_UNIFORM_UPDATER,
         "",
+        "{ return vec2(0.0); }",
+        0,
         NOOP,
         NOOP,
         NOOP_PROGRAM_SETUP);
@@ -73,6 +79,8 @@ public record ShaderPatchBridgePayload(
       int uniformBufferBytes,
       LongConsumer uniformUpdater,
       String opaqueFragmentPatch,
+      String vertexTaaPatch,
+      int packSamplerCount,
       Runnable blendSetup,
       Runnable resourceBinder,
       IntConsumer programSetup) {
@@ -91,6 +99,8 @@ public record ShaderPatchBridgePayload(
         uniformBufferBytes,
         uniformUpdater,
         opaqueFragmentPatch,
+        vertexTaaPatch,
+        packSamplerCount,
         blendSetup,
         resourceBinder,
         programSetup);
@@ -101,7 +111,12 @@ public record ShaderPatchBridgePayload(
   }
 
   public int shaderKey() {
-    return Objects.hash(this.shaderHeader, this.opaqueFragmentPatch, this.targetCount());
+    return Objects.hash(
+        this.shaderHeader,
+        this.opaqueFragmentPatch,
+        this.vertexTaaPatch,
+        this.packSamplerCount,
+        this.targetCount());
   }
 
   @Override

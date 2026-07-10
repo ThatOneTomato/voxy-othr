@@ -28,11 +28,9 @@ public class VoxySamplers {
       }
 
       // Backends that own a private distant-depth target (the GL41Metal bridge) report it via
-      // VoxyRenderBackend.voxyDistantDepthTextureId(); prefer it so shader packs see the
-      // combined near+far distant depth. Until a translucent distant pass exists, opaque and
-      // translucent share the single private depth (the opaque one). Backends returning 0
-      // (GL46) keep the gl46 IrisVoxyRenderPipeline private fb depth path below, falling back
-      // to the Iris depth targets when that pipeline does not exist either.
+      // Prefer backend-owned opaque/translucent depth textures so shader packs see the same split
+      // Voxy depth contract as GL46's fb/fbTranslucent pair. Backends returning 0 keep the GL46
+      // IrisVoxyRenderPipeline path below, falling back to Iris depth targets before first draw.
       IntSupplier gl46Opaque =
           () -> {
             var pipeData = ((IrisVoxyPipelineDataAccess) pipeline).voxy$getPipelineData();
@@ -61,20 +59,24 @@ public class VoxySamplers {
       // depth textures are sampled with their own texture parameters instead of a forced
       // sampler object. Keep that exact behaviour.
       samplers.addDynamicSampler(
-          () -> voxyDistantDepthOr(gl46Opaque, gl41MetalOpaqueFallback), opaqueNames);
+          () -> voxyDistantDepthOr(true, gl46Opaque, gl41MetalOpaqueFallback), opaqueNames);
       samplers.addDynamicSampler(
-          () -> voxyDistantDepthOr(gl46Translucent, gl41MetalTranslucentFallback),
+          () -> voxyDistantDepthOr(false, gl46Translucent, gl41MetalTranslucentFallback),
           translucentNames);
     }
   }
 
-  private static int voxyDistantDepthOr(IntSupplier gl46Path, IntSupplier gl41MetalFallback) {
+  private static int voxyDistantDepthOr(
+      boolean opaque, IntSupplier gl46Path, IntSupplier gl41MetalFallback) {
     try {
       VoxyRenderSystem voxy = VoxyRenderSystemAccess.getNullable();
       if (voxy == null) {
         return gl46Path.getAsInt();
       }
-      int tex = voxy.getVoxyDistantDepthTextureId();
+      int tex =
+          opaque
+              ? voxy.getVoxyDistantOpaqueDepthTextureId()
+              : voxy.getVoxyDistantTranslucentDepthTextureId();
       if (tex != 0) {
         return tex;
       }

@@ -177,13 +177,18 @@ public class VoxyRenderSystem {
   }
 
   /**
-   * GL texture id of the active backend's Voxy distant-terrain depth target (combined near+far,
-   * sampled as {@code .r} for [0,1] depth), or 0 if the backend doesn't expose one. Used by {@code
-   * MixinIrisSamplers} to bind {@code vxDepthTexOpaque} / {@code vxDepthTexTrans}; callers fall
-   * back to the Iris depth target when this is 0.
+   * GL texture id of the active backend's opaque Voxy distant-terrain depth target, sampled as
+   * {@code .r} for [0,1] depth, or 0 if the backend does not expose one. Used by {@code
+   * MixinIrisSamplers} to bind {@code vxDepthTexOpaque}; callers fall back to the Iris depth target
+   * when this is 0.
    */
-  public int getVoxyDistantDepthTextureId() {
-    return this.backend.voxyDistantDepthTextureId();
+  public int getVoxyDistantOpaqueDepthTextureId() {
+    return this.backend.voxyDistantOpaqueDepthTextureId();
+  }
+
+  /** Translucent depth target bound to {@code vxDepthTexTrans}; 0 selects the Iris fallback. */
+  public int getVoxyDistantTranslucentDepthTextureId() {
+    return this.backend.voxyDistantTranslucentDepthTextureId();
   }
 
   public RenderBackendId getRenderBackendId() {

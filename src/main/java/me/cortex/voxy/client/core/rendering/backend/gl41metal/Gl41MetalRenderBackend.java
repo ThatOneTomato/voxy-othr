@@ -50,6 +50,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   private String loggedStrictBridgeUnavailableReason = "";
   private String loggedStrictTranslucentUnavailableReason = "";
   private boolean loggedMissingMatrices;
+  private boolean irisDirectPipelineReady;
   // Plan A slot lifecycle for distant translucent water. The opaque pass (PRE_TRANSLUCENT at Iris
   // beginHand RETURN) and the translucent pass (TRANSLUCENT at beginTranslucents RETURN) sample the
   // SAME shared slot within one frame, so PRE_TRANSLUCENT holds the slot (does not retire it) and
@@ -102,7 +103,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       RenderStage stage, RenderStageContext context, RenderFrame frame) {
     return switch (stage) {
       case FRAME_BEGIN -> {
-        if (this.useDirectDrawlistOpaque()) {
+        if (this.useDirectDrawlist() && !context.shaderPackActive()) {
           yield frame;
         }
         yield this.submitMetalFrame(context.frameContext());
@@ -114,7 +115,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
         if (context.shaderPackActive() || frame != null) {
           yield frame;
         }
-        if (this.useDirectDrawlistOpaque()) {
+        if (this.useDirectDrawlist()) {
           yield frame;
         }
         yield this.submitMetalFrame(context.frameContext());
@@ -124,7 +125,15 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           yield frame;
         }
         // Hold the sampled slot so the TRANSLUCENT stage can reuse it for the distant water pass.
-        this.sampleFrame(frame, context, true);
+        ShaderPatchBridgePayload payload =
+            context.payload() instanceof ShaderPatchBridgePayload p ? p : null;
+        if (this.drawlistOpaqueRenderer != null
+            && payload != null
+            && payload.strictBridgeAvailable()) {
+          this.sampleDrawlistIrisOpaque(frame, context.frameContext(), payload);
+        } else {
+          this.sampleFrame(frame, context, true);
+        }
         yield frame;
       }
       // Distant translucent (water/glass) composite at Iris beginTranslucents RETURN. Reuses the
@@ -133,7 +142,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       case TRANSLUCENT -> {
         if (context.shaderPackActive()) {
           this.sampleTranslucent(context);
-        } else if (this.useDirectDrawlistOpaque()) {
+        } else if (this.useDirectDrawlist()) {
           this.sampleDrawlistTranslucent(context);
         } else {
           this.releaseHeldTranslucentSlot();
@@ -148,7 +157,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
         if (renderFrame == null) {
           renderFrame = this.submitMetalFrame(context.frameContext());
         }
-        if (this.useDirectDrawlistOpaque()) {
+        if (this.useDirectDrawlist()) {
           this.sampleDrawlistOpaque(renderFrame, context.frameContext());
         } else {
           this.sampleFrame(renderFrame, context, false);
@@ -217,19 +226,20 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
 
   @Override
   public void renderOpaque(RenderFrame frame) {
-    if (this.useDirectDrawlistOpaque()) {
+    if (this.useDirectDrawlist()) {
       this.sampleDrawlistOpaque(frame, null);
     } else {
       this.sampleFrame(frame);
     }
   }
 
-  private boolean useDirectDrawlistOpaque() {
-    return this.drawlistOpaqueRenderer != null && !IrisUtil.irisShaderPackEnabled();
+  private boolean useDirectDrawlist() {
+    return this.drawlistOpaqueRenderer != null
+        && (!IrisUtil.irisShaderPackEnabled() || this.irisDirectPipelineReady);
   }
 
   private int submitOutputMode() {
-    return this.useDirectDrawlistOpaque()
+    return this.useDirectDrawlist()
         ? NativeBindings.OUTPUT_MODE_DRAWLIST
         : NativeBindings.OUTPUT_MODE_SHARED_GBUFFER;
   }
@@ -286,6 +296,75 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           this.config.visibleComposite(),
           this.profiler);
       if (slotHasTranslucent) {
+        this.heldTranslucentSlot = sampleSlot;
+        this.heldTranslucentFrame = gl41MetalFrame;
+        this.heldTranslucentContext = renderContext;
+        held = true;
+      }
+    } finally {
+      if (!held) {
+        this.slotScheduler.queueSampledSlotRetirement(this.gbuffer, sampleSlot);
+      }
+    }
+  }
+
+  private void sampleDrawlistIrisOpaque(
+      RenderFrame frame, RenderFrameContext stageContext, ShaderPatchBridgePayload bridgePayload) {
+    if (frame == null || this.drawlistOpaqueRenderer == null || this.gbuffer == null) {
+      return;
+    }
+    if (!(frame instanceof Frame gl41MetalFrame)) {
+      throw new IllegalArgumentException(
+          "Cannot render frame for backend " + frame.backendId() + " with GL41Metal backend");
+    }
+    RenderFrameContext renderContext =
+        stageContext == null ? gl41MetalFrame.context() : stageContext;
+    long tWait = this.profiler.begin();
+    int sampleSlot =
+        this.slotScheduler.selectSlotForSampling(this.gbuffer, gl41MetalFrame.writeSlot());
+    this.profiler.recordSlotWait(tWait);
+    if (sampleSlot < 0) {
+      return;
+    }
+    boolean slotHasTranslucent =
+        NativeBindings.isSlotTranslucentValid(this.gbuffer.nativeHandle(), sampleSlot);
+    boolean held = false;
+    try {
+      DistantRenderer.FrameMatrices drawMatrices =
+          DistantRenderer.computeFrameMatrices(renderContext);
+      this.currentBound =
+          slotHasTranslucent
+              ? this.renderCurrentBound(drawMatrices.drawMvp(), renderContext)
+              : LoadedVolumeBound.DISABLED;
+      boolean directRendered =
+          this.drawlistOpaqueRenderer.renderIrisOpaque(
+              this.gbuffer.nativeHandle(),
+              sampleSlot,
+              renderContext,
+              drawMatrices.drawMvp(),
+              drawMatrices.vanillaDrawMvp(),
+              bridgePayload,
+              this.bridge,
+              this.config.visibleComposite(),
+              this.profiler);
+      boolean rendered = directRendered;
+      if (!rendered && this.gbuffer.sharedTexturesEnabled()) {
+        long tBridge = this.profiler.begin();
+        rendered =
+            this.bridge.render(
+                renderContext,
+                this.gbuffer.slot(sampleSlot),
+                DistantTerrainBridge.irisJob(bridgePayload),
+                gl41MetalFrame.drawMvp(),
+                gl41MetalFrame.vanillaDrawMvp());
+        this.profiler.recordBridgeOpaque(tBridge);
+      } else if (!rendered) {
+        this.irisDirectPipelineReady = false;
+      }
+      // Hold a successful direct slot even when this frame has no translucent quads. The later
+      // stage still needs to compile/validate the pack's translucent program before subsequent
+      // frames can safely switch Metal to traversal-only output.
+      if (directRendered || (rendered && slotHasTranslucent)) {
         this.heldTranslucentSlot = sampleSlot;
         this.heldTranslucentFrame = gl41MetalFrame;
         this.heldTranslucentContext = renderContext;
@@ -409,13 +488,33 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       if (payload != null && payload.strictBridgeAvailable()) {
         RenderFrameContext renderContext =
             context.frameContext() != null ? context.frameContext() : this.heldTranslucentContext;
-        this.bridge.renderTranslucent(
-            renderContext,
-            this.gbuffer.slot(slot),
-            DistantTerrainBridge.translucentJob(payload),
-            this.heldTranslucentFrame.drawMvp(),
-            this.heldTranslucentFrame.vanillaDrawMvp(),
-            this.currentBound);
+        boolean rendered =
+            this.drawlistOpaqueRenderer != null
+                && this.drawlistOpaqueRenderer.renderIrisTranslucent(
+                    this.gbuffer.nativeHandle(),
+                    slot,
+                    renderContext,
+                    this.heldTranslucentFrame.drawMvp(),
+                    this.heldTranslucentFrame.vanillaDrawMvp(),
+                    this.currentBound,
+                    payload,
+                    this.bridge,
+                    this.config.visibleComposite(),
+                    this.profiler);
+        if (rendered) {
+          this.irisDirectPipelineReady = true;
+        } else if (this.gbuffer.sharedTexturesEnabled()) {
+          this.irisDirectPipelineReady = false;
+          this.bridge.renderTranslucent(
+              renderContext,
+              this.gbuffer.slot(slot),
+              DistantTerrainBridge.translucentJob(payload),
+              this.heldTranslucentFrame.drawMvp(),
+              this.heldTranslucentFrame.vanillaDrawMvp(),
+              this.currentBound);
+        } else {
+          this.irisDirectPipelineReady = false;
+        }
       } else if (payload != null
           && !payload.unavailableReason().isEmpty()
           && !payload.unavailableReason().equals(this.loggedStrictTranslucentUnavailableReason)) {
@@ -423,6 +522,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
         Logger.info(
             "Voxy GL41Metal Iris strict translucent bridge unavailable: "
                 + payload.unavailableReason());
+        this.irisDirectPipelineReady = false;
       }
     } finally {
       this.profiler.recordBridgeTranslucent(tTrans);
@@ -515,8 +615,10 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     debug.add(
         "Voxy GL41Metal status: pipeline="
             + this.config.pipelineMode()
-            + ", directDrawlistOpaque="
-            + this.useDirectDrawlistOpaque());
+            + ", directDrawlist="
+            + this.useDirectDrawlist()
+            + ", irisDirectReady="
+            + this.irisDirectPipelineReady);
     debug.add("Voxy GL41Metal selection: " + this.context.selection().reason());
     debug.add("Voxy GL41Metal config: " + this.config);
     if (this.gbuffer != null) {
@@ -533,8 +635,13 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   }
 
   @Override
-  public int voxyDistantDepthTextureId() {
-    return this.bridge.voxyDistantDepthTextureId();
+  public int voxyDistantOpaqueDepthTextureId() {
+    return this.bridge.voxyDistantOpaqueDepthTextureId();
+  }
+
+  @Override
+  public int voxyDistantTranslucentDepthTextureId() {
+    return this.bridge.voxyDistantTranslucentDepthTextureId();
   }
 
   @Override
@@ -580,11 +687,16 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     if (width <= 0 || height <= 0) {
       throw new IllegalArgumentException("Invalid GL41Metal viewport size " + width + "x" + height);
     }
-    boolean sharedTexturesEnabled = !this.useDirectDrawlistOpaque();
+    // Once allocated, keep the IOSurface textures for the lifetime of this native context. Iris
+    // starts in shared mode so incompatible/reloading pack shaders have a fallback; after both
+    // direct programs validate we switch only the submit output mode to DRAWLIST. Hot-removing the
+    // textures here races the just-retired shared slot on Apple GL and can stall the render thread.
+    // Keeping them allocated has no per-frame bandwidth cost when Metal no longer writes them.
+    boolean sharedTexturesEnabled = !this.useDirectDrawlist() || IrisUtil.irisShaderPackEnabled();
     if (this.gbuffer != null
         && this.gbuffer.width() == width
         && this.gbuffer.height() == height
-        && this.gbuffer.sharedTexturesEnabled() == sharedTexturesEnabled) {
+        && (this.gbuffer.sharedTexturesEnabled() || !sharedTexturesEnabled)) {
       return;
     }
     if (this.gbuffer != null) {

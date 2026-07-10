@@ -1,7 +1,9 @@
 #version 410 core
 
 uniform mat4 uVoxyMvp;
+#ifndef IRIS_DIRECT
 uniform mat4 uVanillaMvp;
+#endif
 uniform float uEarthRadius;
 uniform ivec3 uBaseSectionFrame;
 uniform usamplerBuffer uGeometryQuads;
@@ -9,15 +11,28 @@ uniform usamplerBuffer uSectionMeta;
 uniform usamplerBuffer uModelBuffer;
 uniform usamplerBuffer uModelColours;
 uniform usamplerBuffer uQuadSectionIds;
+#ifndef IRIS_DIRECT
 uniform sampler2D uLightmapTex;
+#endif
 uniform vec4 uFaceShade;
 uniform float uFaceShadeX;
 
+#ifdef IRIS_DIRECT
+vec2 taaShift();
+//__VOXY_IRIS_HEADER__
+#endif
+
 layout(location = 0) out vec2 vUv;
+#ifndef IRIS_DIRECT
 layout(location = 1) out vec3 vFogPos;
+#endif
 layout(location = 2) flat out uvec4 vData;
+#if !defined(IRIS_DIRECT) || defined(IRIS_BOUND_PASS)
 layout(location = 3) noperspective out float vVoxyDepth;
+#endif
+#ifndef IRIS_DIRECT
 layout(location = 4) flat out uint vLightPacked;
+#endif
 
 const uint MODEL_COUNT = 65536u;
 
@@ -164,10 +179,16 @@ uint packRGBA(vec4 colour) {
 void emitSkipped() {
   gl_Position = vec4(2.0, 2.0, 1.0, 1.0);
   vUv = vec2(0.0);
+#ifndef IRIS_DIRECT
   vFogPos = vec3(0.0);
+#endif
   vData = uvec4(0u);
+#if !defined(IRIS_DIRECT) || defined(IRIS_BOUND_PASS)
   vVoxyDepth = 1.0;
+#endif
+#ifndef IRIS_DIRECT
   vLightPacked = 0u;
+#endif
 }
 
 void main() {
@@ -225,11 +246,21 @@ void main() {
 
   point = applyWorldCurvature(point);
   vec4 voxyClip = uVoxyMvp * vec4(point, 1.0);
+#ifdef IRIS_DIRECT
+  voxyClip.xy += taaShift() * voxyClip.w;
+#endif
+#ifdef IRIS_DIRECT
+  float voxyNdcDepth = clamp(voxyClip.z / voxyClip.w, -1.0, 1.0 - 2.0 / 16777215.0);
+  gl_Position = vec4(voxyClip.xy, voxyNdcDepth * voxyClip.w, voxyClip.w);
+#else
   vec4 vanillaClip = uVanillaMvp * vec4(point, 1.0);
   float vanillaNdcDepth = vanillaClip.z / vanillaClip.w;
   vanillaNdcDepth = clamp(vanillaNdcDepth, -1.0, 1.0 - 2.0 / 16777215.0);
   gl_Position = vec4(voxyClip.xy, vanillaNdcDepth * voxyClip.w, voxyClip.w);
+#endif
+#if !defined(IRIS_DIRECT) || defined(IRIS_BOUND_PASS)
   vVoxyDepth = clamp(voxyClip.z / voxyClip.w * 0.5 + 0.5, 0.0, 1.0);
+#endif
 
   uint tintState = (faceData >> 24u) & 3u;
   uint tintPacked = 0xffffffffu;
@@ -244,7 +275,9 @@ void main() {
   }
 
   vUv = fSize.xz + quadSizeAdd * corner01;
+#ifndef IRIS_DIRECT
   vFogPos = point;
+#endif
   uint useDiscard =
       ((faceData >> 22u) & 1u) |
       ((any(greaterThan(qSize, uvec2(1u))) ? 1u : 0u) & ((faceData >> 23u) & 1u));
@@ -256,6 +289,7 @@ void main() {
           tintPacked,
           modelId | (extractLightId(quad) << 16u),
           customId);
+#ifndef IRIS_DIRECT
   vLightPacked = 0u;
   if (corner == 1u) {
     uint lightRaw = extractLightId(quad);
@@ -264,4 +298,5 @@ void main() {
     light.rgb *= faceTint(shaded, face);
     vLightPacked = packRGBA(light);
   }
+#endif
 }

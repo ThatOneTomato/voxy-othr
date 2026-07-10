@@ -161,6 +161,8 @@ public class IrisUtil {
         bindings.uniformSize(),
         bindings.uniformUpdater(),
         patch.getPatchOpaqueSource(),
+        patch.getTAAShift(),
+        bindings.samplerCount(),
         patch.createBlendSetup(),
         bindings.resourceBinder(),
         bindings.programSetup());
@@ -222,6 +224,8 @@ public class IrisUtil {
         // The payload's "opaqueFragmentPatch" slot is the generic fragment patch the bridge embeds;
         // for the translucent job it carries the pack's translucent (gbuffers_water) patch.
         translucentPatch,
+        patch.getTAAShift(),
+        bindings.samplerCount(),
         patch.createBlendSetup(),
         bindings.resourceBinder(),
         bindings.programSetup());

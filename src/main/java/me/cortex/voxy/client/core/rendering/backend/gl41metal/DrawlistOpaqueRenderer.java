@@ -88,6 +88,9 @@ import static org.lwjgl.opengl.GL15C.glGenQueries;
 import static org.lwjgl.opengl.GL15C.glGetQueryObjecti;
 import static org.lwjgl.opengl.GL15C.nglBufferSubData;
 import static org.lwjgl.opengl.GL20C.GL_CURRENT_PROGRAM;
+import static org.lwjgl.opengl.GL20C.GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS;
+import static org.lwjgl.opengl.GL20C.GL_MAX_TEXTURE_IMAGE_UNITS;
+import static org.lwjgl.opengl.GL20C.GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS;
 import static org.lwjgl.opengl.GL20C.glGetUniformLocation;
 import static org.lwjgl.opengl.GL20C.glUniform1f;
 import static org.lwjgl.opengl.GL20C.glUniform1i;
@@ -141,12 +144,17 @@ import me.cortex.voxy.client.core.gl.shader.ShaderLoader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
 import me.cortex.voxy.client.core.model.ModelFactory;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameContext;
+import me.cortex.voxy.client.core.rendering.backend.ShaderPatchBridgePayload;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.BridgePrograms;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantBridgeJob;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.DistantTerrainBridge;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.FogCapture;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.MaterialStore;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.TerrainResources;
 import me.cortex.voxy.client.core.rendering.util.LightMapHelper;
+import me.cortex.voxy.client.iris.IrisBridgeShaderBindings;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import net.minecraft.client.Minecraft;
@@ -175,6 +183,8 @@ final class DrawlistOpaqueRenderer
   private static final int QUAD_SECTION_UNIT = 6;
   private static final int NEAR_DEPTH_UNIT = 7;
   private static final int BOUND_DEPTH_UNIT = 8;
+  private static final int IRIS_VERTEX_BUFFER_UNIT_BASE = 16;
+  private static final int IRIS_VERTEX_SAMPLER_COUNT = 5;
   private static final boolean ENABLE_DRAW_GPU_TIMER =
       Boolean.parseBoolean(System.getProperty("voxy.gl41metal.drawGpuTimer", "true"));
   private static final int MAX_RANGE_LIMIT =
@@ -271,6 +281,10 @@ final class DrawlistOpaqueRenderer
   private final GpuTimer translucentDrawGpuTimer = new GpuTimer(GpuTimer.Phase.TRANSLUCENT);
   private final int maxSections;
   private final long geometryCapacityBytes;
+  private DirectIrisProgram irisOpaqueProgram;
+  private DirectIrisTranslucentProgram irisTranslucentProgram;
+  private int failedIrisOpaqueShaderKey = Integer.MIN_VALUE;
+  private int failedIrisTranslucentShaderKey = Integer.MIN_VALUE;
   private int rangeCapacity = INITIAL_RANGE_CAPACITY;
   private MemoryBuffer rangeCommandBuffer;
   private MemoryBuffer quadSectionScratch;
@@ -458,9 +472,61 @@ final class DrawlistOpaqueRenderer
     StateSnapshot state = StateSnapshot.capture();
     try (MemoryStack stack = MemoryStack.stackPush()) {
       return this.renderRanges(
-          nativeHandle, slot, context, drawMvp, vanillaDrawMvp, colorWriteEnabled, profiler, stack);
+          nativeHandle,
+          slot,
+          context,
+          drawMvp,
+          vanillaDrawMvp,
+          colorWriteEnabled,
+          profiler,
+          stack,
+          null,
+          null,
+          null,
+          false);
     } finally {
       state.restore();
+    }
+  }
+
+  boolean renderIrisOpaque(
+      long nativeHandle,
+      int slot,
+      RenderFrameContext context,
+      Matrix4fc drawMvp,
+      Matrix4fc vanillaDrawMvp,
+      ShaderPatchBridgePayload payload,
+      DistantTerrainBridge bridge,
+      boolean colorWriteEnabled,
+      FrameProfiler profiler) {
+    if (payload == null || !payload.strictBridgeAvailable() || bridge == null) {
+      return false;
+    }
+    DirectIrisProgram program = this.irisProgramFor(payload);
+    if (program == null) {
+      return false;
+    }
+    StateSnapshot state = StateSnapshot.capture();
+    IrisStencilState stencilState = IrisStencilState.capture(state.stencilEnabled);
+    IrisTextureState textureState = IrisTextureState.capture(payload.packSamplerCount());
+    try (MemoryStack stack = MemoryStack.stackPush()) {
+      return this.renderRanges(
+          nativeHandle,
+          slot,
+          context,
+          drawMvp,
+          vanillaDrawMvp,
+          colorWriteEnabled,
+          profiler,
+          stack,
+          program,
+          payload,
+          bridge,
+          state.depthFunc == GL_GEQUAL || state.depthFunc == GL_GREATER);
+    } finally {
+      textureState.restore();
+      state.restore();
+      stencilState.restore();
     }
   }
 
@@ -472,7 +538,11 @@ final class DrawlistOpaqueRenderer
       Matrix4fc vanillaDrawMvp,
       boolean colorWriteEnabled,
       FrameProfiler profiler,
-      MemoryStack stack) {
+      MemoryStack stack,
+      DirectIrisProgram irisProgram,
+      ShaderPatchBridgePayload irisPayload,
+      DistantTerrainBridge bridge,
+      boolean reverseDepth) {
     long tBuild = profiler.begin();
     this.ensureRangeCommandBuffer(this.rangeCapacity);
     var counters = stack.mallocLong(9);
@@ -507,9 +577,23 @@ final class DrawlistOpaqueRenderer
               + " ranges; grew to "
               + this.rangeCapacity
               + " and skipped this frame");
+      if (irisProgram != null) {
+        long tRaster = profiler.begin();
+        boolean prepared =
+            this.prepareEmptyIrisOpaqueTarget(stack, irisPayload, bridge, reverseDepth);
+        profiler.recordDrawlistOpaqueRaster(tRaster);
+        return prepared;
+      }
       return false;
     }
     if (rangeCount <= 0 || rangeQuads <= 0) {
+      if (irisProgram != null) {
+        long tRaster = profiler.begin();
+        boolean prepared =
+            this.prepareEmptyIrisOpaqueTarget(stack, irisPayload, bridge, reverseDepth);
+        profiler.recordDrawlistOpaqueRaster(tRaster);
+        return prepared;
+      }
       return false;
     }
     long maxRangeQuads = counters.get(3);
@@ -518,13 +602,49 @@ final class DrawlistOpaqueRenderer
     }
 
     long tRaster = profiler.begin();
-    this.drawRanges(
-        context, drawMvp, vanillaDrawMvp, colorWriteEnabled, rangeCount, stack, profiler);
+    if (irisProgram == null) {
+      this.drawRanges(
+          context, drawMvp, vanillaDrawMvp, colorWriteEnabled, rangeCount, stack, profiler);
+    } else {
+      DistantBridgeJob job = DistantTerrainBridge.irisJob(irisPayload);
+      if (!bridge.prepareDirectIrisOpaque(stack, job, reverseDepth)) {
+        profiler.recordDrawlistOpaqueRaster(tRaster);
+        return false;
+      }
+      try {
+        this.drawIrisRanges(
+            context,
+            drawMvp,
+            vanillaDrawMvp,
+            colorWriteEnabled,
+            rangeCount,
+            stack,
+            profiler,
+            irisProgram,
+            job,
+            bridge);
+      } finally {
+        bridge.finishDirectIrisOpaque();
+      }
+    }
     profiler.recordDrawlistOpaqueRaster(tRaster);
     if (!this.loggedFirstDraw) {
       this.loggedFirstDraw = true;
       Logger.info("Voxy GL41Metal drawlist rendered first opaque direct-GL range frame");
     }
+    return true;
+  }
+
+  private boolean prepareEmptyIrisOpaqueTarget(
+      MemoryStack stack,
+      ShaderPatchBridgePayload payload,
+      DistantTerrainBridge bridge,
+      boolean reverseDepth) {
+    DistantBridgeJob job = DistantTerrainBridge.irisJob(payload);
+    if (!bridge.prepareDirectIrisOpaque(stack, job, reverseDepth)) {
+      return false;
+    }
+    bridge.finishDirectIrisOpaque();
     return true;
   }
 
@@ -599,6 +719,107 @@ final class DrawlistOpaqueRenderer
       return true;
     } finally {
       state.restore();
+    }
+  }
+
+  boolean renderIrisTranslucent(
+      long nativeHandle,
+      int slot,
+      RenderFrameContext context,
+      Matrix4fc drawMvp,
+      Matrix4fc vanillaDrawMvp,
+      LoadedVolumeBound bound,
+      ShaderPatchBridgePayload payload,
+      DistantTerrainBridge bridge,
+      boolean colorWriteEnabled,
+      FrameProfiler profiler) {
+    if (payload == null || !payload.strictBridgeAvailable() || bridge == null) {
+      return false;
+    }
+    DirectIrisTranslucentProgram program = this.irisTranslucentProgramFor(payload);
+    if (program == null) {
+      return false;
+    }
+    StateSnapshot state = StateSnapshot.capture();
+    IrisStencilState stencilState = IrisStencilState.capture(state.stencilEnabled);
+    IrisTextureState textureState = IrisTextureState.capture(payload.packSamplerCount());
+    try (MemoryStack stack = MemoryStack.stackPush()) {
+      long tBuild = profiler.begin();
+      this.ensureRangeCommandBuffer(this.rangeCapacity);
+      var counters = stack.mallocLong(7);
+      MemoryUtil.memSet(MemoryUtil.memAddress(counters), 0, 7L * Long.BYTES);
+      int rangeCount =
+          NativeBindings.buildTranslucentRanges(
+              nativeHandle,
+              slot,
+              this.rangeCountsAddress(),
+              this.rangeIndicesAddress(),
+              this.rangeBaseVerticesAddress(),
+              this.rangeCapacity,
+              MemoryUtil.memAddress(counters));
+      long rangeQuads = counters.get(2);
+      long overflowRanges = counters.get(1);
+      profiler.recordDrawlistTranslucentBuild(tBuild, rangeQuads, overflowRanges);
+      profiler.recordDrawlistTranslucentRangeStats(translucentRangeStatsFromCounters(counters));
+      if (overflowRanges > 0) {
+        int oldCapacity = this.rangeCapacity;
+        this.growRangeCapacity(rangeCount + overflowRanges);
+        Logger.warn(
+            "Voxy GL41Metal Iris translucent drawlist ranges overflowed "
+                + oldCapacity
+                + " ranges; grew to "
+                + this.rangeCapacity
+                + " and skipped this frame");
+        return true;
+      }
+      if (rangeCount <= 0 || rangeQuads <= 0) {
+        return true;
+      }
+      if (counters.get(5) > RANGE_INDEX_QUADS) {
+        throw new IllegalStateException(
+            "GL41Metal native Iris translucent range exceeded the 16-bit index capacity");
+      }
+
+      long tRaster = profiler.begin();
+      DistantBridgeJob job = DistantTerrainBridge.translucentJob(payload);
+      boolean reverseDepth = state.depthFunc == GL_GEQUAL || state.depthFunc == GL_GREATER;
+      if (!bridge.prepareDirectIrisTranslucent(stack, job, reverseDepth)) {
+        profiler.recordDrawlistTranslucentRaster(tRaster);
+        return false;
+      }
+      try {
+        bridge.bindDirectIrisResources(job);
+        if (bound != null && bound.enabled()) {
+          this.drawIrisTranslucentBound(
+              context,
+              drawMvp,
+              vanillaDrawMvp,
+              bound,
+              job.outputWidth(),
+              job.outputHeight(),
+              rangeCount,
+              stack,
+              program.bound);
+        }
+        bridge.beginDirectIrisTranslucentColor(job);
+        this.drawIrisTranslucentRanges(
+            context,
+            drawMvp,
+            vanillaDrawMvp,
+            colorWriteEnabled,
+            rangeCount,
+            stack,
+            profiler,
+            program.color);
+      } finally {
+        bridge.finishDirectIrisTranslucent();
+      }
+      profiler.recordDrawlistTranslucentRaster(tRaster);
+      return true;
+    } finally {
+      textureState.restore();
+      state.restore();
+      stencilState.restore();
     }
   }
 
@@ -762,6 +983,14 @@ final class DrawlistOpaqueRenderer
     this.ssaoShader.free();
     this.compositeShader.free();
     this.translucentShader.free();
+    if (this.irisOpaqueProgram != null) {
+      this.irisOpaqueProgram.shader.free();
+      this.irisOpaqueProgram = null;
+    }
+    if (this.irisTranslucentProgram != null) {
+      this.irisTranslucentProgram.close();
+      this.irisTranslucentProgram = null;
+    }
     glDeleteVertexArrays(this.rangeVao);
     glDeleteBuffers(this.rangeIndexBuffer);
     glDeleteBuffers(this.geometryBuffer);
@@ -908,6 +1137,342 @@ final class DrawlistOpaqueRenderer
     if (useSsao) {
       this.applySsaoAndComposite(context, drawMvp, vanillaDrawMvp, ssaoSteps, stack);
     }
+  }
+
+  private void drawIrisRanges(
+      RenderFrameContext context,
+      Matrix4fc drawMvp,
+      Matrix4fc vanillaDrawMvp,
+      boolean colorWriteEnabled,
+      int rangeCount,
+      MemoryStack stack,
+      FrameProfiler profiler,
+      DirectIrisProgram program,
+      DistantBridgeJob job,
+      DistantTerrainBridge bridge) {
+    this.pollOpaqueGpuTimers(profiler);
+    glColorMask(colorWriteEnabled, colorWriteEnabled, colorWriteEnabled, colorWriteEnabled);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+
+    program.shader.bind();
+    this.uploadMatrix(program.voxyMvpUniform, drawMvp, stack);
+    this.uploadMatrix(program.vanillaMvpUniform, vanillaDrawMvp, stack);
+    glUniform1f(program.earthRadiusUniform, DistantRenderer.computeEarthRadius());
+    glUniform1i(program.blockAtlasUniform, BLOCK_ATLAS_UNIT);
+    glUniform3i(
+        program.baseSectionFrameUniform,
+        floorSection(context.cameraX()),
+        floorSection(context.cameraY()),
+        floorSection(context.cameraZ()));
+    glUniform1i(program.geometryQuadsUniform, IRIS_VERTEX_BUFFER_UNIT_BASE);
+    glUniform1i(program.sectionMetaUniform, IRIS_VERTEX_BUFFER_UNIT_BASE + 1);
+    glUniform1i(program.modelBufferUniform, IRIS_VERTEX_BUFFER_UNIT_BASE + 2);
+    glUniform1i(program.modelColourUniform, IRIS_VERTEX_BUFFER_UNIT_BASE + 3);
+    glUniform1i(program.quadSectionIdsUniform, IRIS_VERTEX_BUFFER_UNIT_BASE + 4);
+    glUniform1i(program.useVoxyDepthUniform, 1);
+
+    bridge.bindDirectIrisResources(job);
+    glActiveTexture(GL_TEXTURE0 + BLOCK_ATLAS_UNIT);
+    glBindTexture(GL_TEXTURE_2D, this.atlasTexture);
+    glBindSampler(BLOCK_ATLAS_UNIT, 0);
+    this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE, this.geometryTexture);
+    this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE + 1, this.sectionMetaTexture);
+    this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE + 2, this.modelTexture);
+    this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE + 3, this.modelColourTexture);
+    this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE + 4, this.quadSectionTexture);
+
+    glBindVertexArray(this.rangeVao);
+    glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
+    this.geometryGpuTimer.begin();
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.rangeIndexBuffer);
+    nglMultiDrawElementsBaseVertex(
+        GL_TRIANGLES,
+        this.rangeCountsAddress(),
+        GL_UNSIGNED_SHORT,
+        this.rangeIndicesAddress(),
+        rangeCount,
+        this.rangeBaseVerticesAddress());
+    this.geometryGpuTimer.end();
+  }
+
+  private void drawIrisTranslucentBound(
+      RenderFrameContext context,
+      Matrix4fc drawMvp,
+      Matrix4fc vanillaDrawMvp,
+      LoadedVolumeBound bound,
+      int targetWidth,
+      int targetHeight,
+      int rangeCount,
+      MemoryStack stack,
+      DirectIrisBoundProgram program) {
+    glDisable(GL_CULL_FACE);
+    program.base.shader.bind();
+    this.uploadDirectIrisUniforms(
+        program.base, context, drawMvp, vanillaDrawMvp, stack, BLOCK_ATLAS_UNIT);
+    glUniform1i(program.boundDepthUniform, LIGHTMAP_UNIT);
+    glUniform2f(program.boundSizeUniform, bound.width(), bound.height());
+    glUniform2f(program.targetSizeUniform, targetWidth, targetHeight);
+    glUniform1i(program.boundEnabledUniform, 1);
+    this.bindDirectIrisGeometryTextures(bound.texture());
+    this.drawRangeCommands(rangeCount);
+  }
+
+  private void drawIrisTranslucentRanges(
+      RenderFrameContext context,
+      Matrix4fc drawMvp,
+      Matrix4fc vanillaDrawMvp,
+      boolean colorWriteEnabled,
+      int rangeCount,
+      MemoryStack stack,
+      FrameProfiler profiler,
+      DirectIrisProgram program) {
+    this.translucentDrawGpuTimer.poll(profiler);
+    glColorMask(colorWriteEnabled, colorWriteEnabled, colorWriteEnabled, colorWriteEnabled);
+    glDisable(GL_CULL_FACE);
+    program.shader.bind();
+    this.uploadDirectIrisUniforms(
+        program, context, drawMvp, vanillaDrawMvp, stack, BLOCK_ATLAS_UNIT);
+    this.bindDirectIrisGeometryTextures(0);
+    this.translucentDrawGpuTimer.begin();
+    this.drawRangeCommands(rangeCount);
+    this.translucentDrawGpuTimer.end();
+  }
+
+  private void uploadDirectIrisUniforms(
+      DirectIrisProgram program,
+      RenderFrameContext context,
+      Matrix4fc drawMvp,
+      Matrix4fc vanillaDrawMvp,
+      MemoryStack stack,
+      int atlasUnit) {
+    this.uploadMatrix(program.voxyMvpUniform, drawMvp, stack);
+    this.uploadMatrix(program.vanillaMvpUniform, vanillaDrawMvp, stack);
+    glUniform1f(program.earthRadiusUniform, DistantRenderer.computeEarthRadius());
+    glUniform1i(program.blockAtlasUniform, atlasUnit);
+    glUniform3i(
+        program.baseSectionFrameUniform,
+        floorSection(context.cameraX()),
+        floorSection(context.cameraY()),
+        floorSection(context.cameraZ()));
+    glUniform1i(program.geometryQuadsUniform, IRIS_VERTEX_BUFFER_UNIT_BASE);
+    glUniform1i(program.sectionMetaUniform, IRIS_VERTEX_BUFFER_UNIT_BASE + 1);
+    glUniform1i(program.modelBufferUniform, IRIS_VERTEX_BUFFER_UNIT_BASE + 2);
+    glUniform1i(program.modelColourUniform, IRIS_VERTEX_BUFFER_UNIT_BASE + 3);
+    glUniform1i(program.quadSectionIdsUniform, IRIS_VERTEX_BUFFER_UNIT_BASE + 4);
+    if (program.useVoxyDepthUniform >= 0) {
+      glUniform1i(program.useVoxyDepthUniform, 1);
+    }
+  }
+
+  private void bindDirectIrisGeometryTextures(int auxiliaryTexture) {
+    glActiveTexture(GL_TEXTURE0 + BLOCK_ATLAS_UNIT);
+    glBindTexture(GL_TEXTURE_2D, this.atlasTexture);
+    glBindSampler(BLOCK_ATLAS_UNIT, 0);
+    if (auxiliaryTexture != 0) {
+      glActiveTexture(GL_TEXTURE0 + LIGHTMAP_UNIT);
+      glBindTexture(GL_TEXTURE_2D, auxiliaryTexture);
+      glBindSampler(LIGHTMAP_UNIT, 0);
+    }
+    this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE, this.geometryTexture);
+    this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE + 1, this.sectionMetaTexture);
+    this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE + 2, this.modelTexture);
+    this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE + 3, this.modelColourTexture);
+    this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE + 4, this.quadSectionTexture);
+  }
+
+  private void drawRangeCommands(int rangeCount) {
+    glBindVertexArray(this.rangeVao);
+    glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.rangeIndexBuffer);
+    nglMultiDrawElementsBaseVertex(
+        GL_TRIANGLES,
+        this.rangeCountsAddress(),
+        GL_UNSIGNED_SHORT,
+        this.rangeIndicesAddress(),
+        rangeCount,
+        this.rangeBaseVerticesAddress());
+  }
+
+  private void bindIrisVertexBufferTexture(int unit, int texture) {
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_BUFFER, texture);
+    glBindSampler(unit, 0);
+  }
+
+  private DirectIrisProgram irisProgramFor(ShaderPatchBridgePayload payload) {
+    int shaderKey = payload.shaderKey();
+    if (this.irisOpaqueProgram != null && this.irisOpaqueProgram.shaderKey == shaderKey) {
+      return this.irisOpaqueProgram;
+    }
+    if (this.failedIrisOpaqueShaderKey == shaderKey) {
+      return null;
+    }
+    if (this.irisOpaqueProgram != null) {
+      this.irisOpaqueProgram.shader.free();
+      this.irisOpaqueProgram = null;
+    }
+    try {
+      this.validateIrisSamplerBudget(payload.packSamplerCount());
+      String vertexSource =
+          ShaderLoader.parse("voxy:lod/gl41metal/drawlist/opaque_ranges.vert", "410 core")
+                  .replace("//__VOXY_IRIS_HEADER__", payload.shaderHeader())
+              + "\nvec2 taaShift() "
+              + payload.vertexTaaPatch()
+              + "\n";
+      String fragmentSource =
+          ShaderLoader.parse("voxy:lod/gl41metal/drawlist/opaque_iris.frag", "410 core")
+              .replace(
+                  "//__VOXY_IRIS_PATCH__",
+                  payload.shaderHeader() + "\n" + payload.opaqueFragmentPatch());
+      fragmentSource = BridgePrograms.prepareDirectIrisFragment(fragmentSource);
+      Shader shader =
+          Shader.make()
+              .define("IRIS_DIRECT")
+              // gl_HelperInvocation is unavailable in GLSL 410. The guard only skips helper
+              // invocations after derivatives have been computed; omitting it does not change
+              // coverage or the values delivered to the pack patch.
+              .define("PATCHED_SHADER_ALLOW_DERIVATIVES")
+              .addSource(ShaderType.VERTEX, vertexSource)
+              .addSource(ShaderType.FRAGMENT, fragmentSource)
+              .compile()
+              .name("Voxy GL41Metal Direct Iris Opaque");
+      payload.programSetup().accept(shader.id());
+      DirectIrisProgram program = new DirectIrisProgram(shaderKey, shader);
+      if (!program.hasRequiredUniforms()) {
+        shader.free();
+        throw new IllegalStateException("direct Iris opaque shader is missing required uniforms");
+      }
+      this.irisOpaqueProgram = program;
+      Logger.info(
+          "Voxy GL41Metal direct Iris opaque shader compiled: packSamplers="
+              + payload.packSamplerCount());
+      return program;
+    } catch (RuntimeException e) {
+      this.failedIrisOpaqueShaderKey = shaderKey;
+      Logger.error("Failed to compile Voxy GL41Metal direct Iris opaque shader", e);
+      return null;
+    }
+  }
+
+  private DirectIrisTranslucentProgram irisTranslucentProgramFor(ShaderPatchBridgePayload payload) {
+    int shaderKey = payload.shaderKey();
+    if (this.irisTranslucentProgram != null && this.irisTranslucentProgram.shaderKey == shaderKey) {
+      return this.irisTranslucentProgram;
+    }
+    if (this.failedIrisTranslucentShaderKey == shaderKey) {
+      return null;
+    }
+    if (this.irisTranslucentProgram != null) {
+      this.irisTranslucentProgram.close();
+      this.irisTranslucentProgram = null;
+    }
+    Shader colorShader = null;
+    Shader boundShader = null;
+    try {
+      this.validateIrisSamplerBudget(payload.packSamplerCount());
+      String vertexSource =
+          ShaderLoader.parse("voxy:lod/gl41metal/drawlist/translucent_ranges.vert", "410 core")
+                  .replace("//__VOXY_IRIS_HEADER__", payload.shaderHeader())
+              + "\nvec2 taaShift() "
+              + payload.vertexTaaPatch()
+              + "\n";
+      String colorFragment =
+          ShaderLoader.parse("voxy:lod/gl41metal/drawlist/translucent_iris.frag", "410 core")
+              .replace(
+                  "//__VOXY_IRIS_PATCH__",
+                  payload.shaderHeader() + "\n" + payload.opaqueFragmentPatch());
+      colorFragment = BridgePrograms.prepareDirectIrisFragment(colorFragment);
+      colorShader =
+          Shader.make()
+              .define("IRIS_DIRECT")
+              .define("PATCHED_SHADER_ALLOW_DERIVATIVES")
+              .addSource(ShaderType.VERTEX, vertexSource)
+              .addSource(ShaderType.FRAGMENT, colorFragment)
+              .compile()
+              .name("Voxy GL41Metal Direct Iris Translucent");
+      payload.programSetup().accept(colorShader.id());
+      DirectIrisProgram color = new DirectIrisProgram(shaderKey, colorShader);
+      if (!color.hasRequiredUniforms()) {
+        throw new IllegalStateException(
+            "direct Iris translucent shader is missing required uniforms");
+      }
+
+      String boundFragment =
+          ShaderLoader.parse("voxy:lod/gl41metal/drawlist/translucent_bound.frag", "410 core");
+      boundShader =
+          Shader.make()
+              .define("IRIS_DIRECT")
+              .define("IRIS_BOUND_PASS")
+              .addSource(ShaderType.VERTEX, vertexSource)
+              .addSource(ShaderType.FRAGMENT, boundFragment)
+              .compile()
+              .name("Voxy GL41Metal Direct Iris Translucent Bound");
+      payload.programSetup().accept(boundShader.id());
+      DirectIrisBoundProgram bound =
+          new DirectIrisBoundProgram(new DirectIrisProgram(shaderKey, boundShader));
+      if (!bound.hasRequiredUniforms()) {
+        throw new IllegalStateException(
+            "direct Iris translucent bound shader is missing required uniforms");
+      }
+      this.irisTranslucentProgram = new DirectIrisTranslucentProgram(shaderKey, color, bound);
+      Logger.info(
+          "Voxy GL41Metal direct Iris translucent shader compiled: packSamplers="
+              + payload.packSamplerCount());
+      return this.irisTranslucentProgram;
+    } catch (RuntimeException e) {
+      if (colorShader != null) {
+        colorShader.free();
+      }
+      if (boundShader != null) {
+        boundShader.free();
+      }
+      this.failedIrisTranslucentShaderKey = shaderKey;
+      Logger.error("Failed to compile Voxy GL41Metal direct Iris translucent shader", e);
+      return null;
+    }
+  }
+
+  private void validateIrisSamplerBudget(int packSamplerCount) {
+    int maxFragment = glGetInteger(GL_MAX_TEXTURE_IMAGE_UNITS);
+    int maxVertex = glGetInteger(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS);
+    int maxCombined = glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+    int usableFragment = maxFragment - 1;
+    int fragmentRequired = packSamplerCount + 1;
+    int combinedRequired = fragmentRequired + IRIS_VERTEX_SAMPLER_COUNT;
+    if (fragmentRequired > usableFragment
+        || IRIS_VERTEX_SAMPLER_COUNT > maxVertex
+        || combinedRequired > maxCombined
+        || IRIS_VERTEX_BUFFER_UNIT_BASE + IRIS_VERTEX_SAMPLER_COUNT > maxCombined) {
+      throw new IllegalStateException(
+          "direct Iris sampler budget exceeded: fragment="
+              + fragmentRequired
+              + "/"
+              + usableFragment
+              + ", vertex="
+              + IRIS_VERTEX_SAMPLER_COUNT
+              + "/"
+              + maxVertex
+              + ", combined="
+              + combinedRequired
+              + "/"
+              + maxCombined);
+    }
+    Logger.info(
+        "Voxy GL41Metal direct Iris sampler budget: fragment="
+            + packSamplerCount
+            + " pack + 1 atlas = "
+            + fragmentRequired
+            + "/"
+            + usableFragment
+            + ", vertex="
+            + IRIS_VERTEX_SAMPLER_COUNT
+            + "/"
+            + maxVertex
+            + ", combined="
+            + combinedRequired
+            + "/"
+            + maxCombined);
   }
 
   private void pollOpaqueGpuTimers(FrameProfiler profiler) {
@@ -1625,6 +2190,200 @@ final class DrawlistOpaqueRenderer
     } catch (NumberFormatException e) {
       Logger.warn("Invalid GL41Metal drawlist integer config " + key + "=" + value);
       return fallback;
+    }
+  }
+
+  private static final class DirectIrisProgram {
+    final int shaderKey;
+    final Shader shader;
+    final int voxyMvpUniform;
+    final int vanillaMvpUniform;
+    final int earthRadiusUniform;
+    final int blockAtlasUniform;
+    final int baseSectionFrameUniform;
+    final int geometryQuadsUniform;
+    final int sectionMetaUniform;
+    final int modelBufferUniform;
+    final int modelColourUniform;
+    final int quadSectionIdsUniform;
+    final int useVoxyDepthUniform;
+
+    DirectIrisProgram(int shaderKey, Shader shader) {
+      this.shaderKey = shaderKey;
+      this.shader = shader;
+      int id = shader.id();
+      this.voxyMvpUniform = glGetUniformLocation(id, "uVoxyMvp");
+      this.vanillaMvpUniform = glGetUniformLocation(id, "uVanillaMvp");
+      this.earthRadiusUniform = glGetUniformLocation(id, "uEarthRadius");
+      this.blockAtlasUniform = glGetUniformLocation(id, "uBlockModelAtlas");
+      this.baseSectionFrameUniform = glGetUniformLocation(id, "uBaseSectionFrame");
+      this.geometryQuadsUniform = glGetUniformLocation(id, "uGeometryQuads");
+      this.sectionMetaUniform = glGetUniformLocation(id, "uSectionMeta");
+      this.modelBufferUniform = glGetUniformLocation(id, "uModelBuffer");
+      this.modelColourUniform = glGetUniformLocation(id, "uModelColours");
+      this.quadSectionIdsUniform = glGetUniformLocation(id, "uQuadSectionIds");
+      this.useVoxyDepthUniform = glGetUniformLocation(id, "uUseVoxyDepth");
+    }
+
+    boolean hasRequiredUniforms() {
+      return this.voxyMvpUniform >= 0
+          && this.earthRadiusUniform >= 0
+          && this.blockAtlasUniform >= 0
+          && this.baseSectionFrameUniform >= 0
+          && this.geometryQuadsUniform >= 0
+          && this.sectionMetaUniform >= 0
+          && this.modelBufferUniform >= 0
+          && this.modelColourUniform >= 0
+          && this.quadSectionIdsUniform >= 0;
+    }
+  }
+
+  private static final class DirectIrisBoundProgram {
+    final DirectIrisProgram base;
+    final int boundDepthUniform;
+    final int boundSizeUniform;
+    final int targetSizeUniform;
+    final int boundEnabledUniform;
+
+    DirectIrisBoundProgram(DirectIrisProgram base) {
+      this.base = base;
+      int id = base.shader.id();
+      this.boundDepthUniform = glGetUniformLocation(id, "uBoundDepthTex");
+      this.boundSizeUniform = glGetUniformLocation(id, "uBoundSize");
+      this.targetSizeUniform = glGetUniformLocation(id, "uTargetSize");
+      this.boundEnabledUniform = glGetUniformLocation(id, "uBoundEnabled");
+    }
+
+    boolean hasRequiredUniforms() {
+      return this.base.hasRequiredUniforms()
+          && this.boundDepthUniform >= 0
+          && this.boundSizeUniform >= 0
+          && this.targetSizeUniform >= 0
+          && this.boundEnabledUniform >= 0;
+    }
+  }
+
+  private static final class DirectIrisTranslucentProgram implements AutoCloseable {
+    final int shaderKey;
+    final DirectIrisProgram color;
+    final DirectIrisBoundProgram bound;
+
+    DirectIrisTranslucentProgram(
+        int shaderKey, DirectIrisProgram color, DirectIrisBoundProgram bound) {
+      this.shaderKey = shaderKey;
+      this.color = color;
+      this.bound = bound;
+    }
+
+    @Override
+    public void close() {
+      this.color.shader.free();
+      this.bound.base.shader.free();
+    }
+  }
+
+  private record IrisTextureState(
+      int activeTexture,
+      int[] textures1d,
+      int[] textures2d,
+      int[] textures3d,
+      int[] texturesRect,
+      int[] texturesCube,
+      int[] packSamplers,
+      int[] vertexBuffers,
+      int[] vertexSamplers) {
+    static IrisTextureState capture(int packSamplerCount) {
+      int activeTexture = glGetInteger(GL_ACTIVE_TEXTURE);
+      int count = Math.max(0, packSamplerCount);
+      int[] textures1d = new int[count];
+      int[] textures2d = new int[count];
+      int[] textures3d = new int[count];
+      int[] texturesRect = new int[count];
+      int[] texturesCube = new int[count];
+      int[] packSamplers = new int[count];
+      for (int i = 0; i < count; i++) {
+        int unit = IrisBridgeShaderBindings.SAMPLER_BINDING_BASE + i;
+        glActiveTexture(GL_TEXTURE0 + unit);
+        textures1d[i] = glGetInteger(org.lwjgl.opengl.GL11C.GL_TEXTURE_BINDING_1D);
+        textures2d[i] = glGetInteger(GL_TEXTURE_BINDING_2D);
+        textures3d[i] = glGetInteger(org.lwjgl.opengl.GL12C.GL_TEXTURE_BINDING_3D);
+        texturesRect[i] = glGetInteger(org.lwjgl.opengl.GL31C.GL_TEXTURE_BINDING_RECTANGLE);
+        texturesCube[i] = glGetInteger(org.lwjgl.opengl.GL13C.GL_TEXTURE_BINDING_CUBE_MAP);
+        packSamplers[i] = glGetInteger(GL_SAMPLER_BINDING);
+      }
+      int[] vertexBuffers = new int[IRIS_VERTEX_SAMPLER_COUNT];
+      int[] vertexSamplers = new int[IRIS_VERTEX_SAMPLER_COUNT];
+      for (int i = 0; i < IRIS_VERTEX_SAMPLER_COUNT; i++) {
+        int unit = IRIS_VERTEX_BUFFER_UNIT_BASE + i;
+        glActiveTexture(GL_TEXTURE0 + unit);
+        vertexBuffers[i] = glGetInteger(GL_TEXTURE_BINDING_BUFFER);
+        vertexSamplers[i] = glGetInteger(GL_SAMPLER_BINDING);
+      }
+      glActiveTexture(activeTexture);
+      return new IrisTextureState(
+          activeTexture,
+          textures1d,
+          textures2d,
+          textures3d,
+          texturesRect,
+          texturesCube,
+          packSamplers,
+          vertexBuffers,
+          vertexSamplers);
+    }
+
+    void restore() {
+      for (int i = 0; i < this.packSamplers.length; i++) {
+        int unit = IrisBridgeShaderBindings.SAMPLER_BINDING_BASE + i;
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glBindTexture(org.lwjgl.opengl.GL11C.GL_TEXTURE_1D, this.textures1d[i]);
+        glBindTexture(GL_TEXTURE_2D, this.textures2d[i]);
+        glBindTexture(org.lwjgl.opengl.GL12C.GL_TEXTURE_3D, this.textures3d[i]);
+        glBindTexture(org.lwjgl.opengl.GL31C.GL_TEXTURE_RECTANGLE, this.texturesRect[i]);
+        glBindTexture(org.lwjgl.opengl.GL13C.GL_TEXTURE_CUBE_MAP, this.texturesCube[i]);
+        glBindSampler(unit, this.packSamplers[i]);
+      }
+      for (int i = 0; i < IRIS_VERTEX_SAMPLER_COUNT; i++) {
+        int unit = IRIS_VERTEX_BUFFER_UNIT_BASE + i;
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glBindTexture(GL_TEXTURE_BUFFER, this.vertexBuffers[i]);
+        glBindSampler(unit, this.vertexSamplers[i]);
+      }
+      glActiveTexture(this.activeTexture);
+    }
+  }
+
+  private record IrisStencilState(
+      boolean enabled,
+      int function,
+      int reference,
+      int valueMask,
+      int writeMask,
+      int stencilFail,
+      int depthFail,
+      int depthPass) {
+    static IrisStencilState capture(boolean enabled) {
+      if (!enabled) {
+        return new IrisStencilState(false, 0, 0, 0, 0, 0, 0, 0);
+      }
+      return new IrisStencilState(
+          true,
+          glGetInteger(org.lwjgl.opengl.GL11C.GL_STENCIL_FUNC),
+          glGetInteger(org.lwjgl.opengl.GL11C.GL_STENCIL_REF),
+          glGetInteger(org.lwjgl.opengl.GL11C.GL_STENCIL_VALUE_MASK),
+          glGetInteger(org.lwjgl.opengl.GL11C.GL_STENCIL_WRITEMASK),
+          glGetInteger(org.lwjgl.opengl.GL11C.GL_STENCIL_FAIL),
+          glGetInteger(org.lwjgl.opengl.GL11C.GL_STENCIL_PASS_DEPTH_FAIL),
+          glGetInteger(org.lwjgl.opengl.GL11C.GL_STENCIL_PASS_DEPTH_PASS));
+    }
+
+    void restore() {
+      if (!this.enabled) {
+        return;
+      }
+      org.lwjgl.opengl.GL11C.glStencilMask(this.writeMask);
+      org.lwjgl.opengl.GL11C.glStencilFunc(this.function, this.reference, this.valueMask);
+      org.lwjgl.opengl.GL11C.glStencilOp(this.stencilFail, this.depthFail, this.depthPass);
     }
   }
 

@@ -24,7 +24,7 @@ import me.cortex.voxy.common.Logger;
  * source transforms (global-initializer hoisting, unreachable-function pruning) the pack patches
  * need to survive Apple's GLSL linker.
  */
-final class BridgePrograms {
+public final class BridgePrograms {
   // Word-boundary regex used by buildFragmentShader() to rewrite gl_FragCoord ->
   // voxy_OverrideFragCoord
   // in patched pack source. Apple's GL4.1 GLSL preprocessor silently refuses to redefine the
@@ -475,6 +475,11 @@ final class BridgePrograms {
     return BridgeGlsl.load("translucent_color_main.glsl")
         .replace("__VOXY_TRANSLUCENT_BOUND__", boundDiscard)
         .replace("__VOXY_TRANSLUCENT_TAIL__", tail);
+  }
+
+  /** Applies the Apple GLSL 4.1 linker workarounds to a fully assembled direct-geometry shader. */
+  public static String prepareDirectIrisFragment(String source) {
+    return hoistGlobalInitializers(pruneUnreachableFunctions(source));
   }
 
   private String buildFragmentShader(

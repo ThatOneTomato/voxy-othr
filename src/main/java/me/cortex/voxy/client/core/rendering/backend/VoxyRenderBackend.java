@@ -26,15 +26,21 @@ public interface VoxyRenderBackend extends AutoCloseable {
   RenderFrameMatrices getLastFrameMatrices();
 
   /**
-   * GL texture id of this backend's Voxy distant-terrain depth target for the most recent frame, or
-   * 0 if it does not own one. The texture holds combined near+far depth (a depth-component texture
-   * whose {@code texelFetch(...).r} yields normalised [0,1] depth). Iris shader packs sample it as
-   * {@code vxDepthTexOpaque} / {@code vxDepthTexTrans} (see {@code MixinIrisSamplers}). Backends
-   * that do not maintain a private distant-depth target (e.g. GL46, which renders into the
-   * Iris-managed pipeline framebuffer) keep the default 0 and let the caller fall back to the Iris
-   * depth target.
+   * GL texture id of this backend's opaque Voxy distant-terrain depth target for the most recent
+   * frame, or 0 if it does not own one. The depth-component texture yields normalised [0,1] depth
+   * from {@code texelFetch(...).r}; Iris shader packs sample it as {@code vxDepthTexOpaque}.
+   * Backends that render into the Iris-managed pipeline framebuffer keep the default 0 and let the
+   * caller fall back to the Iris depth target.
    */
-  default int voxyDistantDepthTextureId() {
+  default int voxyDistantOpaqueDepthTextureId() {
+    return 0;
+  }
+
+  /**
+   * Translucent counterpart of {@link #voxyDistantOpaqueDepthTextureId()}, sampled by Iris packs as
+   * {@code vxDepthTexTrans}.
+   */
+  default int voxyDistantTranslucentDepthTextureId() {
     return 0;
   }
 

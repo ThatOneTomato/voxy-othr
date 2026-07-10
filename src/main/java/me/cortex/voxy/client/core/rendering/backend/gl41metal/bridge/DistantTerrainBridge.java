@@ -289,6 +289,53 @@ public final class DistantTerrainBridge implements AutoCloseable {
     }
   }
 
+  /** Prepares the strict-Iris MRT and private depth/stencil for direct distant geometry. */
+  public boolean prepareDirectIrisOpaque(
+      MemoryStack stack, DistantBridgeJob job, boolean reverseDepth) {
+    if (job == null || !job.valid() || !job.ownFramebuffer() || job.sourceDepthTextureId() == 0) {
+      return false;
+    }
+    return this.compositor.prepareDirectIrisOpaque(
+        stack,
+        job,
+        job.sourceDepthTextureId(),
+        job.sourceDepthWidth(),
+        job.sourceDepthHeight(),
+        reverseDepth);
+  }
+
+  /** Uploads the current Iris UBO and binds the pack textures for a direct colour draw. */
+  public void bindDirectIrisResources(DistantBridgeJob job) {
+    this.compositor.bindDirectIrisResources(job);
+  }
+
+  public void finishDirectIrisOpaque() {
+    this.compositor.finishDirectIrisOpaque();
+  }
+
+  /** Prepares the Iris translucent MRT with a copy of opaque Voxy depth and a fresh near mask. */
+  public boolean prepareDirectIrisTranslucent(
+      MemoryStack stack, DistantBridgeJob job, boolean reverseDepth) {
+    if (job == null || !job.valid() || !job.ownFramebuffer() || job.sourceDepthTextureId() == 0) {
+      return false;
+    }
+    return this.compositor.prepareDirectIrisTranslucent(
+        stack,
+        job,
+        job.sourceDepthTextureId(),
+        job.sourceDepthWidth(),
+        job.sourceDepthHeight(),
+        reverseDepth);
+  }
+
+  public void beginDirectIrisTranslucentColor(DistantBridgeJob job) {
+    this.compositor.beginDirectIrisTranslucentColor(job);
+  }
+
+  public void finishDirectIrisTranslucent() {
+    this.compositor.finishDirectIrisTranslucent();
+  }
+
   /**
    * Distant translucent (water) composite, run at Iris {@code beginTranslucents()} RETURN. By that
    * point Iris has copied the opaque scene depth into {@code depthtex1}/noTranslucents, the pack's
@@ -367,8 +414,12 @@ public final class DistantTerrainBridge implements AutoCloseable {
    * a voxy-only, Voxy-NDC depth (distant geometry depth where Voxy drew, far=1.0 elsewhere),
    * matching voxy-fabric's IrisVoxyRenderPipeline.fb.getDepthTex() after its shaderDepthHackFix.
    */
-  public int voxyDistantDepthTextureId() {
-    return this.compositor.irisPrivateDepthTextureId();
+  public int voxyDistantOpaqueDepthTextureId() {
+    return this.compositor.irisOpaqueDepthTextureId();
+  }
+
+  public int voxyDistantTranslucentDepthTextureId() {
+    return this.compositor.irisTranslucentDepthTextureId();
   }
 
   @Override
