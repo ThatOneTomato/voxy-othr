@@ -27,7 +27,7 @@ public final class FrameProfiler {
   private long bridgeOpaqueAccum;
   private long bridgeTranslucentAccum;
   private long drawlistBuildAccum;
-  private long drawlistUploadAccum;
+  private long directStateAccum;
   private long drawlistOpaqueRasterAccum;
   private long drawlistRangeMeasureAccum;
   private double drawlistGpuMsAccum;
@@ -35,6 +35,9 @@ public final class FrameProfiler {
   private double drawlistDepthCopyGpuMsAccum;
   private double drawlistSsaoGpuMsAccum;
   private double drawlistCompositeGpuMsAccum;
+  private double directOpaqueSetupGpuMsAccum;
+  private double directTranslucentSetupGpuMsAccum;
+  private double directBoundGpuMsAccum;
   private final DrawlistPhaseStats opaqueDrawlistStats = new DrawlistPhaseStats();
   private final DrawlistPhaseStats translucentDrawlistStats = new DrawlistPhaseStats();
 
@@ -45,7 +48,7 @@ public final class FrameProfiler {
   private long maxBridgeOpaqueNanos;
   private long maxBridgeTranslucentNanos;
   private long maxDrawlistBuildNanos;
-  private long maxDrawlistUploadNanos;
+  private long maxDirectStateNanos;
   private long maxDrawlistOpaqueRasterNanos;
   private long maxDrawlistRangeMeasureNanos;
   private double maxDrawlistGpuMs;
@@ -71,7 +74,7 @@ public final class FrameProfiler {
   private long maxDrawlistRangeQuads;
 
   private long currentDrawlistBuildNanos;
-  private long currentDrawlistUploadNanos;
+  private long currentDirectStateNanos;
   private long currentDrawlistRasterNanos;
   private long currentDrawlistRangeMeasureNanos;
   private double currentDrawlistGpuMs;
@@ -154,10 +157,11 @@ public final class FrameProfiler {
     phaseStats.recordBuild(elapsed, quads, overflows);
   }
 
-  void recordDrawlistUpload(long startNanos) {
+  void recordDirectState(long startNanos) {
     long elapsed = System.nanoTime() - startNanos;
-    this.drawlistUploadAccum += elapsed;
-    this.currentDrawlistUploadNanos += elapsed;
+    this.directStateAccum += elapsed;
+    this.currentDirectStateNanos += elapsed;
+    this.maxDirectStateNanos = Math.max(this.maxDirectStateNanos, elapsed);
   }
 
   void recordDrawlistOpaqueRaster(long startNanos) {
@@ -197,6 +201,21 @@ public final class FrameProfiler {
   void recordDrawlistCompositeGpuMs(double ms) {
     this.drawlistCompositeGpuMsAccum += ms;
     this.recordDrawlistOpaqueGpuMs(ms);
+  }
+
+  void recordDirectOpaqueSetupGpuMs(double ms) {
+    this.directOpaqueSetupGpuMsAccum += ms;
+    this.recordDrawlistOpaqueGpuMs(ms);
+  }
+
+  void recordDirectTranslucentSetupGpuMs(double ms) {
+    this.directTranslucentSetupGpuMsAccum += ms;
+    this.recordDrawlistTranslucentGpuMs(ms);
+  }
+
+  void recordDirectBoundGpuMs(double ms) {
+    this.directBoundGpuMsAccum += ms;
+    this.recordDrawlistTranslucentGpuMs(ms);
   }
 
   void recordDrawlistTranslucentGpuMs(double ms) {
@@ -282,7 +301,7 @@ public final class FrameProfiler {
         String.format(
             Locale.ROOT,
             "Voxy perf avg(ms): tick=%.2f submit=%.2f wait=%.2f bound=%.2f"
-                + " opaqueGL=%.2f transGL=%.2f drawBuild=%.2f drawUpload=%.2f"
+                + " opaqueGL=%.2f transGL=%.2f drawBuild=%.2f drawState=%.2f"
                 + " drawRaster=%.2f drawRange=%.2f drawGpu=%.2f metalGPU=%.2f"
                 + " (trav=%.2f opaque=%.2f ssao=%.2f trans=%.2f)",
             s.avgTickMs,
@@ -292,7 +311,7 @@ public final class FrameProfiler {
             s.avgBridgeOpaqueMs,
             s.avgBridgeTranslucentMs,
             s.avgDrawlistBuildMs,
-            s.avgDrawlistUploadMs,
+            s.avgDirectStateMs,
             s.avgDrawlistOpaqueRasterMs,
             s.avgDrawlistRangeMeasureMs,
             s.avgDrawlistGpuMs,
@@ -305,7 +324,7 @@ public final class FrameProfiler {
         String.format(
             Locale.ROOT,
             "Voxy perf max(ms): tick=%.2f submit=%.2f wait=%.2f bound=%.2f"
-                + " opaqueGL=%.2f transGL=%.2f drawBuild=%.2f drawUpload=%.2f"
+                + " opaqueGL=%.2f transGL=%.2f drawBuild=%.2f drawState=%.2f"
                 + " drawRaster=%.2f drawRange=%.2f drawGpu=%.2f metalGPU=%.2f"
                 + " | drawQuads avg/max=%.0f/%d overflow avg/max=%.0f/%d"
                 + " | drawRanges raw/merged avg=%.0f/%.0f max=%d/%d"
@@ -318,7 +337,7 @@ public final class FrameProfiler {
             s.maxBridgeOpaqueMs,
             s.maxBridgeTranslucentMs,
             s.maxDrawlistBuildMs,
-            s.maxDrawlistUploadMs,
+            s.maxDirectStateMs,
             s.maxDrawlistOpaqueRasterMs,
             s.maxDrawlistRangeMeasureMs,
             s.maxDrawlistGpuMs,
@@ -370,7 +389,7 @@ public final class FrameProfiler {
             toAvgMs(this.bridgeOpaqueAccum, n),
             toAvgMs(this.bridgeTranslucentAccum, n),
             toAvgMs(this.drawlistBuildAccum, n),
-            toAvgMs(this.drawlistUploadAccum, n),
+            toAvgMs(this.directStateAccum, n),
             toAvgMs(this.drawlistOpaqueRasterAccum, n),
             toAvgMs(this.drawlistRangeMeasureAccum, n),
             this.drawlistGpuMsAccum / n,
@@ -382,7 +401,7 @@ public final class FrameProfiler {
             toMs(this.maxBridgeOpaqueNanos),
             toMs(this.maxBridgeTranslucentNanos),
             toMs(this.maxDrawlistBuildNanos),
-            toMs(this.maxDrawlistUploadNanos),
+            toMs(this.maxDirectStateNanos),
             toMs(this.maxDrawlistOpaqueRasterNanos),
             toMs(this.maxDrawlistRangeMeasureNanos),
             this.maxDrawlistGpuMs,
@@ -417,18 +436,19 @@ public final class FrameProfiler {
                 Locale.ROOT,
                 "GL41Metal perf [%d frames / %.0fms]: "
                     + "avg tick=%.2f submit=%.2f wait=%.2f bound=%.2f opaqueGL=%.2f"
-                    + " transGL=%.2f drawBuild=%.2f drawUpload=%.2f drawRaster=%.2f"
+                    + " transGL=%.2f drawBuild=%.2f drawState=%.2f drawRaster=%.2f"
                     + " drawRange=%.2f drawGpu=%.2f metalGPU=%.2f"
                     + " (trav=%.2f opaque=%.2f ssao=%.2f trans=%.2f)"
                     + " | frameWall=%.2f nonVoxyWall=%.2f voxyTotal=%.2f ms"
-                    + " | max wait=%.2f opaqueGL=%.2f drawBuild=%.2f drawUpload=%.2f"
+                    + " | max wait=%.2f opaqueGL=%.2f drawBuild=%.2f drawState=%.2f"
                     + " drawRaster=%.2f drawRange=%.2f drawGpu=%.2f metalGPU=%.2f"
                     + " | drawQuads avg/max=%.0f/%d overflow avg/max=%.0f/%d"
                     + " | drawRanges raw/merged avg=%.0f/%.0f max=%d/%d"
                     + " q/r=%.1f cmdKB=%.1f"
                     + " | split o/t build=%.2f/%.2f raster=%.2f/%.2f gpu=%.2f/%.2f"
                     + " quads=%.0f/%.0f ranges=%.0f/%.0f q/r=%.1f/%.1f"
-                    + " | glGpu geom=%.2f depth=%.2f ao=%.2f comp=%.2f",
+                    + " | glGpu geom=%.2f depth=%.2f ao=%.2f comp=%.2f"
+                    + " directSetup=%.2f/%.2f bound=%.2f",
                 s.frames,
                 s.windowMs,
                 s.avgTickMs,
@@ -438,7 +458,7 @@ public final class FrameProfiler {
                 s.avgBridgeOpaqueMs,
                 s.avgBridgeTranslucentMs,
                 s.avgDrawlistBuildMs,
-                s.avgDrawlistUploadMs,
+                s.avgDirectStateMs,
                 s.avgDrawlistOpaqueRasterMs,
                 s.avgDrawlistRangeMeasureMs,
                 s.avgDrawlistGpuMs,
@@ -453,7 +473,7 @@ public final class FrameProfiler {
                 s.maxSlotWaitMs,
                 s.maxBridgeOpaqueMs,
                 s.maxDrawlistBuildMs,
-                s.maxDrawlistUploadMs,
+                s.maxDirectStateMs,
                 s.maxDrawlistOpaqueRasterMs,
                 s.maxDrawlistRangeMeasureMs,
                 s.maxDrawlistGpuMs,
@@ -483,7 +503,10 @@ public final class FrameProfiler {
                 this.drawlistGeometryGpuMsAccum / n,
                 this.drawlistDepthCopyGpuMsAccum / n,
                 this.drawlistSsaoGpuMsAccum / n,
-                this.drawlistCompositeGpuMsAccum / n));
+                this.drawlistCompositeGpuMsAccum / n,
+                this.directOpaqueSetupGpuMsAccum / n,
+                this.directTranslucentSetupGpuMsAccum / n,
+                this.directBoundGpuMsAccum / n));
       }
     }
 
@@ -494,7 +517,7 @@ public final class FrameProfiler {
     this.bridgeOpaqueAccum = 0;
     this.bridgeTranslucentAccum = 0;
     this.drawlistBuildAccum = 0;
-    this.drawlistUploadAccum = 0;
+    this.directStateAccum = 0;
     this.drawlistOpaqueRasterAccum = 0;
     this.drawlistRangeMeasureAccum = 0;
     this.drawlistGpuMsAccum = 0;
@@ -502,6 +525,9 @@ public final class FrameProfiler {
     this.drawlistDepthCopyGpuMsAccum = 0;
     this.drawlistSsaoGpuMsAccum = 0;
     this.drawlistCompositeGpuMsAccum = 0;
+    this.directOpaqueSetupGpuMsAccum = 0;
+    this.directTranslucentSetupGpuMsAccum = 0;
+    this.directBoundGpuMsAccum = 0;
     this.metalGpuMsAccum = 0;
     this.gpuTraversalAccum = 0;
     this.gpuOpaqueRasterAccum = 0;
@@ -514,7 +540,7 @@ public final class FrameProfiler {
     this.maxBridgeOpaqueNanos = 0;
     this.maxBridgeTranslucentNanos = 0;
     this.maxDrawlistBuildNanos = 0;
-    this.maxDrawlistUploadNanos = 0;
+    this.maxDirectStateNanos = 0;
     this.maxDrawlistOpaqueRasterNanos = 0;
     this.maxDrawlistRangeMeasureNanos = 0;
     this.maxDrawlistGpuMs = 0;
@@ -540,8 +566,7 @@ public final class FrameProfiler {
   private void recordDrawlistFrameMaxes() {
     this.maxDrawlistBuildNanos =
         Math.max(this.maxDrawlistBuildNanos, this.currentDrawlistBuildNanos);
-    this.maxDrawlistUploadNanos =
-        Math.max(this.maxDrawlistUploadNanos, this.currentDrawlistUploadNanos);
+    this.maxDirectStateNanos = Math.max(this.maxDirectStateNanos, this.currentDirectStateNanos);
     this.maxDrawlistOpaqueRasterNanos =
         Math.max(this.maxDrawlistOpaqueRasterNanos, this.currentDrawlistRasterNanos);
     this.maxDrawlistRangeMeasureNanos =
@@ -558,7 +583,7 @@ public final class FrameProfiler {
 
   private void resetCurrentDrawlistFrame() {
     this.currentDrawlistBuildNanos = 0;
-    this.currentDrawlistUploadNanos = 0;
+    this.currentDirectStateNanos = 0;
     this.currentDrawlistRasterNanos = 0;
     this.currentDrawlistRangeMeasureNanos = 0;
     this.currentDrawlistGpuMs = 0;
@@ -708,7 +733,7 @@ public final class FrameProfiler {
       double avgBridgeOpaqueMs,
       double avgBridgeTranslucentMs,
       double avgDrawlistBuildMs,
-      double avgDrawlistUploadMs,
+      double avgDirectStateMs,
       double avgDrawlistOpaqueRasterMs,
       double avgDrawlistRangeMeasureMs,
       double avgDrawlistGpuMs,
@@ -720,7 +745,7 @@ public final class FrameProfiler {
       double maxBridgeOpaqueMs,
       double maxBridgeTranslucentMs,
       double maxDrawlistBuildMs,
-      double maxDrawlistUploadMs,
+      double maxDirectStateMs,
       double maxDrawlistOpaqueRasterMs,
       double maxDrawlistRangeMeasureMs,
       double maxDrawlistGpuMs,
@@ -798,7 +823,7 @@ public final class FrameProfiler {
           + avgBridgeOpaqueMs
           + avgBridgeTranslucentMs
           + avgDrawlistBuildMs
-          + avgDrawlistUploadMs
+          + avgDirectStateMs
           + avgDrawlistOpaqueRasterMs
           + avgDrawlistRangeMeasureMs;
     }

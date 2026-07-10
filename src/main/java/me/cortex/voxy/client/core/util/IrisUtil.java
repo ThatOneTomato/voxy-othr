@@ -163,6 +163,7 @@ public class IrisUtil {
         patch.getPatchOpaqueSource(),
         patch.getTAAShift(),
         bindings.samplerCount(),
+        bindings.samplerTargets(),
         patch.createBlendSetup(),
         bindings.resourceBinder(),
         bindings.programSetup());
@@ -226,6 +227,7 @@ public class IrisUtil {
         translucentPatch,
         patch.getTAAShift(),
         bindings.samplerCount(),
+        bindings.samplerTargets(),
         patch.createBlendSetup(),
         bindings.resourceBinder(),
         bindings.programSetup());

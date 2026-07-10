@@ -22,6 +22,7 @@ public record ShaderPatchBridgePayload(
     String opaqueFragmentPatch,
     String vertexTaaPatch,
     int packSamplerCount,
+    int[] packSamplerTargets,
     Runnable blendSetup,
     Runnable resourceBinder,
     IntConsumer programSetup) {
@@ -38,6 +39,7 @@ public record ShaderPatchBridgePayload(
     opaqueFragmentPatch = opaqueFragmentPatch == null ? "" : opaqueFragmentPatch;
     vertexTaaPatch = vertexTaaPatch == null ? "{ return vec2(0.0); }" : vertexTaaPatch;
     packSamplerCount = Math.max(0, packSamplerCount);
+    packSamplerTargets = packSamplerTargets == null ? new int[0] : packSamplerTargets.clone();
     blendSetup = blendSetup == null ? NOOP : blendSetup;
     resourceBinder = resourceBinder == null ? NOOP : resourceBinder;
     programSetup = programSetup == null ? NOOP_PROGRAM_SETUP : programSetup;
@@ -61,6 +63,7 @@ public record ShaderPatchBridgePayload(
         "",
         "{ return vec2(0.0); }",
         0,
+        new int[0],
         NOOP,
         NOOP,
         NOOP_PROGRAM_SETUP);
@@ -81,6 +84,7 @@ public record ShaderPatchBridgePayload(
       String opaqueFragmentPatch,
       String vertexTaaPatch,
       int packSamplerCount,
+      int[] packSamplerTargets,
       Runnable blendSetup,
       Runnable resourceBinder,
       IntConsumer programSetup) {
@@ -101,6 +105,7 @@ public record ShaderPatchBridgePayload(
         opaqueFragmentPatch,
         vertexTaaPatch,
         packSamplerCount,
+        packSamplerTargets,
         blendSetup,
         resourceBinder,
         programSetup);
@@ -116,6 +121,7 @@ public record ShaderPatchBridgePayload(
         this.opaqueFragmentPatch,
         this.vertexTaaPatch,
         this.packSamplerCount,
+        Arrays.hashCode(this.packSamplerTargets),
         this.targetCount());
   }
 
@@ -127,6 +133,11 @@ public record ShaderPatchBridgePayload(
   @Override
   public int[] targetTextureIds() {
     return this.targetTextureIds.clone();
+  }
+
+  @Override
+  public int[] packSamplerTargets() {
+    return this.packSamplerTargets.clone();
   }
 
   public String describeTargets() {

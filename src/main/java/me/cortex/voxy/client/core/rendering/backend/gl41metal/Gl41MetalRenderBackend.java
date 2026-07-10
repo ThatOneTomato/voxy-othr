@@ -18,7 +18,6 @@ import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SlotSchedul
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.LoadedVolumeBound;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.terrain.TerrainResources;
-import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.Logger;
 import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
@@ -234,8 +233,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   }
 
   private boolean useDirectDrawlist() {
-    return this.drawlistOpaqueRenderer != null
-        && (!IrisUtil.irisShaderPackEnabled() || this.irisDirectPipelineReady);
+    return this.drawlistOpaqueRenderer != null;
   }
 
   private int submitOutputMode() {
@@ -483,7 +481,6 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     }
     ShaderPatchBridgePayload payload =
         context.payload() instanceof ShaderPatchBridgePayload p ? p : null;
-    long tTrans = this.profiler.begin();
     try {
       if (payload != null && payload.strictBridgeAvailable()) {
         RenderFrameContext renderContext =
@@ -505,6 +502,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           this.irisDirectPipelineReady = true;
         } else if (this.gbuffer.sharedTexturesEnabled()) {
           this.irisDirectPipelineReady = false;
+          long tBridge = this.profiler.begin();
           this.bridge.renderTranslucent(
               renderContext,
               this.gbuffer.slot(slot),
@@ -512,6 +510,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
               this.heldTranslucentFrame.drawMvp(),
               this.heldTranslucentFrame.vanillaDrawMvp(),
               this.currentBound);
+          this.profiler.recordBridgeTranslucent(tBridge);
         } else {
           this.irisDirectPipelineReady = false;
         }
@@ -525,7 +524,6 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
         this.irisDirectPipelineReady = false;
       }
     } finally {
-      this.profiler.recordBridgeTranslucent(tTrans);
       this.releaseHeldTranslucentSlot();
     }
   }
@@ -687,12 +685,10 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     if (width <= 0 || height <= 0) {
       throw new IllegalArgumentException("Invalid GL41Metal viewport size " + width + "x" + height);
     }
-    // Once allocated, keep the IOSurface textures for the lifetime of this native context. Iris
-    // starts in shared mode so incompatible/reloading pack shaders have a fallback; after both
-    // direct programs validate we switch only the submit output mode to DRAWLIST. Hot-removing the
-    // textures here races the just-retired shared slot on Apple GL and can stall the render thread.
-    // Keeping them allocated has no per-frame bandwidth cost when Metal no longer writes them.
-    boolean sharedTexturesEnabled = !this.useDirectDrawlist() || IrisUtil.irisShaderPackEnabled();
+    // The explicit drawlist mode never allocates the six screen-sized RGBA32F IOSurfaces per slot.
+    // Shader-pack compilation failures stay in drawlist mode and skip Voxy output; users can select
+    // shared_gbuffer explicitly when they need the compatibility path.
+    boolean sharedTexturesEnabled = !this.useDirectDrawlist();
     if (this.gbuffer != null
         && this.gbuffer.width() == width
         && this.gbuffer.height() == height

@@ -169,7 +169,17 @@ public final class IrisBridgeShaderBindings {
       LongConsumer uniformUpdater,
       Runnable resourceBinder,
       IntConsumer programSetup,
-      int samplerCount) {}
+      int samplerCount,
+      int[] samplerTargets) {
+    public Bindings {
+      samplerTargets = samplerTargets == null ? new int[0] : samplerTargets.clone();
+    }
+
+    @Override
+    public int[] samplerTargets() {
+      return this.samplerTargets.clone();
+    }
+  }
 
   public static Bindings build(
       IrisRenderingPipeline pipeline,
@@ -248,7 +258,8 @@ public final class IrisBridgeShaderBindings {
         capturedUniforms == null ? ptr -> {} : capturedUniforms.updater(),
         binder,
         programSetup,
-        capturedImageSet == null ? 0 : capturedImageSet.samplerNames().length);
+        capturedImageSet == null ? 0 : capturedImageSet.samplerNames().length,
+        capturedImageSet == null ? new int[0] : capturedImageSet.samplerTargets());
   }
 
   private static String convertToGlslType(UniformType type) {
@@ -708,7 +719,8 @@ public final class IrisBridgeShaderBindings {
   private record TextureWithSampler(
       String name, TextureType type, IntSupplier texture, IntSupplier sampler) {}
 
-  private record ImageSet(String layout, IntConsumer bindingFunction, String[] samplerNames) {}
+  private record ImageSet(
+      String layout, IntConsumer bindingFunction, String[] samplerNames, int[] samplerTargets) {}
 
   private static ImageSet createImageSet(IrisRenderingPipeline pipeline, IrisShaderPatch patch) {
     var samplerDataSet = patch.getSamplerSet();
@@ -860,9 +872,11 @@ public final class IrisBridgeShaderBindings {
               + "; the driver crashes at exactly the max)");
     }
     String[] samplerNames = new String[samplers.length];
+    int[] samplerTargets = new int[samplers.length];
     for (int i = 0; i < samplers.length; i++) {
       String samplerType = samplerDataSet.get(samplers[i].name);
       samplerNames[i] = samplers[i].name;
+      samplerTargets[i] = samplers[i].type.getGlType();
       // GL 4.1 / GLSL 410 (macOS) does not support layout(binding=...); the GL46 form
       // layout(binding=(BASE_SAMPLER_BINDING_INDEX+i)) fails to compile here. Declare a plain
       // sampler
@@ -888,7 +902,8 @@ public final class IrisBridgeShaderBindings {
             glBindSampler(unit, samplerId == -1 ? 0 : samplerId);
           }
         },
-        samplerNames);
+        samplerNames,
+        samplerTargets);
   }
 
   private record SSBOSet(String layout, IntConsumer bindingFunction) {}

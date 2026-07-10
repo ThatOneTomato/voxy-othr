@@ -186,7 +186,9 @@ final class DrawlistOpaqueRenderer
   private static final int IRIS_VERTEX_BUFFER_UNIT_BASE = 16;
   private static final int IRIS_VERTEX_SAMPLER_COUNT = 5;
   private static final boolean ENABLE_DRAW_GPU_TIMER =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.drawGpuTimer", "true"));
+      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.drawGpuTimer", "false"));
+  private static final int DRAW_GPU_TIMER_INTERVAL =
+      readInt("voxy.gl41metal.drawGpuTimerInterval", 16, 1, 120);
   private static final int MAX_RANGE_LIMIT =
       readInt("voxy.gl41metal.drawlistMaxRanges", 1_000_000, 1024, 4_000_000);
   private static final int INITIAL_RANGE_CAPACITY =
@@ -279,6 +281,11 @@ final class DrawlistOpaqueRenderer
   private final GpuTimer ssaoGpuTimer = new GpuTimer(GpuTimer.Phase.SSAO);
   private final GpuTimer compositeGpuTimer = new GpuTimer(GpuTimer.Phase.COMPOSITE);
   private final GpuTimer translucentDrawGpuTimer = new GpuTimer(GpuTimer.Phase.TRANSLUCENT);
+  private final GpuTimer directOpaqueSetupGpuTimer =
+      new GpuTimer(GpuTimer.Phase.DIRECT_OPAQUE_SETUP);
+  private final GpuTimer directTranslucentSetupGpuTimer =
+      new GpuTimer(GpuTimer.Phase.DIRECT_TRANSLUCENT_SETUP);
+  private final GpuTimer directBoundGpuTimer = new GpuTimer(GpuTimer.Phase.DIRECT_BOUND);
   private final int maxSections;
   private final long geometryCapacityBytes;
   private DirectIrisProgram irisOpaqueProgram;
@@ -455,7 +462,9 @@ final class DrawlistOpaqueRenderer
             + "x"
             + ATLAS_HEIGHT
             + " mips="
-            + ATLAS_MIP_LEVELS);
+            + ATLAS_MIP_LEVELS
+            + ", gpuTimerInterval="
+            + (ENABLE_DRAW_GPU_TIMER ? DRAW_GPU_TIMER_INTERVAL : 0));
   }
 
   boolean render(
@@ -506,9 +515,11 @@ final class DrawlistOpaqueRenderer
     if (program == null) {
       return false;
     }
-    StateSnapshot state = StateSnapshot.capture();
+    long tState = profiler.begin();
+    StateSnapshot state = StateSnapshot.captureDirectIris();
     IrisStencilState stencilState = IrisStencilState.capture(state.stencilEnabled);
-    IrisTextureState textureState = IrisTextureState.capture(payload.packSamplerCount());
+    IrisTextureState textureState = IrisTextureState.capture(payload.packSamplerTargets());
+    profiler.recordDirectState(tState);
     try (MemoryStack stack = MemoryStack.stackPush()) {
       return this.renderRanges(
           nativeHandle,
@@ -524,9 +535,11 @@ final class DrawlistOpaqueRenderer
           bridge,
           state.depthFunc == GL_GEQUAL || state.depthFunc == GL_GREATER);
     } finally {
+      tState = profiler.begin();
       textureState.restore();
       state.restore();
       stencilState.restore();
+      profiler.recordDirectState(tState);
     }
   }
 
@@ -607,7 +620,11 @@ final class DrawlistOpaqueRenderer
           context, drawMvp, vanillaDrawMvp, colorWriteEnabled, rangeCount, stack, profiler);
     } else {
       DistantBridgeJob job = DistantTerrainBridge.irisJob(irisPayload);
-      if (!bridge.prepareDirectIrisOpaque(stack, job, reverseDepth)) {
+      this.directOpaqueSetupGpuTimer.poll(profiler);
+      this.directOpaqueSetupGpuTimer.begin();
+      boolean prepared = bridge.prepareDirectIrisOpaque(stack, job, reverseDepth);
+      this.directOpaqueSetupGpuTimer.end();
+      if (!prepared) {
         profiler.recordDrawlistOpaqueRaster(tRaster);
         return false;
       }
@@ -740,9 +757,11 @@ final class DrawlistOpaqueRenderer
     if (program == null) {
       return false;
     }
-    StateSnapshot state = StateSnapshot.capture();
+    long tState = profiler.begin();
+    StateSnapshot state = StateSnapshot.captureDirectIris();
     IrisStencilState stencilState = IrisStencilState.capture(state.stencilEnabled);
-    IrisTextureState textureState = IrisTextureState.capture(payload.packSamplerCount());
+    IrisTextureState textureState = IrisTextureState.capture(payload.packSamplerTargets());
+    profiler.recordDirectState(tState);
     try (MemoryStack stack = MemoryStack.stackPush()) {
       long tBuild = profiler.begin();
       this.ensureRangeCommandBuffer(this.rangeCapacity);
@@ -783,13 +802,19 @@ final class DrawlistOpaqueRenderer
       long tRaster = profiler.begin();
       DistantBridgeJob job = DistantTerrainBridge.translucentJob(payload);
       boolean reverseDepth = state.depthFunc == GL_GEQUAL || state.depthFunc == GL_GREATER;
-      if (!bridge.prepareDirectIrisTranslucent(stack, job, reverseDepth)) {
+      this.directTranslucentSetupGpuTimer.poll(profiler);
+      this.directTranslucentSetupGpuTimer.begin();
+      boolean prepared = bridge.prepareDirectIrisTranslucent(stack, job, reverseDepth);
+      this.directTranslucentSetupGpuTimer.end();
+      if (!prepared) {
         profiler.recordDrawlistTranslucentRaster(tRaster);
         return false;
       }
       try {
         bridge.bindDirectIrisResources(job);
         if (bound != null && bound.enabled()) {
+          this.directBoundGpuTimer.poll(profiler);
+          this.directBoundGpuTimer.begin();
           this.drawIrisTranslucentBound(
               context,
               drawMvp,
@@ -800,6 +825,7 @@ final class DrawlistOpaqueRenderer
               rangeCount,
               stack,
               program.bound);
+          this.directBoundGpuTimer.end();
         }
         bridge.beginDirectIrisTranslucentColor(job);
         this.drawIrisTranslucentRanges(
@@ -817,9 +843,11 @@ final class DrawlistOpaqueRenderer
       profiler.recordDrawlistTranslucentRaster(tRaster);
       return true;
     } finally {
+      tState = profiler.begin();
       textureState.restore();
       state.restore();
       stencilState.restore();
+      profiler.recordDirectState(tState);
     }
   }
 
@@ -1037,6 +1065,9 @@ final class DrawlistOpaqueRenderer
     this.ssaoGpuTimer.close();
     this.compositeGpuTimer.close();
     this.translucentDrawGpuTimer.close();
+    this.directOpaqueSetupGpuTimer.close();
+    this.directTranslucentSetupGpuTimer.close();
+    this.directBoundGpuTimer.close();
   }
 
   private void drawRanges(
@@ -2284,31 +2315,21 @@ final class DrawlistOpaqueRenderer
 
   private record IrisTextureState(
       int activeTexture,
-      int[] textures1d,
-      int[] textures2d,
-      int[] textures3d,
-      int[] texturesRect,
-      int[] texturesCube,
+      int[] packTargets,
+      int[] packTextures,
       int[] packSamplers,
       int[] vertexBuffers,
       int[] vertexSamplers) {
-    static IrisTextureState capture(int packSamplerCount) {
+    static IrisTextureState capture(int[] samplerTargets) {
       int activeTexture = glGetInteger(GL_ACTIVE_TEXTURE);
-      int count = Math.max(0, packSamplerCount);
-      int[] textures1d = new int[count];
-      int[] textures2d = new int[count];
-      int[] textures3d = new int[count];
-      int[] texturesRect = new int[count];
-      int[] texturesCube = new int[count];
+      int[] packTargets = samplerTargets == null ? new int[0] : samplerTargets;
+      int count = packTargets.length;
+      int[] packTextures = new int[count];
       int[] packSamplers = new int[count];
       for (int i = 0; i < count; i++) {
         int unit = IrisBridgeShaderBindings.SAMPLER_BINDING_BASE + i;
         glActiveTexture(GL_TEXTURE0 + unit);
-        textures1d[i] = glGetInteger(org.lwjgl.opengl.GL11C.GL_TEXTURE_BINDING_1D);
-        textures2d[i] = glGetInteger(GL_TEXTURE_BINDING_2D);
-        textures3d[i] = glGetInteger(org.lwjgl.opengl.GL12C.GL_TEXTURE_BINDING_3D);
-        texturesRect[i] = glGetInteger(org.lwjgl.opengl.GL31C.GL_TEXTURE_BINDING_RECTANGLE);
-        texturesCube[i] = glGetInteger(org.lwjgl.opengl.GL13C.GL_TEXTURE_BINDING_CUBE_MAP);
+        packTextures[i] = glGetInteger(textureBindingForTarget(packTargets[i]));
         packSamplers[i] = glGetInteger(GL_SAMPLER_BINDING);
       }
       int[] vertexBuffers = new int[IRIS_VERTEX_SAMPLER_COUNT];
@@ -2321,26 +2342,25 @@ final class DrawlistOpaqueRenderer
       }
       glActiveTexture(activeTexture);
       return new IrisTextureState(
-          activeTexture,
-          textures1d,
-          textures2d,
-          textures3d,
-          texturesRect,
-          texturesCube,
-          packSamplers,
-          vertexBuffers,
-          vertexSamplers);
+          activeTexture, packTargets, packTextures, packSamplers, vertexBuffers, vertexSamplers);
+    }
+
+    private static int textureBindingForTarget(int target) {
+      return switch (target) {
+        case org.lwjgl.opengl.GL11C.GL_TEXTURE_1D -> org.lwjgl.opengl.GL11C.GL_TEXTURE_BINDING_1D;
+        case GL_TEXTURE_2D -> GL_TEXTURE_BINDING_2D;
+        case org.lwjgl.opengl.GL12C.GL_TEXTURE_3D -> org.lwjgl.opengl.GL12C.GL_TEXTURE_BINDING_3D;
+        case org.lwjgl.opengl.GL31C.GL_TEXTURE_RECTANGLE ->
+            org.lwjgl.opengl.GL31C.GL_TEXTURE_BINDING_RECTANGLE;
+        default -> throw new IllegalArgumentException("Unsupported Iris sampler target " + target);
+      };
     }
 
     void restore() {
       for (int i = 0; i < this.packSamplers.length; i++) {
         int unit = IrisBridgeShaderBindings.SAMPLER_BINDING_BASE + i;
         glActiveTexture(GL_TEXTURE0 + unit);
-        glBindTexture(org.lwjgl.opengl.GL11C.GL_TEXTURE_1D, this.textures1d[i]);
-        glBindTexture(GL_TEXTURE_2D, this.textures2d[i]);
-        glBindTexture(org.lwjgl.opengl.GL12C.GL_TEXTURE_3D, this.textures3d[i]);
-        glBindTexture(org.lwjgl.opengl.GL31C.GL_TEXTURE_RECTANGLE, this.texturesRect[i]);
-        glBindTexture(org.lwjgl.opengl.GL13C.GL_TEXTURE_CUBE_MAP, this.texturesCube[i]);
+        glBindTexture(this.packTargets[i], this.packTextures[i]);
         glBindSampler(unit, this.packSamplers[i]);
       }
       for (int i = 0; i < IRIS_VERTEX_SAMPLER_COUNT; i++) {
@@ -2393,7 +2413,10 @@ final class DrawlistOpaqueRenderer
       DEPTH_COPY,
       SSAO,
       COMPOSITE,
-      TRANSLUCENT
+      TRANSLUCENT,
+      DIRECT_OPAQUE_SETUP,
+      DIRECT_TRANSLUCENT_SETUP,
+      DIRECT_BOUND
     }
 
     private static final int QUERY_COUNT = 6;
@@ -2403,6 +2426,9 @@ final class DrawlistOpaqueRenderer
     private final Phase phase;
     private int nextQuery;
     private int activeQuery = -1;
+    private int beginCount;
+    private double lastMs;
+    private boolean hasLastMs;
 
     GpuTimer(Phase phase) {
       this.phase = phase;
@@ -2426,20 +2452,30 @@ final class DrawlistOpaqueRenderer
           continue;
         }
         long nanos = glGetQueryObjecti64(this.queries[i], GL_QUERY_RESULT);
-        double ms = nanos / 1_000_000.0;
-        switch (this.phase) {
-          case GEOMETRY -> profiler.recordDrawlistGeometryGpuMs(ms);
-          case DEPTH_COPY -> profiler.recordDrawlistDepthCopyGpuMs(ms);
-          case SSAO -> profiler.recordDrawlistSsaoGpuMs(ms);
-          case COMPOSITE -> profiler.recordDrawlistCompositeGpuMs(ms);
-          case TRANSLUCENT -> profiler.recordDrawlistTranslucentGpuMs(ms);
-        }
+        this.lastMs = Math.max(0L, nanos) / 1_000_000.0;
+        this.hasLastMs = true;
         this.pending[i] = false;
+      }
+      if (this.hasLastMs) {
+        switch (this.phase) {
+          case GEOMETRY -> profiler.recordDrawlistGeometryGpuMs(this.lastMs);
+          case DEPTH_COPY -> profiler.recordDrawlistDepthCopyGpuMs(this.lastMs);
+          case SSAO -> profiler.recordDrawlistSsaoGpuMs(this.lastMs);
+          case COMPOSITE -> profiler.recordDrawlistCompositeGpuMs(this.lastMs);
+          case TRANSLUCENT -> profiler.recordDrawlistTranslucentGpuMs(this.lastMs);
+          case DIRECT_OPAQUE_SETUP -> profiler.recordDirectOpaqueSetupGpuMs(this.lastMs);
+          case DIRECT_TRANSLUCENT_SETUP -> profiler.recordDirectTranslucentSetupGpuMs(this.lastMs);
+          case DIRECT_BOUND -> profiler.recordDirectBoundGpuMs(this.lastMs);
+        }
       }
     }
 
     void begin() {
       if (!ENABLE_DRAW_GPU_TIMER || this.activeQuery >= 0) {
+        return;
+      }
+      int sampleIndex = this.beginCount++ + this.phase.ordinal();
+      if (Math.floorMod(sampleIndex, DRAW_GPU_TIMER_INTERVAL) != 0) {
         return;
       }
       for (int attempts = 0; attempts < this.queries.length; attempts++) {
@@ -2489,6 +2525,7 @@ final class DrawlistOpaqueRenderer
       int sampler8,
       int[] textureBuffers,
       int[] textureBufferSamplers,
+      boolean extendedTextureState,
       boolean depthEnabled,
       boolean blendEnabled,
       boolean cullEnabled,
@@ -2513,6 +2550,14 @@ final class DrawlistOpaqueRenderer
       int viewportWidth,
       int viewportHeight) {
     static StateSnapshot capture() {
+      return capture(true);
+    }
+
+    static StateSnapshot captureDirectIris() {
+      return capture(false);
+    }
+
+    private static StateSnapshot capture(boolean extendedTextureState) {
       int[] viewport = new int[4];
       int[] scissorBox = new int[4];
       glGetIntegerv(GL_VIEWPORT, viewport);
@@ -2550,7 +2595,8 @@ final class DrawlistOpaqueRenderer
           colorMaskG,
           colorMaskB,
           colorMaskA,
-          scissorBox);
+          scissorBox,
+          extendedTextureState);
     }
 
     private static StateSnapshot captureCommon(
@@ -2570,7 +2616,8 @@ final class DrawlistOpaqueRenderer
         boolean colorMaskG,
         boolean colorMaskB,
         boolean colorMaskA,
-        int[] scissorBox) {
+        int[] scissorBox,
+        boolean extendedTextureState) {
       int oldActiveTexture = glGetInteger(GL_ACTIVE_TEXTURE);
       glActiveTexture(GL_TEXTURE0);
       int texture0 = glGetInteger(GL_TEXTURE_BINDING_2D);
@@ -2578,14 +2625,20 @@ final class DrawlistOpaqueRenderer
       glActiveTexture(GL_TEXTURE1);
       int texture1 = glGetInteger(GL_TEXTURE_BINDING_2D);
       int sampler1 = glGetInteger(GL_SAMPLER_BINDING);
-      glActiveTexture(GL_TEXTURE0 + NEAR_DEPTH_UNIT);
-      int texture7 = glGetInteger(GL_TEXTURE_BINDING_2D);
-      int sampler7 = glGetInteger(GL_SAMPLER_BINDING);
-      glActiveTexture(GL_TEXTURE0 + BOUND_DEPTH_UNIT);
-      int texture8 = glGetInteger(GL_TEXTURE_BINDING_2D);
-      int sampler8 = glGetInteger(GL_SAMPLER_BINDING);
-      int[] textureBuffers = new int[5];
-      int[] textureBufferSamplers = new int[5];
+      int texture7 = 0;
+      int sampler7 = 0;
+      int texture8 = 0;
+      int sampler8 = 0;
+      int[] textureBuffers = extendedTextureState ? new int[5] : new int[0];
+      int[] textureBufferSamplers = extendedTextureState ? new int[5] : new int[0];
+      if (extendedTextureState) {
+        glActiveTexture(GL_TEXTURE0 + NEAR_DEPTH_UNIT);
+        texture7 = glGetInteger(GL_TEXTURE_BINDING_2D);
+        sampler7 = glGetInteger(GL_SAMPLER_BINDING);
+        glActiveTexture(GL_TEXTURE0 + BOUND_DEPTH_UNIT);
+        texture8 = glGetInteger(GL_TEXTURE_BINDING_2D);
+        sampler8 = glGetInteger(GL_SAMPLER_BINDING);
+      }
       for (int i = 0; i < textureBuffers.length; i++) {
         int unit = GEOMETRY_BUFFER_UNIT + i;
         glActiveTexture(GL_TEXTURE0 + unit);
@@ -2611,6 +2664,7 @@ final class DrawlistOpaqueRenderer
           sampler8,
           textureBuffers,
           textureBufferSamplers,
+          extendedTextureState,
           depthEnabled,
           blendEnabled,
           cullEnabled,
@@ -2683,12 +2737,14 @@ final class DrawlistOpaqueRenderer
       glActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, this.texture1);
       glBindSampler(1, this.sampler1);
-      glActiveTexture(GL_TEXTURE0 + NEAR_DEPTH_UNIT);
-      glBindTexture(GL_TEXTURE_2D, this.texture7);
-      glBindSampler(NEAR_DEPTH_UNIT, this.sampler7);
-      glActiveTexture(GL_TEXTURE0 + BOUND_DEPTH_UNIT);
-      glBindTexture(GL_TEXTURE_2D, this.texture8);
-      glBindSampler(BOUND_DEPTH_UNIT, this.sampler8);
+      if (this.extendedTextureState) {
+        glActiveTexture(GL_TEXTURE0 + NEAR_DEPTH_UNIT);
+        glBindTexture(GL_TEXTURE_2D, this.texture7);
+        glBindSampler(NEAR_DEPTH_UNIT, this.sampler7);
+        glActiveTexture(GL_TEXTURE0 + BOUND_DEPTH_UNIT);
+        glBindTexture(GL_TEXTURE_2D, this.texture8);
+        glBindSampler(BOUND_DEPTH_UNIT, this.sampler8);
+      }
       for (int i = 0; i < this.textureBuffers.length; i++) {
         int unit = GEOMETRY_BUFFER_UNIT + i;
         glActiveTexture(GL_TEXTURE0 + unit);

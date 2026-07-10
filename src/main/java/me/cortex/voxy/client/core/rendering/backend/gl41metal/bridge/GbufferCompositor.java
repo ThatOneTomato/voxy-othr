@@ -649,7 +649,6 @@ final class GbufferCompositor {
         org.lwjgl.opengl.GL11C.GL_ONE,
         org.lwjgl.opengl.GL11C.GL_ONE_MINUS_SRC_ALPHA);
     job.blendSetup().run();
-    this.bindShaderPackResources(job);
   }
 
   void finishDirectIrisTranslucent() {
@@ -674,18 +673,10 @@ final class GbufferCompositor {
         GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, translucentDepth, 0);
     org.lwjgl.opengl.GL11C.glDrawBuffer(GL_NONE);
     boolean drawComplete = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    // The translucent stencil is cleared immediately after this copy; copying it only adds packed
+    // depth-stencil traffic and can force an unnecessary tile store on Apple GPUs.
     if (readComplete && drawComplete) {
-      glBlitFramebuffer(
-          0,
-          0,
-          width,
-          height,
-          0,
-          0,
-          width,
-          height,
-          GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT,
-          GL_NEAREST);
+      glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
     }
     glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
