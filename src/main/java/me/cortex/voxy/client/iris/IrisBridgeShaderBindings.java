@@ -75,15 +75,9 @@ import org.lwjgl.system.MemoryUtil;
 public final class IrisBridgeShaderBindings {
   public static final int UNIFORM_BINDING_POINT = 5;
   public static final int SSBO_BINDING_BASE = 10;
-  // The Iris bridge COLOUR program binds only the 3 reconstruction samplers gbuffer0-2 (units 0-2,
-  // see DistantTerrainBridge GBUFFER*_TEXTURE_UNIT), so shader-pack samplers start at unit 3. The
-  // near-depth mask (unit 3) and MC lightmap (unit 4) are used by the vanilla single pass and the
-  // separate Iris depth/coverage mask pass, neither of which binds any pack samplers, so they never
-  // collide with the pack here. Base 3 leaves room for packs with up to GL_MAX_TEXTURE_IMAGE_UNITS
-  // - 1 - 3 samplers (12 on Apple GL4.1; the -1 is the driver's crash-at-16 headroom, see
-  // createImageSet), enough for e.g. Complementary's 12. This is why the gbuffer was packed down to
-  // 3 textures: at base 4 a 12-sampler pack hit exactly 16 units and SIGSEGV'd in glLinkProgram.
-  public static final int SAMPLER_BINDING_BASE = 3;
+  // Direct drawlist reserves fragment unit 0 for the block atlas. Pack samplers start at 1, leaving
+  // 14 pack slots under Apple's empirically safe 15-unit limit.
+  public static final int SAMPLER_BINDING_BASE = 1;
 
   // Deduplicates the per-build sampler-budget INFO log: see the comment at the log site for why
   // build() runs many times per pack load. Concurrent-safe so the render thread can race other
@@ -821,14 +815,13 @@ public final class IrisBridgeShaderBindings {
 
     StringBuilder header = new StringBuilder();
     TextureWithSampler[] samplers = samplerSet.toArray(TextureWithSampler[]::new);
-    // The strict bridge declares the SAMPLER_BINDING_BASE Voxy reconstruction samplers plus every
-    // shader-pack sampler in one fragment program. Apple's GL 4.1 driver does not merely return a
+    // The direct shader declares one block-atlas sampler plus every shader-pack sampler. Apple's
+    // GL 4.1 driver does not merely return a
     // link error when a fragment program uses too many samplers: it SIGSEGVs inside glLinkProgram
     // (glpLLVMGetFunctionGlobalVariableUse). Empirically it crashes at *exactly*
     // GL_MAX_TEXTURE_IMAGE_UNITS (16 on Apple Silicon), not just above it, so the usable budget is
     // maxTextureUnits - 1 (= 15). Reject the build cleanly above that and let the caller skip the
-    // strict bridge rather than taking down the process. The gbuffer is packed into 3 textures
-    // precisely so a 12-sampler pack lands at 15 here instead of the fatal 16.
+    // direct path rather than taking down the process.
     int maxTextureUnits = glGetInteger(GL_MAX_TEXTURE_IMAGE_UNITS);
     int usableTextureUnits = maxTextureUnits - 1;
     int requiredTextureUnits = SAMPLER_BINDING_BASE + samplers.length;
@@ -837,7 +830,7 @@ public final class IrisBridgeShaderBindings {
             + samplers.length
             + " pack samplers + "
             + SAMPLER_BINDING_BASE
-            + " Voxy reconstruction = "
+            + " Voxy atlas = "
             + requiredTextureUnits
             + " / "
             + usableTextureUnits
@@ -865,7 +858,7 @@ public final class IrisBridgeShaderBindings {
               + requiredTextureUnits
               + " fragment texture units including "
               + SAMPLER_BINDING_BASE
-              + " Voxy reconstruction samplers) but Apple GL4.1 only safely allows "
+              + " Voxy atlas sampler) but Apple GL4.1 only safely allows "
               + usableTextureUnits
               + " (of "
               + maxTextureUnits

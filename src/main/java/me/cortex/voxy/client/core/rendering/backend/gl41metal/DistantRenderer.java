@@ -3,7 +3,7 @@ package me.cortex.voxy.client.core.rendering.backend.gl41metal;
 import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.rendering.backend.RenderFrameContext;
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.SharedDistantGbuffer;
+import me.cortex.voxy.client.core.rendering.backend.gl41metal.bridge.FrameSlotContext;
 import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.util.MemoryBuffer;
@@ -13,39 +13,21 @@ import org.joml.Matrix4fc;
 import org.lwjgl.system.MemoryUtil;
 
 public final class DistantRenderer {
-  void submitSynthetic(SharedDistantGbuffer gbuffer, int slot, long frameId) {
-    NativeBindings.submitSynthetic(gbuffer.nativeHandle(), slot, frameId);
-  }
-
   void submitTraversal(
-      SharedDistantGbuffer gbuffer,
+      FrameSlotContext slots,
       int slot,
       long frameId,
       RenderFrameContext context,
       Matrix4fc traversalMvp,
-      Matrix4fc drawMvp,
-      Matrix4fc projection,
-      int outputMode) {
-    // Layout: [0..15] traversalMvp, [16..31] drawMvp, [32..79] SSAO matrices
-    // (proj, invProj, modelView - see SsaoUniformHost in gl41metal_abi.h).
-    MemoryBuffer matrices = new MemoryBuffer(80L * Float.BYTES);
+      Matrix4fc drawMvp) {
+    MemoryBuffer matrices = new MemoryBuffer(32L * Float.BYTES);
     try {
       writeMatrix(matrices.address, traversalMvp);
       writeMatrix(matrices.address + 16L * Float.BYTES, drawMvp);
-      int ssaoSteps = computeSsaoSteps(context);
-      long ssaoMatricesAddress = 0;
-      if (ssaoSteps > 0) {
-        ssaoMatricesAddress = matrices.address + 32L * Float.BYTES;
-        writeMatrix(ssaoMatricesAddress, projection);
-        writeMatrix(ssaoMatricesAddress + 16L * Float.BYTES, projection.invert(new Matrix4f()));
-        writeMatrix(ssaoMatricesAddress + 32L * Float.BYTES, context.matrices().modelView());
-      }
-      float subDivisionSize = VoxyConfig.CONFIG.subDivisionSize;
-      if (outputMode == NativeBindings.OUTPUT_MODE_DRAWLIST) {
-        subDivisionSize *= computeDrawlistLodFovScale(context);
-      }
+      float subDivisionSize =
+          VoxyConfig.CONFIG.subDivisionSize * computeDrawlistLodFovScale(context);
       NativeBindings.submitTraversal(
-          gbuffer.nativeHandle(),
+          slots.nativeHandle(),
           slot,
           frameId,
           context.cameraX(),
@@ -58,10 +40,7 @@ public final class DistantRenderer {
           computeNearExclusionRadius(),
           computeRenderDistanceSquared(),
           context.viewportWidth(),
-          context.viewportHeight(),
-          ssaoMatricesAddress,
-          ssaoSteps,
-          outputMode);
+          context.viewportHeight());
     } finally {
       matrices.free();
     }

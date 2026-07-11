@@ -11,7 +11,7 @@ public enum RenderStage {
   PRE_TRANSLUCENT,
   // The host reached the start of translucent rendering (Iris beginTranslucents RETURN, before
   // near Sodium/vanilla translucent geometry draws). gl41metal composites its distant translucent
-  // gbuffer here so near-scene translucents blend over the already-composited distant water.
+  // drawlist here so near-scene translucents blend over the already-drawn distant water.
   TRANSLUCENT,
   // The host reached its opaque LOD terrain draw point (Sodium translucent-pass hooks in the
   // non-Iris path, or the legacy direct render path). gl46 draws its opaque terrain here.

@@ -4,22 +4,12 @@ import java.util.ArrayDeque;
 import java.util.Queue;
 import me.cortex.voxy.client.core.model.BakedModelPayload;
 import me.cortex.voxy.client.core.model.BiomeModelPayload;
-import me.cortex.voxy.client.core.model.ModelFactory;
 import me.cortex.voxy.client.core.model.ModelOutputSink;
-import me.cortex.voxy.client.core.rendering.backend.gl41metal.jni.NativeBindings;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import org.lwjgl.system.MemoryUtil;
 
 public final class MaterialStore implements ModelOutputSink {
-  static final int MODEL_GRID_SIZE = 256;
-  static final int ATLAS_WIDTH = ModelFactory.MODEL_TEXTURE_SIZE * 3 * MODEL_GRID_SIZE;
-  static final int ATLAS_HEIGHT = ModelFactory.MODEL_TEXTURE_SIZE * 2 * MODEL_GRID_SIZE;
-  static final int ATLAS_MIP_LEVELS = ModelFactory.LAYERS;
-  // TODO(gl41metal): move model atlas uploads through a dedicated Metal staging ring/blit path.
-  static final boolean FULL_ATLAS_UPLOADS =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.uploadModelAtlas", "true"));
-
   private static final int MAX_MODEL_UPLOADS_PER_FRAME = 256;
   private static final int MAX_BIOME_UPLOADS_PER_FRAME = 1024;
 
@@ -63,7 +53,7 @@ public final class MaterialStore implements ModelOutputSink {
         new ModelUpload(
             payload.modelId(),
             payload.model().copy(),
-            this.atlasMirror != null || FULL_ATLAS_UPLOADS ? payload.texture().copy() : null,
+            this.atlasMirror != null ? payload.texture().copy() : null,
             payload.renderLayer(),
             payload.fallbackReason(),
             payload.sourceDescription()));
@@ -75,8 +65,8 @@ public final class MaterialStore implements ModelOutputSink {
         new BiomeUpload(payload.biomeColourBuffer().copy(), payload.modelBiomeIndexPairs().copy()));
   }
 
-  synchronized void drainUploads(long nativeHandle) {
-    this.drainBiomeUploads(nativeHandle);
+  synchronized void drainUploads() {
+    this.drainBiomeUploads();
 
     int modelUploads = 0;
     while (modelUploads++ < MAX_MODEL_UPLOADS_PER_FRAME) {
@@ -86,15 +76,6 @@ public final class MaterialStore implements ModelOutputSink {
       }
       try {
         int customId = upload.customId();
-        NativeBindings.uploadModel(
-            nativeHandle,
-            upload.modelId,
-            upload.model.address,
-            upload.model.size,
-            upload.texture == null ? 0 : upload.texture.address,
-            upload.texture == null ? 0 : upload.texture.size,
-            upload.renderLayer,
-            upload.fallbackReason);
         if (this.atlasMirror != null) {
           this.atlasMirror.uploadModelData(upload.modelId, upload.model.address, upload.model.size);
           if (upload.texture != null) {
@@ -131,10 +112,10 @@ public final class MaterialStore implements ModelOutputSink {
       }
     }
 
-    this.drainBiomeUploads(nativeHandle);
+    this.drainBiomeUploads();
   }
 
-  private void drainBiomeUploads(long nativeHandle) {
+  private void drainBiomeUploads() {
     int biomeUploads = 0;
     while (biomeUploads++ < MAX_BIOME_UPLOADS_PER_FRAME) {
       BiomeUpload upload = this.pendingBiomes.poll();
@@ -142,12 +123,6 @@ public final class MaterialStore implements ModelOutputSink {
         break;
       }
       try {
-        NativeBindings.uploadBiomeData(
-            nativeHandle,
-            upload.biomeColours.address,
-            upload.biomeColours.size,
-            upload.modelBiomePairs.address,
-            upload.modelBiomePairs.size);
         if (this.atlasMirror != null) {
           this.atlasMirror.uploadBiomeData(
               upload.biomeColours.address,

@@ -67,11 +67,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_w
   return currentSlot;
 }
 
-// Whether the GL side needs to composite the given slot's translucent gbuffer. False when the
-// submit skipped the translucent Metal pass (no translucent geometry resident, tgbuffer stale)
-// OR when the pass ran but the traversal emitted zero translucent work items (tgbuffer cleared
-// but empty), letting the GL side skip the full-screen translucent composite reads. Must only be
-// called after the slot's Metal work completed (GlSampling), so the counter value is final.
+// Must only be called after traversal completed, so the translucent worklist counter is final.
 JNIEXPORT jboolean JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_isSlotTranslucentValid(
     JNIEnv* env, jclass, jlong handle, jint slotIndex) {

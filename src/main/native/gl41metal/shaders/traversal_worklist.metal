@@ -463,7 +463,7 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
           // Metal mesh raster derives its source offsets from section metadata
           // and ignores these two fields. Always preserve the traversal
           // snapshot so direct GL opaque/translucent draws can use the same
-          // worklist even while shared-gbuffer fallback remains enabled.
+          // worklist for the direct GL range builder.
           item.quadBase = section.a.w;
           item.reserved =
               opaqueGroupMask | (section_fingerprint(section) << 8u);

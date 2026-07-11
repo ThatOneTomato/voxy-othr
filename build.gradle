@@ -90,9 +90,6 @@ tasks.register('compileGl41MetalNative', Exec) {
                         sources +
                         ['-framework', 'Foundation',
                          '-framework', 'Metal',
-                         '-framework', 'IOSurface',
-                         '-framework', 'OpenGL',
-                         '-framework', 'CoreVideo',
                          '-o', outputLib.absolutePath])
     }
 }
@@ -129,24 +126,20 @@ ext.voxyRunProperties = {
     ]
     [
         'voxy.gl41metal.slotCount'            : '3',
-        'voxy.gl41metal.pipeline'             : 'shared_gbuffer',
         'voxy.gl41metal.waitTimeoutMs'        : '0',
         'voxy.gl41metal.visibleComposite'     : 'true',
         'voxy.gl41metal.residencyMaxSections' : '262144',
         'voxy.gl41metal.geometryCapacityMb'   : '256',
-        'voxy.gl41metal.uploadModelAtlas'     : 'true',
         'voxy.gl41metal.maxNodes'             : '2097152',
         'voxy.gl41metal.maxTraversalQueue'    : '200000',
         'voxy.gl41metal.maxTraversalRequests' : '1024',
         'voxy.gl41metal.maxWorklistItems'     : '400000',
         'voxy.gl41metal.dumpShaders'          : 'false',
-        'voxy.gl41metal.manualDepthMask'      : 'true',
         'voxy.gl41metal.boundVerticalMargin'  : '1',
         'voxy.gl41metal.boundHorizontalMargin': '0',
         'voxy.gl41metal.boundAddDelayFrames'  : '1',
-        'voxy.gl41metal.meshBatchSize'        : '64',
-        'voxy.gl41metal.validateTerrain'      : 'false',
         'voxy.gl41metal.modelBakeBudgetMs'    : '4',
+        'voxy.gl41metal.profile'              : 'false',
         'voxy.gl41metal.drawGpuTimer'         : 'false',
         'voxy.gl41metal.drawGpuTimerInterval' : '16',
         'voxy.fluidBridgeWalls'               : 'true',

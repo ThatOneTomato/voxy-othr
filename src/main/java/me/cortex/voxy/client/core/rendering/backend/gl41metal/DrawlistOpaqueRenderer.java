@@ -186,7 +186,8 @@ final class DrawlistOpaqueRenderer
   private static final int IRIS_VERTEX_BUFFER_UNIT_BASE = 16;
   private static final int IRIS_VERTEX_SAMPLER_COUNT = 5;
   private static final boolean ENABLE_DRAW_GPU_TIMER =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.drawGpuTimer", "false"));
+      FrameProfiler.profilingEnabled()
+          && Boolean.parseBoolean(System.getProperty("voxy.gl41metal.drawGpuTimer", "false"));
   private static final int DRAW_GPU_TIMER_INTERVAL =
       readInt("voxy.gl41metal.drawGpuTimerInterval", 16, 1, 120);
   private static final int MAX_RANGE_LIMIT =

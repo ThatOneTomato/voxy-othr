@@ -16,8 +16,6 @@ public final class NativeBindings {
   private static final boolean LOADED;
   private static final String LOAD_FAILURE;
   private static final Path SHADER_LIBRARY_PATH;
-  public static final int OUTPUT_MODE_SHARED_GBUFFER = 0;
-  public static final int OUTPUT_MODE_DRAWLIST = 1;
 
   static {
     String failure = null;
@@ -89,63 +87,26 @@ public final class NativeBindings {
 
   public static native String getUnsupportedReason();
 
-  public static native long createContext(
-      int slotCount,
-      int width,
-      int height,
-      boolean sharedTexturesEnabled,
-      String shaderLibraryPath);
+  public static native long createContext(int slotCount, String shaderLibraryPath);
 
-  public static long createContext(
-      int slotCount, int width, int height, boolean sharedTexturesEnabled) {
+  public static long createContext(int slotCount) {
     if (SHADER_LIBRARY_PATH == null) {
       throw new IllegalStateException("GL41Metal shader library was not loaded");
     }
-    return createContext(
-        slotCount, width, height, sharedTexturesEnabled, SHADER_LIBRARY_PATH.toString());
+    return createContext(slotCount, SHADER_LIBRARY_PATH.toString());
   }
 
   public static native void destroyContext(long handle);
 
-  // Reconfigures the optional per-slot shared gbuffer/depth textures while preserving the native
-  // context and all viewport-independent traversal/terrain resources.
-  public static native void configureSharedTextures(
-      long handle, int width, int height, boolean sharedTexturesEnabled);
-
   public static native String getDeviceName(long handle);
-
-  public static native int getTextureTarget(long handle);
 
   public static native double getLastMetalGpuTimeMs(long handle);
 
-  // Per-pass GPU timing (ms) from the most recent completed Metal frame.
-  // Returns [traversal, opaqueRaster, ssao, translucent].
+  // Per-pass GPU timing (ms). Drawlist mode only populates traversal.
   public static native double[] getPerPassGpuTimesMs(long handle);
-
-  // Distant gbuffer is 3 shared RGBA32F textures (see quad_raster.metal QuadFragmentOut):
-  // gbuffer0 = uv/tile, gbuffer1 = depth/modelId/customId, gbuffer2 = packed albedo/light/tint
-  // and face/flags/coverage. Three is the sampler-budget limit for the Iris bridge program.
-  public static native int getGbuffer0Texture(long handle, int slot);
-
-  public static native int getGbuffer1Texture(long handle, int slot);
-
-  public static native int getGbuffer2Texture(long handle, int slot);
-
-  // Translucent distant gbuffer is 3 further shared RGBA32F textures (see quad_raster.metal
-  // TranslucentFragmentOut): tgbuffer0/1 carry the front-most translucent surface for strict pack
-  // water shading, tgbufferAccum carries the back->front over-blended flat colour + alpha.
-  public static native int getTgbuffer0Texture(long handle, int slot);
-
-  public static native int getTgbuffer1Texture(long handle, int slot);
-
-  public static native int getTgbufferAccumTexture(long handle, int slot);
 
   public static native int acquireFreeSlot(long handle);
 
-  public static native void submitSynthetic(long handle, int slot, long frameId);
-
-  // ssaoMatricesAddress points at 48 contiguous floats (proj, invProj, modelView in JOML
-  // column-major order, see SsaoUniformHost); ssaoSteps == 0 disables the distant SSAO pass.
   public static native void submitTraversal(
       long handle,
       int slot,
@@ -160,10 +121,7 @@ public final class NativeBindings {
       float nearExclusionRadius,
       float renderDistanceSquared,
       int viewportWidth,
-      int viewportHeight,
-      long ssaoMatricesAddress,
-      int ssaoSteps,
-      int outputMode);
+      int viewportHeight);
 
   // countersAddress points at nine uint64 values:
   // [0]=written merged range count, [1]=overflow range count, [2]=range-covered quad count,
@@ -194,9 +152,7 @@ public final class NativeBindings {
 
   public static native int waitCurrent(long handle, int currentSlot, int timeoutMs);
 
-  // Whether the slot's submit ran the translucent Metal pass. False when no translucent geometry
-  // was resident (the tgbuffer textures are stale - neither rastered nor cleared), in which case
-  // the GL translucent composite must be skipped for this slot.
+  // Whether traversal emitted any translucent work for this slot.
   public static native boolean isSlotTranslucentValid(long handle, int slot);
 
   public static native void discardCurrentSlot(long handle, int slot);
@@ -206,55 +162,18 @@ public final class NativeBindings {
   public static native void createTerrainResources(
       long handle,
       int maxSections,
-      long geometryCapacityBytes,
       int maxNodes,
       int maxTraversalQueue,
       int maxTraversalRequests,
-      int maxWorklistItems,
-      int maxRasterQuads,
-      int atlasWidth,
-      int atlasHeight,
-      int atlasMipLevels,
-      int meshBatchSize);
+      int maxWorklistItems);
 
   public static native void clearTerrainResources(long handle);
-
-  public static native void uploadModel(
-      long handle,
-      int modelId,
-      long modelAddress,
-      long modelBytes,
-      long textureAddress,
-      long textureBytes,
-      int renderLayer,
-      int fallbackReason);
-
-  public static native void uploadBiomeData(
-      long handle,
-      long colourAddress,
-      long colourBytes,
-      long modelBiomePairsAddress,
-      long modelBiomePairsBytes);
-
-  public static native void uploadSection(
-      long handle,
-      int sectionId,
-      long sectionPos,
-      int aabb,
-      int childExistence,
-      long offsetsAddress,
-      long offsetsBytes,
-      long geometryAddress,
-      long geometryBytes);
 
   public static native void removeSection(long handle, int sectionId);
 
   public static native void uploadNode(long handle, int nodeId, long nodeAddress);
 
   public static native void uploadSectionMetadata(long handle, int sectionId, long metadataAddress);
-
-  public static native void uploadGeometry(
-      long handle, int geometryElementOffset, long geometryAddress, long geometryBytes);
 
   public static native void addTopNode(long handle, int nodeId);
 
@@ -263,8 +182,6 @@ public final class NativeBindings {
   public static native long[] pollTraversalRequests(long handle);
 
   public static native void clearTraversalWorklist(long handle);
-
-  public static native void validateTerrainResources(long handle);
 
   public static native long[] getTerrainStats(long handle);
 }

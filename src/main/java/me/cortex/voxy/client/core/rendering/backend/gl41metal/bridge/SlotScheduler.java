@@ -31,9 +31,9 @@ public final class SlotScheduler {
     this.waitTimeoutMs = waitTimeoutMs;
   }
 
-  public int acquireWriteSlot(SharedDistantGbuffer gbuffer) {
-    this.retireCompletedSlots(gbuffer);
-    return NativeBindings.acquireFreeSlot(gbuffer.nativeHandle());
+  public int acquireWriteSlot(FrameSlotContext slots) {
+    this.retireCompletedSlots(slots);
+    return NativeBindings.acquireFreeSlot(slots.nativeHandle());
   }
 
   public void recordSubmitted() {
@@ -44,15 +44,15 @@ public final class SlotScheduler {
     this.noFreeSlot++;
     if (!this.loggedNoFreeSlot) {
       this.loggedNoFreeSlot = true;
-      Logger.warn("Voxy GL41Metal had no free shared slot for Metal submission");
+      Logger.warn("Voxy GL41Metal had no free traversal slot for Metal submission");
     }
   }
 
-  public int selectSlotForSampling(SharedDistantGbuffer gbuffer, int currentSlot) {
-    this.retireCompletedSlots(gbuffer);
+  public int selectSlotForSampling(FrameSlotContext slots, int currentSlot) {
+    this.retireCompletedSlots(slots);
     long waitStart = System.nanoTime();
     int selected =
-        NativeBindings.waitCurrent(gbuffer.nativeHandle(), currentSlot, this.waitTimeoutMs);
+        NativeBindings.waitCurrent(slots.nativeHandle(), currentSlot, this.waitTimeoutMs);
     this.maxWaitMs = Math.max(this.maxWaitMs, (System.nanoTime() - waitStart) / 1_000_000.0);
     if (currentSlot >= 0 && selected == currentSlot) {
       this.sampledCurrent++;
@@ -60,7 +60,7 @@ public final class SlotScheduler {
       this.skippedCurrent++;
       if (currentSlot >= 0) {
         this.timeouts++;
-        NativeBindings.discardCurrentSlot(gbuffer.nativeHandle(), currentSlot);
+        NativeBindings.discardCurrentSlot(slots.nativeHandle(), currentSlot);
       }
       if (currentSlot >= 0 && !this.loggedCurrentTimeout) {
         this.loggedCurrentTimeout = true;
@@ -70,24 +70,24 @@ public final class SlotScheduler {
     return selected;
   }
 
-  public void queueSampledSlotRetirement(SharedDistantGbuffer gbuffer, int slot) {
+  public void queueSampledSlotRetirement(FrameSlotContext slots, int slot) {
     long fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     if (fence == 0) {
-      NativeBindings.releaseSampledSlot(gbuffer.nativeHandle(), slot);
+      NativeBindings.releaseSampledSlot(slots.nativeHandle(), slot);
       return;
     }
     Long previous = this.retiringFences.put(slot, fence);
     if (previous != null) {
       glDeleteSync(previous);
-      NativeBindings.releaseSampledSlot(gbuffer.nativeHandle(), slot);
+      NativeBindings.releaseSampledSlot(slots.nativeHandle(), slot);
     }
   }
 
-  public void closeRetiringSlots(SharedDistantGbuffer gbuffer) {
+  public void closeRetiringSlots(FrameSlotContext slots) {
     for (Map.Entry<Integer, Long> entry : this.retiringFences.entrySet()) {
       glClientWaitSync(entry.getValue(), GL_SYNC_FLUSH_COMMANDS_BIT, 1_000_000_000L);
       glDeleteSync(entry.getValue());
-      NativeBindings.releaseSampledSlot(gbuffer.nativeHandle(), entry.getKey());
+      NativeBindings.releaseSampledSlot(slots.nativeHandle(), entry.getKey());
     }
     this.retiringFences.clear();
   }
@@ -132,14 +132,14 @@ public final class SlotScheduler {
         + (this.waitTimeoutMs == 0 ? "blocking-current" : "debug-bounded-current");
   }
 
-  private void retireCompletedSlots(SharedDistantGbuffer gbuffer) {
+  private void retireCompletedSlots(FrameSlotContext slots) {
     Iterator<Map.Entry<Integer, Long>> iterator = this.retiringFences.entrySet().iterator();
     while (iterator.hasNext()) {
       Map.Entry<Integer, Long> entry = iterator.next();
       int result = glClientWaitSync(entry.getValue(), 0, 0L);
       if (result == GL_ALREADY_SIGNALED || result == GL_CONDITION_SATISFIED) {
         glDeleteSync(entry.getValue());
-        NativeBindings.releaseSampledSlot(gbuffer.nativeHandle(), entry.getKey());
+        NativeBindings.releaseSampledSlot(slots.nativeHandle(), entry.getKey());
         iterator.remove();
       }
     }

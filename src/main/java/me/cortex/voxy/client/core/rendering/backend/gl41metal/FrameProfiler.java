@@ -9,10 +9,13 @@ import me.cortex.voxy.common.Logger;
  * wall-clock times for each frame phase over a rolling window and exposes averages, maxes, and
  * periodic log summaries.
  *
- * <p>Enable periodic log output with {@code -Dvoxy.gl41metal.profileLogIntervalMs=5000} (default
- * 5000 ms, 0 to disable).
+ * <p>Enable with {@code -Dvoxy.gl41metal.profile=true}. Profiling is off by default because GL
+ * timer queries and dense render-thread timing perturb Apple's OpenGL-over-Metal command
+ * submission.
  */
 public final class FrameProfiler {
+  private static final boolean ENABLED =
+      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.profile", "false"));
   private static final int WINDOW_SIZE =
       Math.max(
           10,
@@ -96,40 +99,54 @@ public final class FrameProfiler {
   }
 
   long begin() {
-    return System.nanoTime();
+    return ENABLED ? System.nanoTime() : 0;
+  }
+
+  boolean enabled() {
+    return ENABLED;
+  }
+
+  static boolean profilingEnabled() {
+    return ENABLED;
   }
 
   void recordTick(long startNanos) {
+    if (!ENABLED) return;
     long elapsed = System.nanoTime() - startNanos;
     this.tickAccum += elapsed;
     this.maxTickNanos = Math.max(this.maxTickNanos, elapsed);
   }
 
   void recordMetalSubmit(long startNanos) {
+    if (!ENABLED) return;
     long elapsed = System.nanoTime() - startNanos;
     this.metalSubmitAccum += elapsed;
     this.maxMetalSubmitNanos = Math.max(this.maxMetalSubmitNanos, elapsed);
   }
 
   void recordSlotWait(long startNanos) {
+    if (!ENABLED) return;
     long elapsed = System.nanoTime() - startNanos;
     this.slotWaitAccum += elapsed;
     this.maxSlotWaitNanos = Math.max(this.maxSlotWaitNanos, elapsed);
   }
 
   void recordBoundRender(long startNanos) {
+    if (!ENABLED) return;
     long elapsed = System.nanoTime() - startNanos;
     this.boundRenderAccum += elapsed;
     this.maxBoundRenderNanos = Math.max(this.maxBoundRenderNanos, elapsed);
   }
 
   void recordBridgeOpaque(long startNanos) {
+    if (!ENABLED) return;
     long elapsed = System.nanoTime() - startNanos;
     this.bridgeOpaqueAccum += elapsed;
     this.maxBridgeOpaqueNanos = Math.max(this.maxBridgeOpaqueNanos, elapsed);
   }
 
   void recordBridgeTranslucent(long startNanos) {
+    if (!ENABLED) return;
     long elapsed = System.nanoTime() - startNanos;
     this.bridgeTranslucentAccum += elapsed;
     this.maxBridgeTranslucentNanos = Math.max(this.maxBridgeTranslucentNanos, elapsed);
@@ -145,6 +162,7 @@ public final class FrameProfiler {
 
   private void recordDrawlistBuild(
       long startNanos, long quads, long overflows, DrawlistPhaseStats phaseStats) {
+    if (!ENABLED) return;
     long elapsed = System.nanoTime() - startNanos;
     this.drawlistBuildAccum += elapsed;
     long clampedQuads = Math.max(0, quads);
@@ -158,6 +176,7 @@ public final class FrameProfiler {
   }
 
   void recordDirectState(long startNanos) {
+    if (!ENABLED) return;
     long elapsed = System.nanoTime() - startNanos;
     this.directStateAccum += elapsed;
     this.currentDirectStateNanos += elapsed;
@@ -173,6 +192,7 @@ public final class FrameProfiler {
   }
 
   private void recordDrawlistRaster(long startNanos, DrawlistPhaseStats phaseStats) {
+    if (!ENABLED) return;
     long elapsed = System.nanoTime() - startNanos;
     this.drawlistOpaqueRasterAccum += elapsed;
     this.currentDrawlistRasterNanos += elapsed;
@@ -223,12 +243,14 @@ public final class FrameProfiler {
   }
 
   private void recordDrawlistGpuMs(double ms, DrawlistPhaseStats phaseStats) {
+    if (!ENABLED) return;
     this.drawlistGpuMsAccum += ms;
     this.currentDrawlistGpuMs += ms;
     phaseStats.recordGpu(ms);
   }
 
   void recordDrawlistRangeMeasure(long startNanos, long[] stats) {
+    if (!ENABLED) return;
     long elapsed = System.nanoTime() - startNanos;
     this.drawlistRangeMeasureAccum += elapsed;
     this.currentDrawlistRangeMeasureNanos += elapsed;
@@ -247,6 +269,7 @@ public final class FrameProfiler {
   }
 
   private void recordDrawlistRangeStats(long[] stats, DrawlistPhaseStats phaseStats) {
+    if (!ENABLED) return;
     if (stats == null || stats.length < 8) {
       return;
     }
@@ -265,11 +288,13 @@ public final class FrameProfiler {
   }
 
   void recordMetalGpuMs(double ms) {
+    if (!ENABLED) return;
     this.metalGpuMsAccum += ms;
     this.maxMetalGpuMs = Math.max(this.maxMetalGpuMs, ms);
   }
 
   void recordPerPassGpuMs(double[] times) {
+    if (!ENABLED) return;
     if (times == null || times.length < 4) return;
     this.gpuTraversalAccum += times[0];
     this.gpuOpaqueRasterAccum += times[1];
@@ -278,6 +303,7 @@ public final class FrameProfiler {
   }
 
   void endFrame() {
+    if (!ENABLED) return;
     this.recordDrawlistFrameMaxes();
     this.frames++;
     if (this.frames >= WINDOW_SIZE) {
@@ -292,6 +318,10 @@ public final class FrameProfiler {
   }
 
   void addDebugInfo(List<String> debug) {
+    if (!ENABLED) {
+      debug.add("Voxy GL41Metal profiler: disabled");
+      return;
+    }
     ProfileSnapshot s = this.snapshot;
     if (s == ProfileSnapshot.EMPTY) {
       debug.add("Voxy GL41Metal perf: collecting...");

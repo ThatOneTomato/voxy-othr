@@ -49,8 +49,8 @@ runFrameStage(RenderStage stage, RenderStageContext context, RenderFrame frame)
 the stages they need and ignore the rest.
 
 GL46 implementation details belong under `backend/gl46`. `MDICSectionRenderer`
-is a GL46 section renderer detail, not a separate backend. Metal device, shared
-texture, IOSurface, native context, slot, and bridge details belong under
+is a GL46 section renderer detail, not a separate backend. Metal device, native
+context, slot, and bridge details belong under
 `backend/gl41metal`.
 
 Sodium, Iris, loader, and compatibility mixins should call `VoxyRenderSystem`
@@ -63,15 +63,14 @@ active even though they are not listed as normal static entries in
 
 ## GL41Metal
 
-`gl41metal` renders distant Voxy terrain in Metal into shared distant gbuffer
-textures. OpenGL/Iris samples those textures and composites near and distant
-terrain.
+`gl41metal` uses Metal for traversal/LOD selection and writes compact per-slot
+worklists in unified memory. OpenGL 4.1 consumes those worklists and directly
+rasterizes distant terrain from mirrored terrain/model buffers.
 
-The CPU side may collect frame state, submit Metal work, bind ready shared GL
-textures, track slots, and manage resize/lifetime. Metal owns distant terrain
-residency updates, LOD selection, culling, rasterization, and gbuffer writes.
-OpenGL/Iris owns the near scene, shader-pack passes, bridge/composite, and final
-presentation.
+The CPU side may collect frame state, submit Metal traversal, build compact GL
+range commands, track slots, and manage lifetime. Metal owns LOD selection and
+culling. OpenGL/Iris owns distant rasterization, the near scene, shader-pack
+passes, and final presentation.
 
 Slot readiness is explicit:
 

@@ -107,7 +107,7 @@ public final class RenderBackendSelector {
       return new RenderBackendSelection(
           RenderBackendId.GL41METAL,
           requested,
-          "Forced GL41Metal backend selected; macOS Metal/OpenGL shared texture diagnostics are available",
+          "Forced GL41Metal backend selected; Metal traversal and OpenGL drawlist diagnostics are available",
           forced);
     }
     Logger.error("Cannot use Voxy GL41Metal backend: " + unsupportedReason);

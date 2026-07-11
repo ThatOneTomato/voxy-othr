@@ -98,8 +98,8 @@ import org.lwjgl.system.MemoryUtil;
  * onSectionRenderStateChanged}/{@code onChunkTrackerReset} 16-block near-scene signals that Sodium
  * already emits) and, each frame, rasterizes a unit cube per loaded section into a private depth
  * texture using the farther-depth compare. The result is the per-pixel FAR boundary of the
- * near-scene loaded volume in Voxy NDC (the same projection Metal rasterizes distant terrain with)
- * - see {@link LoadedVolumeBound}.
+ * near-scene loaded volume in Voxy NDC (the same projection direct GL uses for distant terrain) -
+ * see {@link LoadedVolumeBound}.
  *
  * <p>Each loaded column is rasterized as ONE box (not the section's own 16 blocks) spanning the
  * camera-centred vertical band {@code cameraY +/- renderDistance} via {@code uColumnMinY}/{@code
@@ -147,10 +147,9 @@ import org.lwjgl.system.MemoryUtil;
  *   <li>Apple GL4.1 has no SSBO/compute, so the per-section positions are an INSTANCED integer
  *       vertex attribute ({@code aSectionCoord}) rather than fabric's SSBO; the unit cube corners
  *       are derived from {@code gl_VertexID} exactly like fabric's outline.vsh.
- *   <li>This renderer ONLY produces the shared bound texture. How the bound is CONSUMED rides the
- *       single existing occlusion divergence in {@link DistantTerrainBridge} (vanilla samples it
- *       in-shader; the strict Iris path feeds it into the stencil-mask pass), so the bound clip
- *       never adds a sampler to the budgeted Iris colour program.
+ *   <li>This renderer ONLY produces the bound texture. The direct geometry path consumes it in a
+ *       helper depth/stencil pass, so the bound clip never adds a sampler to the budgeted Iris
+ *       colour program.
  * </ul>
  *
  * <p>Per AGENTS.md these 16-block Sodium signals must NOT touch Metal traversal/residency; this

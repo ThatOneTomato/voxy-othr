@@ -31,16 +31,6 @@ public final class TerrainResources implements AutoCloseable {
       readInt("voxy.gl41metal.maxTraversalRequests", 16_384, 1, 200_000);
   private static final int MAX_WORKLIST_ITEMS =
       readInt("voxy.gl41metal.maxWorklistItems", 400_000, 1024, 2_000_000);
-  private static final int MAX_RASTER_QUADS =
-      readInt("voxy.gl41metal.maxRasterQuads", 8_000_000, 1024, 32_000_000);
-  private static final int MESH_BATCH_SIZE = readInt("voxy.gl41metal.meshBatchSize", 64, 16, 64);
-  // Debug-only GPU residency validation. The native pass dispatches a compute kernel over ALL
-  // maxSections and then blocks the render thread with waitUntilCompleted on the SAME serial
-  // command queue as the frame's traversal/raster work, i.e. it drains every in-flight Metal
-  // frame before returning. Running it every frame serialized the whole CPU<->GPU pipeline, so
-  // it is opt-in for debugging only.
-  private static final boolean VALIDATE_TERRAIN =
-      Boolean.parseBoolean(System.getProperty("voxy.gl41metal.validateTerrain", "false"));
   // Render-thread budget for draining queued block model bakes each frame. The old 100ms value
   // effectively meant "bake everything immediately", which stalls whole frames while new chunks
   // stream in. ModelBakerySubsystem.tick still guarantees a minimum of 5 bakes per frame, so a
@@ -59,11 +49,9 @@ public final class TerrainResources implements AutoCloseable {
   private long nativeHandle;
   private boolean nativeResourcesCreated;
   private boolean closed;
-  private long validationRuns;
   private TerrainStats lastStats = TerrainStats.fromNative(new long[0]);
   private int loggedCapacityFallbacks;
   private Object2IntMap<BlockState> irisBlockStateMapping;
-  private boolean loggedFirstValidation;
 
   public TerrainResources(BackendContext context) {
     this.world = context.world();
@@ -107,9 +95,9 @@ public final class TerrainResources implements AutoCloseable {
     this.ensureNativeResources(nativeHandle);
     this.renderDistanceTracker.setCenterAndProcess(frameContext.cameraX(), frameContext.cameraZ());
     this.modelService.tick(MODEL_BAKE_BUDGET_NANOS);
-    this.materialStore.drainUploads(nativeHandle);
+    this.materialStore.drainUploads();
     this.nodeSyncHost.drain(NativeBindings.pollTraversalRequests(nativeHandle), this.nativeSink);
-    this.runValidation(nativeHandle);
+    this.updateStats(nativeHandle);
   }
 
   public void onChunkTrackerReset() {
@@ -127,9 +115,7 @@ public final class TerrainResources implements AutoCloseable {
   public void onSectionRenderStateChanged(long sectionPos, boolean present) {
     // Sodium reports vanilla 16-block render-section lifecycle here. GL41Metal
     // terrain residency is keyed by Voxy 32-block WorldSection ids and is driven
-    // by WorldEngine dirty events plus the Metal request queue. Clearing Metal
-    // traversal scratch from this hook can turn a valid current frame into an
-    // empty distant gbuffer when chunks cross the vanilla render boundary.
+    // by WorldEngine dirty events plus the Metal request queue.
   }
 
   public void addDebugInfo(java.util.List<String> debug) {
@@ -171,11 +157,8 @@ public final class TerrainResources implements AutoCloseable {
       return;
     }
     if (this.nativeResourcesCreated) {
-      // Viewport resizes now resize the shared gbuffer in place (same native handle, terrain
-      // preserved), so the handle should stay stable for the backend's lifetime. Reaching here
-      // means the underlying native context was replaced unexpectedly; reset Java residency stats
-      // as a defensive fallback. (Resident model/section data on the lost handle cannot be
-      // re-streamed from here without a full host rebuild, which the in-place resize avoids.)
+      // The native handle is stable for the backend lifetime. A replacement loses traversal
+      // residency, so reset Java-side counters as a defensive fallback.
       Logger.warn(
           "GL41Metal terrain native context changed unexpectedly; resetting residency stats");
       this.resetJavaResidencyState();
@@ -184,16 +167,10 @@ public final class TerrainResources implements AutoCloseable {
     NativeBindings.createTerrainResources(
         handle,
         MAX_RESIDENT_SECTIONS,
-        GEOMETRY_CAPACITY_BYTES,
         MAX_NODES,
         MAX_TRAVERSAL_QUEUE,
         MAX_TRAVERSAL_REQUESTS,
-        MAX_WORKLIST_ITEMS,
-        MAX_RASTER_QUADS,
-        MaterialStore.FULL_ATLAS_UPLOADS ? MaterialStore.ATLAS_WIDTH : 0,
-        MaterialStore.FULL_ATLAS_UPLOADS ? MaterialStore.ATLAS_HEIGHT : 0,
-        MaterialStore.FULL_ATLAS_UPLOADS ? MaterialStore.ATLAS_MIP_LEVELS : 0,
-        MESH_BATCH_SIZE);
+        MAX_WORKLIST_ITEMS);
     this.nativeResourcesCreated = true;
     Logger.info(
         "GL41Metal terrain native resources initialized: maxSections="
@@ -207,33 +184,15 @@ public final class TerrainResources implements AutoCloseable {
             + ", traversalRequests="
             + MAX_TRAVERSAL_REQUESTS
             + ", worklistItems="
-            + MAX_WORKLIST_ITEMS
-            + ", rasterQuads="
-            + MAX_RASTER_QUADS
-            + ", atlas="
-            + MaterialStore.ATLAS_WIDTH
-            + "x"
-            + MaterialStore.ATLAS_HEIGHT
-            + " mips="
-            + MaterialStore.ATLAS_MIP_LEVELS
-            + ", atlasUploads="
-            + (MaterialStore.FULL_ATLAS_UPLOADS
-                ? "enabled"
-                : "disabled; textured quad raster will use material/debug colors only"));
+            + MAX_WORKLIST_ITEMS);
   }
 
   private void resetJavaResidencyState() {
-    this.validationRuns = 0;
-    this.loggedFirstValidation = false;
     this.loggedCapacityFallbacks = 0;
     this.lastStats = TerrainStats.fromNative(new long[0]);
   }
 
-  private void runValidation(long handle) {
-    if (VALIDATE_TERRAIN) {
-      NativeBindings.validateTerrainResources(handle);
-      this.validationRuns++;
-    }
+  private void updateStats(long handle) {
     this.lastStats = TerrainStats.fromNative(NativeBindings.getTerrainStats(handle));
     int capacityFallbacks = this.lastStats.traversalCapacityFallbacks();
     if (capacityFallbacks > this.loggedCapacityFallbacks) {
@@ -244,12 +203,6 @@ public final class TerrainResources implements AutoCloseable {
               + " coarse fallbacks this frame; raise voxy.gl41metal.maxTraversalQueue,"
               + " voxy.gl41metal.maxTraversalRequests, or voxy.gl41metal.maxWorklistItems if"
               + " distant chunks still flicker");
-    }
-    if (VALIDATE_TERRAIN
-        && !this.loggedFirstValidation
-        && this.lastStats.validationResidentSections() > 0) {
-      this.loggedFirstValidation = true;
-      Logger.info("GL41Metal terrain Metal validation passed: " + this.lastStats.compact());
     }
   }
 
@@ -340,11 +293,6 @@ public final class TerrainResources implements AutoCloseable {
     @Override
     public void uploadGeometry(
         int geometryElementOffset, long geometryAddress, long geometryBytes) {
-      NativeBindings.uploadGeometry(
-          TerrainResources.this.nativeHandle,
-          geometryElementOffset,
-          geometryAddress,
-          geometryBytes);
       if (TerrainResources.this.drawlistMirror != null) {
         TerrainResources.this.drawlistMirror.uploadGeometry(
             geometryElementOffset, geometryAddress, geometryBytes);

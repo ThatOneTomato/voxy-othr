@@ -27,25 +27,19 @@ id<MTLComputePipelineState> createComputePipeline(JNIEnv* env, NativeContext* co
   }
   id<MTLFunction> function = [context->shaderLibrary newFunctionWithName:functionName];
   if (function == nil) {
-    std::string message = "GL41Metal shader function is missing for ";
-    message += label;
-    message += ": ";
-    message += [functionName UTF8String];
-    throwJava(env, message);
+    throwJava(env, std::string("GL41Metal shader function is missing for ") + label);
     return nil;
   }
   NSError* error = nil;
   id<MTLComputePipelineState> pipeline =
       [context->device newComputePipelineStateWithFunction:function error:&error];
   if (pipeline == nil) {
-    std::string message = "GL41Metal compute pipeline creation failed for ";
-    message += label;
+    std::string message = std::string("GL41Metal compute pipeline creation failed for ") + label;
     if (error != nil) {
       message += ": ";
       message += [[error localizedDescription] UTF8String];
     }
     throwJava(env, message);
-    return nil;
   }
   return pipeline;
 }
@@ -58,27 +52,20 @@ static id<MTLLibrary> loadShaderLibrary(JNIEnv* env, id<MTLDevice> device,
   }
   const char* pathChars = env->GetStringUTFChars(shaderLibraryPath, nullptr);
   if (pathChars == nullptr) {
-    throwJava(env, "GL41Metal could not read shader library path");
     return nil;
   }
   NSString* path = [NSString stringWithUTF8String:pathChars];
   env->ReleaseStringUTFChars(shaderLibraryPath, pathChars);
-  if (path == nil || [path length] == 0) {
-    throwJava(env, "GL41Metal shader library path is empty");
-    return nil;
-  }
-  NSURL* url = [NSURL fileURLWithPath:path];
   NSError* error = nil;
-  id<MTLLibrary> library = [device newLibraryWithURL:url error:&error];
+  id<MTLLibrary> library =
+      [device newLibraryWithURL:[NSURL fileURLWithPath:path] error:&error];
   if (library == nil) {
-    std::string message = "GL41Metal shader library load failed from ";
-    message += [path UTF8String];
+    std::string message = "GL41Metal shader library load failed";
     if (error != nil) {
       message += ": ";
       message += [[error localizedDescription] UTF8String];
     }
     throwJava(env, message);
-    return nil;
   }
   return library;
 }
@@ -91,35 +78,20 @@ JNIEXPORT jstring JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getUnsupportedReason(
     JNIEnv* env, jclass) {
   @autoreleasepool {
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    if (device == nil) {
-      return env->NewStringUTF("no default Metal device is available");
-    }
-    if (CGLGetCurrentContext() == nullptr) {
-      return env->NewStringUTF("no current CGL OpenGL context is available");
-    }
-    return nullptr;
+    return MTLCreateSystemDefaultDevice() == nil
+               ? env->NewStringUTF("no default Metal device is available")
+               : nullptr;
   }
 }
 
 JNIEXPORT jlong JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_createContext(
-    JNIEnv* env, jclass, jint slotCount, jint width, jint height, jboolean sharedTexturesEnabled,
-    jstring shaderLibraryPath) {
+    JNIEnv* env, jclass, jint slotCount, jstring shaderLibraryPath) {
   @autoreleasepool {
     if (slotCount < 2) {
-      throwJava(env, "GL41Metal requires at least two shared slots");
+      throwJava(env, "GL41Metal requires at least two frame slots");
       return 0;
     }
-    if (width <= 0 || height <= 0) {
-      throwJava(env, "GL41Metal native context received an invalid size");
-      return 0;
-    }
-    if (CGLGetCurrentContext() == nullptr) {
-      throwJava(env, "GL41Metal native context creation requires a current CGL context");
-      return 0;
-    }
-
     std::unique_ptr<NativeContext> context = std::make_unique<NativeContext>();
     context->device = MTLCreateSystemDefaultDevice();
     if (context->device == nil) {
@@ -136,21 +108,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_c
       return 0;
     }
     context->deviceName = [[context->device name] UTF8String];
-    context->width = width;
-    context->height = height;
-    context->sharedTexturesEnabled = sharedTexturesEnabled;
     context->slots.resize(static_cast<size_t>(slotCount));
-
-    if (context->sharedTexturesEnabled) {
-      for (Slot& slot : context->slots) {
-        std::string error;
-        if (!createSlotTextures(&slot, context.get(), &error)) {
-          throwJava(env, error);
-          return 0;
-        }
-      }
-    }
-
     return reinterpret_cast<jlong>(context.release());
   }
 }
@@ -159,9 +117,7 @@ JNIEXPORT void JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_destroyContext(
     JNIEnv* env, jclass, jlong handle) {
   NativeContext* context = requireContext(env, handle);
-  if (context == nullptr) {
-    return;
-  }
+  if (context == nullptr) return;
   {
     std::unique_lock<std::mutex> lock(context->mutex);
     context->condition.wait(lock, [&] { return context->pendingCommandBuffers == 0; });
@@ -169,109 +125,22 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_d
   delete context;
 }
 
-// Reconfigures the optional screen-sized shared textures. Drawlist frames need only the per-slot
-// traversal resources, so keeping these textures disabled avoids six RGBA32F IOSurfaces and one
-// private depth texture per slot while preserving the context and terrain residency.
-JNIEXPORT void JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_configureSharedTextures(
-    JNIEnv* env, jclass, jlong handle, jint width, jint height, jboolean sharedTexturesEnabled) {
-  @autoreleasepool {
-    NativeContext* context = requireContext(env, handle);
-    if (context == nullptr) {
-      return;
-    }
-    if (width <= 0 || height <= 0) {
-      throwJava(env, "GL41Metal native context resize received an invalid size");
-      return;
-    }
-    if (CGLGetCurrentContext() == nullptr) {
-      throwJava(env, "GL41Metal shared texture reconfiguration requires a current CGL context");
-      return;
-    }
-    {
-      std::unique_lock<std::mutex> lock(context->mutex);
-      bool idle = context->condition.wait_for(lock, std::chrono::seconds(5),
-                                              [&] { return context->pendingCommandBuffers == 0; });
-      if (!idle) {
-        throwJava(env, "GL41Metal timed out waiting to reconfigure shared textures");
-        return;
-      }
-      if (context->width == width && context->height == height &&
-          context->sharedTexturesEnabled == static_cast<bool>(sharedTexturesEnabled)) {
-        return;
-      }
-      context->width = width;
-      context->height = height;
-      context->sharedTexturesEnabled = sharedTexturesEnabled;
-      // No Metal command buffers are in flight and slot acquisition runs on this (render) thread,
-      // so it is safe to reset slot bookkeeping now and recreate the GL/IOSurface textures after
-      // releasing the lock (matching destroyContext, which also performs GL teardown unlocked).
-      for (Slot& slot : context->slots) {
-        slot.state = SlotState::Free;
-        slot.frameId = -1;
-      }
-    }
-    for (Slot& slot : context->slots) {
-      slot.gbuffer0.reset();
-      slot.gbuffer1.reset();
-      slot.gbuffer2.reset();
-      slot.tgbuffer0.reset();
-      slot.tgbuffer1.reset();
-      slot.tgbufferAccum.reset();
-      slot.renderDepth = nil;
-    }
-    if (context->sharedTexturesEnabled) {
-      for (Slot& slot : context->slots) {
-        std::string error;
-        if (!createSlotTextures(&slot, context, &error)) {
-          context->sharedTexturesEnabled = false;
-          for (Slot& cleanup : context->slots) {
-            cleanup.gbuffer0.reset();
-            cleanup.gbuffer1.reset();
-            cleanup.gbuffer2.reset();
-            cleanup.tgbuffer0.reset();
-            cleanup.tgbuffer1.reset();
-            cleanup.tgbufferAccum.reset();
-            cleanup.renderDepth = nil;
-          }
-          throwJava(env, error);
-          return;
-        }
-      }
-    }
-  }
-}
-
 JNIEXPORT jstring JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getDeviceName(
     JNIEnv* env, jclass, jlong handle) {
   NativeContext* context = requireContext(env, handle);
-  if (context == nullptr) {
-    return nullptr;
-  }
-  return env->NewStringUTF(context->deviceName.c_str());
-}
-
-JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTextureTarget(
-    JNIEnv* env, jclass, jlong handle) {
-  NativeContext* context = requireContext(env, handle);
-  return context == nullptr ? 0 : static_cast<jint>(context->textureTarget);
+  return context == nullptr ? nullptr : env->NewStringUTF(context->deviceName.c_str());
 }
 
 JNIEXPORT jdouble JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getLastMetalGpuTimeMs(
     JNIEnv* env, jclass, jlong handle) {
   NativeContext* context = requireContext(env, handle);
-  if (context == nullptr) {
-    return 0.0;
-  }
+  if (context == nullptr) return 0.0;
   std::lock_guard<std::mutex> lock(context->mutex);
   return context->lastMetalGpuTimeMs;
 }
 
-// Per-pass GPU timing (ms) from the most recent completed Metal frame. Returns 4 doubles
-// packed into a long array: [traversal, opaqueRaster, ssao, translucent].
 JNIEXPORT jdoubleArray JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getPerPassGpuTimesMs(
     JNIEnv* env, jclass, jlong handle) {
@@ -280,75 +149,10 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
   if (context != nullptr) {
     std::lock_guard<std::mutex> lock(context->mutex);
     values[0] = context->gpuTraversalMs;
-    values[1] = context->gpuOpaqueRasterMs;
-    values[2] = context->gpuSsaoMs;
-    values[3] = context->gpuTranslucentMs;
   }
   jdoubleArray result = env->NewDoubleArray(4);
-  if (result != nullptr) {
-    env->SetDoubleArrayRegion(result, 0, 4, values);
-  }
+  if (result != nullptr) env->SetDoubleArrayRegion(result, 0, 4, values);
   return result;
-}
-
-// The distant gbuffer is 3 shared textures (see quad_raster.metal QuadFragmentOut). These three
-// getters return the imported GL texture name for each; the Java DistantGbufferSlot mirrors
-// the same order.
-JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getGbuffer0Texture(
-    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
-  NativeContext* context = requireContext(env, handle);
-  return context == nullptr || context->slots.at(slotIndex).gbuffer0 == nullptr
-             ? 0
-             : static_cast<jint>(context->slots.at(slotIndex).gbuffer0->glTexture);
-}
-
-JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getGbuffer1Texture(
-    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
-  NativeContext* context = requireContext(env, handle);
-  return context == nullptr || context->slots.at(slotIndex).gbuffer1 == nullptr
-             ? 0
-             : static_cast<jint>(context->slots.at(slotIndex).gbuffer1->glTexture);
-}
-
-JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getGbuffer2Texture(
-    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
-  NativeContext* context = requireContext(env, handle);
-  return context == nullptr || context->slots.at(slotIndex).gbuffer2 == nullptr
-             ? 0
-             : static_cast<jint>(context->slots.at(slotIndex).gbuffer2->glTexture);
-}
-
-// The translucent distant gbuffer is 3 further shared textures (see quad_raster.metal
-// TranslucentFragmentOut): tgbuffer0/1 carry the front-most translucent surface for strict pack
-// water shading, tgbufferAccum carries the back->front over-blended flat colour + alpha.
-JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTgbuffer0Texture(
-    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
-  NativeContext* context = requireContext(env, handle);
-  return context == nullptr || context->slots.at(slotIndex).tgbuffer0 == nullptr
-             ? 0
-             : static_cast<jint>(context->slots.at(slotIndex).tgbuffer0->glTexture);
-}
-
-JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTgbuffer1Texture(
-    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
-  NativeContext* context = requireContext(env, handle);
-  return context == nullptr || context->slots.at(slotIndex).tgbuffer1 == nullptr
-             ? 0
-             : static_cast<jint>(context->slots.at(slotIndex).tgbuffer1->glTexture);
-}
-
-JNIEXPORT jint JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getTgbufferAccumTexture(
-    JNIEnv* env, jclass, jlong handle, jint slotIndex) {
-  NativeContext* context = requireContext(env, handle);
-  return context == nullptr || context->slots.at(slotIndex).tgbufferAccum == nullptr
-             ? 0
-             : static_cast<jint>(context->slots.at(slotIndex).tgbufferAccum->glTexture);
 }
 
 }  // extern "C"
