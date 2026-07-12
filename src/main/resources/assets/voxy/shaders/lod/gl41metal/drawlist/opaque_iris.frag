@@ -4,9 +4,14 @@
 #define PATCHED_SHADER
 
 uniform sampler2D uBlockModelAtlas;
+uniform sampler2D uNearDepthTex;
+uniform vec2 uNearDepthSize;
+uniform vec2 uTargetSize;
+uniform int uReverseDepth;
 
 layout(location = 0) in vec2 vUv;
 layout(location = 2) flat in uvec4 vData;
+layout(location = 4) noperspective in float vVanillaNdcDepth;
 
 uint voxyQuadFlags = 0u;
 
@@ -34,7 +39,23 @@ vec2 lightmapUv(uint lightRaw) {
   return clamp(uv / 256.0, vec2(0.5 / 16.0), vec2(15.5 / 16.0));
 }
 
+bool hiddenByNearDepth() {
+  vec2 sourcePixel = gl_FragCoord.xy * (uNearDepthSize / max(uTargetSize, vec2(1.0)));
+  ivec2 texel = ivec2(clamp(floor(sourcePixel), vec2(0.0), uNearDepthSize - vec2(1.0)));
+  float nearDepth = texelFetch(uNearDepthTex, texel, 0).r;
+  float lodDepth =
+      gl_DepthRange.diff * (vVanillaNdcDepth * 0.5 + 0.5) + gl_DepthRange.near;
+  const float DEPTH_EPSILON = 0.00001;
+  if (uReverseDepth != 0) {
+    return nearDepth > 0.000001 && lodDepth <= nearDepth + DEPTH_EPSILON;
+  }
+  return nearDepth < 0.999999 && lodDepth >= nearDepth - DEPTH_EPSILON;
+}
+
 void main() {
+  if (hiddenByNearDepth()) {
+    discard;
+  }
   uint flags = vData.x;
   uint face = (flags >> 16u) & 7u;
   uint modelId = vData.z & 0xffffu;

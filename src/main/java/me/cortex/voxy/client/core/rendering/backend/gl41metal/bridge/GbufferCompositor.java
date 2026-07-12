@@ -95,19 +95,10 @@ final class GbufferCompositor {
     this.programs = programs;
   }
 
-  boolean prepareDirectIrisOpaque(
-      MemoryStack stack,
-      DistantBridgeJob job,
-      int sourceDepthTexture,
-      int sourceDepthWidth,
-      int sourceDepthHeight,
-      boolean reverseDepth) {
+  boolean prepareDirectIrisOpaque(MemoryStack stack, DistantBridgeJob job) {
     this.directTranslucentDepthValid = false;
     int privateDepth = this.ensureIrisPrivateDepth(job.outputWidth(), job.outputHeight());
-    var maskShader = this.programs.stencilMask();
-    if (privateDepth == 0
-        || maskShader == null
-        || !this.bindTargetFramebuffer(stack, job, privateDepth)) {
+    if (privateDepth == 0 || !this.bindTargetFramebuffer(stack, job, privateDepth)) {
       return false;
     }
     glViewport(0, 0, job.outputWidth(), job.outputHeight());
@@ -119,14 +110,6 @@ final class GbufferCompositor {
     glClearStencil(0);
     glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-    this.writeNearCoverageMask(
-        maskShader,
-        sourceDepthTexture,
-        sourceDepthWidth,
-        sourceDepthHeight,
-        job.outputWidth(),
-        job.outputHeight(),
-        reverseDepth);
     this.beginDirectOpaqueColor(job);
     return true;
   }
@@ -248,9 +231,8 @@ final class GbufferCompositor {
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
     glDepthMask(true);
-    glStencilMask(0x00);
-    glStencilFunc(GL_EQUAL, 0, 0xFF);
-    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glDisable(GL_STENCIL_TEST);
+    glStencilMask(0xFF);
     glDisable(GL_BLEND);
   }
 

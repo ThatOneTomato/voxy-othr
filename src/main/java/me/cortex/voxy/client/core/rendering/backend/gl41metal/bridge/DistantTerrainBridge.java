@@ -36,18 +36,11 @@ public final class DistantTerrainBridge implements AutoCloseable {
         translucent ? payload.blendSetup() : null);
   }
 
-  public boolean prepareDirectIrisOpaque(
-      MemoryStack stack, DistantBridgeJob job, boolean reverseDepth) {
+  public boolean prepareDirectIrisOpaque(MemoryStack stack, DistantBridgeJob job) {
     if (!validDirectJob(job)) {
       return false;
     }
-    return this.compositor.prepareDirectIrisOpaque(
-        stack,
-        job,
-        job.sourceDepthTextureId(),
-        job.sourceDepthWidth(),
-        job.sourceDepthHeight(),
-        reverseDepth);
+    return this.compositor.prepareDirectIrisOpaque(stack, job);
   }
 
   public void bindDirectIrisResources(DistantBridgeJob job) {

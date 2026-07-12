@@ -1,9 +1,7 @@
 #version 410 core
 
 uniform mat4 uVoxyMvp;
-#ifndef IRIS_DIRECT
 uniform mat4 uVanillaMvp;
-#endif
 uniform float uEarthRadius;
 uniform ivec3 uBaseSectionFrame;
 uniform usamplerBuffer uGeometryQuads;
@@ -28,10 +26,8 @@ layout(location = 0) out vec2 vUv;
 layout(location = 1) out vec3 vFogPos;
 #endif
 layout(location = 2) flat out uvec4 vData;
-#ifndef IRIS_DIRECT
 layout(location = 3) flat out uint vLightPacked;
 layout(location = 4) noperspective out float vVanillaNdcDepth;
-#endif
 
 const uint MODEL_COUNT = 65536u;
 
@@ -182,10 +178,8 @@ void emitSkipped() {
   vFogPos = vec3(0.0);
 #endif
   vData = uvec4(0u);
-#ifndef IRIS_DIRECT
   vLightPacked = 0u;
   vVanillaNdcDepth = 1.0;
-#endif
 }
 
 void main() {
@@ -248,12 +242,12 @@ void main() {
 #endif
   float voxyNdcDepth = voxyClip.z / voxyClip.w;
   voxyNdcDepth = clamp(voxyNdcDepth, -1.0, 1.0 - 2.0 / 16777215.0);
-#ifdef IRIS_DIRECT
-  float drawNdcDepth = voxyNdcDepth;
-#else
   vec4 vanillaClip = uVanillaMvp * vec4(point, 1.0);
   float vanillaNdcDepth = vanillaClip.z / vanillaClip.w;
   vanillaNdcDepth = clamp(vanillaNdcDepth, -1.0, 1.0 - 2.0 / 16777215.0);
+#ifdef IRIS_DIRECT
+  float drawNdcDepth = voxyNdcDepth;
+#else
   float drawNdcDepth = uUseVoxyDepth != 0 ? voxyNdcDepth : vanillaNdcDepth;
 #endif
   gl_Position = vec4(voxyClip.xy, drawNdcDepth * voxyClip.w, voxyClip.w);
@@ -271,9 +265,9 @@ void main() {
   }
 
   vUv = fSize.xz + quadSizeAdd * corner01;
+  vVanillaNdcDepth = vanillaNdcDepth;
 #ifndef IRIS_DIRECT
   vFogPos = point;
-  vVanillaNdcDepth = vanillaNdcDepth;
 #endif
   uint useDiscard =
       ((faceData >> 22u) & 1u) |

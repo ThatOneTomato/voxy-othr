@@ -22,7 +22,6 @@ import static org.lwjgl.opengl.GL11C.GL_SCISSOR_BOX;
 import static org.lwjgl.opengl.GL11C.GL_SCISSOR_TEST;
 import static org.lwjgl.opengl.GL11C.GL_SRC_ALPHA;
 import static org.lwjgl.opengl.GL11C.GL_STENCIL_TEST;
-import static org.lwjgl.opengl.GL11C.GL_TEXTURE;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_2D;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_BINDING_2D;
 import static org.lwjgl.opengl.GL11C.GL_TEXTURE_MAG_FILTER;
@@ -98,8 +97,6 @@ import static org.lwjgl.opengl.GL30C.GL_DEPTH_COMPONENT32F;
 import static org.lwjgl.opengl.GL30C.GL_DRAW_FRAMEBUFFER;
 import static org.lwjgl.opengl.GL30C.GL_DRAW_FRAMEBUFFER_BINDING;
 import static org.lwjgl.opengl.GL30C.GL_FRAMEBUFFER;
-import static org.lwjgl.opengl.GL30C.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME;
-import static org.lwjgl.opengl.GL30C.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE;
 import static org.lwjgl.opengl.GL30C.GL_FRAMEBUFFER_COMPLETE;
 import static org.lwjgl.opengl.GL30C.GL_R32UI;
 import static org.lwjgl.opengl.GL30C.GL_READ_FRAMEBUFFER;
@@ -117,7 +114,6 @@ import static org.lwjgl.opengl.GL30C.glDeleteVertexArrays;
 import static org.lwjgl.opengl.GL30C.glFramebufferTexture2D;
 import static org.lwjgl.opengl.GL30C.glGenFramebuffers;
 import static org.lwjgl.opengl.GL30C.glGenVertexArrays;
-import static org.lwjgl.opengl.GL30C.glGetFramebufferAttachmentParameteri;
 import static org.lwjgl.opengl.GL31C.GL_MAX_TEXTURE_BUFFER_SIZE;
 import static org.lwjgl.opengl.GL31C.GL_TEXTURE_BINDING_BUFFER;
 import static org.lwjgl.opengl.GL31C.GL_TEXTURE_BUFFER;
@@ -246,7 +242,6 @@ final class DrawlistOpaqueRenderer
   private final int translucentBoundEnabledUniform;
   private final int rangeVao;
   private final int rangeIndexBuffer;
-  private final int depthCopyFramebuffer;
   private final int nearDepthFramebuffer;
   private final int ssaoDrawFramebuffer;
   private final int ssaoFramebuffer;
@@ -274,6 +269,7 @@ final class DrawlistOpaqueRenderer
   private int nearDepthTexture;
   private int nearDepthWidth;
   private int nearDepthHeight;
+  private int nearDepthFormat;
   private int ssaoColourTexture;
   private int ssaoOutputTexture;
   private int ssaoDepthTexture;
@@ -410,7 +406,6 @@ final class DrawlistOpaqueRenderer
 
     this.rangeVao = glGenVertexArrays();
     this.rangeIndexBuffer = glGenBuffers();
-    this.depthCopyFramebuffer = glGenFramebuffers();
     this.nearDepthFramebuffer = glGenFramebuffers();
     this.ssaoDrawFramebuffer = glGenFramebuffers();
     this.ssaoFramebuffer = glGenFramebuffers();
@@ -564,7 +559,7 @@ final class DrawlistOpaqueRenderer
       this.drawRanges(context, drawMvp, vanillaDrawMvp, colorWriteEnabled, rangeCount, stack);
     } else {
       DistantBridgeJob job = DistantTerrainBridge.irisJob(irisPayload);
-      boolean prepared = bridge.prepareDirectIrisOpaque(stack, job, reverseDepth);
+      boolean prepared = bridge.prepareDirectIrisOpaque(stack, job);
       if (!prepared) {
         return false;
       }
@@ -578,7 +573,8 @@ final class DrawlistOpaqueRenderer
             stack,
             irisProgram,
             job,
-            bridge);
+            bridge,
+            reverseDepth);
       } finally {
         bridge.finishDirectIrisOpaque();
       }
@@ -596,7 +592,7 @@ final class DrawlistOpaqueRenderer
       DistantTerrainBridge bridge,
       boolean reverseDepth) {
     DistantBridgeJob job = DistantTerrainBridge.irisJob(payload);
-    if (!bridge.prepareDirectIrisOpaque(stack, job, reverseDepth)) {
+    if (!bridge.prepareDirectIrisOpaque(stack, job)) {
       return false;
     }
     bridge.finishDirectIrisOpaque();
@@ -915,7 +911,6 @@ final class DrawlistOpaqueRenderer
     glDeleteTextures(this.modelTexture);
     glDeleteTextures(this.modelColourTexture);
     glDeleteTextures(this.quadSectionTexture);
-    glDeleteFramebuffers(this.depthCopyFramebuffer);
     glDeleteFramebuffers(this.nearDepthFramebuffer);
     glDeleteFramebuffers(this.ssaoDrawFramebuffer);
     glDeleteFramebuffers(this.ssaoFramebuffer);
@@ -1032,7 +1027,8 @@ final class DrawlistOpaqueRenderer
       MemoryStack stack,
       DirectIrisProgram program,
       DistantBridgeJob job,
-      DistantTerrainBridge bridge) {
+      DistantTerrainBridge bridge,
+      boolean reverseDepth) {
     glColorMask(colorWriteEnabled, colorWriteEnabled, colorWriteEnabled, colorWriteEnabled);
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
@@ -1064,16 +1060,38 @@ final class DrawlistOpaqueRenderer
     this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE + 3, this.modelColourTexture);
     this.bindIrisVertexBufferTexture(IRIS_VERTEX_BUFFER_UNIT_BASE + 4, this.quadSectionTexture);
 
-    glBindVertexArray(this.rangeVao);
-    glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.rangeIndexBuffer);
-    nglMultiDrawElementsBaseVertex(
-        GL_TRIANGLES,
-        this.rangeCountsAddress(),
-        GL_UNSIGNED_SHORT,
-        this.rangeIndicesAddress(),
-        rangeCount,
-        this.rangeBaseVerticesAddress());
+    // validateIrisSamplerBudget reserves the last fragment unit for current-frame near depth,
+    // separate from the shader-pack sampler range starting at unit 1.
+    int nearDepthUnit = glGetInteger(GL_MAX_TEXTURE_IMAGE_UNITS) - 1;
+    glUniform1i(program.nearDepthUniform, nearDepthUnit);
+    glUniform2f(program.nearDepthSizeUniform, job.sourceDepthWidth(), job.sourceDepthHeight());
+    glUniform2f(program.targetSizeUniform, job.outputWidth(), job.outputHeight());
+    glUniform1i(program.reverseDepthUniform, reverseDepth ? 1 : 0);
+
+    int previousActiveTexture = glGetInteger(GL_ACTIVE_TEXTURE);
+    glActiveTexture(GL_TEXTURE0 + nearDepthUnit);
+    int previousNearTexture = glGetInteger(GL_TEXTURE_BINDING_2D);
+    int previousNearSampler = glGetInteger(GL_SAMPLER_BINDING);
+    glBindTexture(GL_TEXTURE_2D, job.sourceDepthTextureId());
+    glBindSampler(nearDepthUnit, 0);
+
+    try {
+      glBindVertexArray(this.rangeVao);
+      glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
+      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this.rangeIndexBuffer);
+      nglMultiDrawElementsBaseVertex(
+          GL_TRIANGLES,
+          this.rangeCountsAddress(),
+          GL_UNSIGNED_SHORT,
+          this.rangeIndicesAddress(),
+          rangeCount,
+          this.rangeBaseVerticesAddress());
+    } finally {
+      glActiveTexture(GL_TEXTURE0 + nearDepthUnit);
+      glBindTexture(GL_TEXTURE_2D, previousNearTexture);
+      glBindSampler(nearDepthUnit, previousNearSampler);
+      glActiveTexture(previousActiveTexture);
+    }
   }
 
   private void drawIrisTranslucentBound(
@@ -1215,7 +1233,7 @@ final class DrawlistOpaqueRenderer
               .name("Voxy GL41Metal Direct Iris Opaque");
       payload.programSetup().accept(shader.id());
       DirectIrisProgram program = new DirectIrisProgram(shaderKey, shader);
-      if (!program.hasRequiredUniforms()) {
+      if (!program.hasRequiredUniforms() || !program.hasOpaqueDepthUniforms()) {
         shader.free();
         throw new IllegalStateException("direct Iris opaque shader is missing required uniforms");
       }
@@ -1315,7 +1333,7 @@ final class DrawlistOpaqueRenderer
     int maxCombined = glGetInteger(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);
     int usableFragment = maxFragment - 1;
     int fragmentRequired = packSamplerCount + 1;
-    int combinedRequired = fragmentRequired + IRIS_VERTEX_SAMPLER_COUNT;
+    int combinedRequired = fragmentRequired + 1 + IRIS_VERTEX_SAMPLER_COUNT;
     if (fragmentRequired > usableFragment
         || IRIS_VERTEX_SAMPLER_COUNT > maxVertex
         || combinedRequired > maxCombined
@@ -1711,29 +1729,31 @@ final class DrawlistOpaqueRenderer
   }
 
   private int snapshotSourceDepth(RenderFrameContext context) {
-    int sourceDepthTexture = this.findFramebufferDepthTexture(context.sourceFramebuffer());
-    if (sourceDepthTexture == 0) {
+    if (context.sourceFramebuffer() == 0) {
       this.logNearDepthFallback();
       return 0;
     }
-    int snapshot = this.snapshotNearDepth(sourceDepthTexture, context);
+    int snapshot = this.snapshotNearDepth(context);
     if (snapshot == 0) {
       this.logNearDepthFallback();
     }
     return snapshot;
   }
 
-  private int snapshotNearDepth(int depthTexture, RenderFrameContext context) {
+  private int snapshotNearDepth(RenderFrameContext context) {
     int width = context.viewportWidth();
     int height = context.viewportHeight();
-    if (depthTexture == 0 || width <= 0 || height <= 0) {
+    if (width <= 0 || height <= 0) {
       return 0;
     }
-    this.ensureNearDepthTexture(width, height);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, this.depthCopyFramebuffer);
-    glFramebufferTexture2D(
-        GL_READ_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture, 0);
-    glReadBuffer(GL_NONE);
+    int depthFormat = this.findFramebufferDepthFormat(context.sourceFramebuffer());
+    if (depthFormat == 0) {
+      return 0;
+    }
+    this.ensureNearDepthTexture(width, height, depthFormat);
+    // Read the host FBO directly. Reattaching its depth object to a private FBO rejected
+    // renderbuffers, layered attachments and some depth-stencil formats used by Veil/Flywheel.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, context.sourceFramebuffer());
     int readStatus = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
     if (readStatus != GL_FRAMEBUFFER_COMPLETE) {
       Logger.error(
@@ -1765,10 +1785,11 @@ final class DrawlistOpaqueRenderer
     return this.nearDepthTexture;
   }
 
-  private void ensureNearDepthTexture(int width, int height) {
+  private void ensureNearDepthTexture(int width, int height, int depthFormat) {
     if (this.nearDepthTexture != 0
         && this.nearDepthWidth == width
-        && this.nearDepthHeight == height) {
+        && this.nearDepthHeight == height
+        && this.nearDepthFormat == depthFormat) {
       return;
     }
     if (this.nearDepthTexture != 0) {
@@ -1778,40 +1799,86 @@ final class DrawlistOpaqueRenderer
     this.nearDepthTexture = glGenTextures();
     this.nearDepthWidth = width;
     this.nearDepthHeight = height;
+    this.nearDepthFormat = depthFormat;
     glActiveTexture(GL_TEXTURE0 + NEAR_DEPTH_UNIT);
     glBindTexture(GL_TEXTURE_2D, this.nearDepthTexture);
+    boolean depthStencil = isDepthStencilFormat(depthFormat);
     glTexImage2D(
         GL_TEXTURE_2D,
         0,
-        GL_DEPTH_COMPONENT32F,
+        depthFormat,
         width,
         height,
         0,
-        GL_DEPTH_COMPONENT,
-        GL_FLOAT,
+        depthStencil ? org.lwjgl.opengl.GL30C.GL_DEPTH_STENCIL : GL_DEPTH_COMPONENT,
+        depthStencil ? depthStencilPixelType(depthFormat) : GL_FLOAT,
         0L);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
     glBindFramebuffer(GL_FRAMEBUFFER, this.nearDepthFramebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
     glFramebufferTexture2D(
-        GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, this.nearDepthTexture, 0);
+        GL_FRAMEBUFFER, org.lwjgl.opengl.GL30C.GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER,
+        depthStencil ? org.lwjgl.opengl.GL30C.GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT,
+        GL_TEXTURE_2D,
+        this.nearDepthTexture,
+        0);
     glReadBuffer(GL_NONE);
+    org.lwjgl.opengl.GL11C.glDrawBuffer(GL_NONE);
   }
 
-  private int findFramebufferDepthTexture(int framebuffer) {
-    if (framebuffer == 0) {
-      return 0;
-    }
+  private int findFramebufferDepthFormat(int framebuffer) {
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-    int type =
-        glGetFramebufferAttachmentParameteri(
-            GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
-    if (type != GL_TEXTURE) {
+    int objectType =
+        org.lwjgl.opengl.GL30C.glGetFramebufferAttachmentParameteri(
+            GL_FRAMEBUFFER,
+            GL_DEPTH_ATTACHMENT,
+            org.lwjgl.opengl.GL30C.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
+    int objectName =
+        org.lwjgl.opengl.GL30C.glGetFramebufferAttachmentParameteri(
+            GL_FRAMEBUFFER,
+            GL_DEPTH_ATTACHMENT,
+            org.lwjgl.opengl.GL30C.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+    if (objectName == 0) {
       return 0;
     }
-    return glGetFramebufferAttachmentParameteri(
-        GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+    if (objectType == org.lwjgl.opengl.GL30C.GL_RENDERBUFFER) {
+      int previous = glGetInteger(org.lwjgl.opengl.GL30C.GL_RENDERBUFFER_BINDING);
+      org.lwjgl.opengl.GL30C.glBindRenderbuffer(org.lwjgl.opengl.GL30C.GL_RENDERBUFFER, objectName);
+      int format =
+          org.lwjgl.opengl.GL30C.glGetRenderbufferParameteri(
+              org.lwjgl.opengl.GL30C.GL_RENDERBUFFER,
+              org.lwjgl.opengl.GL30C.GL_RENDERBUFFER_INTERNAL_FORMAT);
+      org.lwjgl.opengl.GL30C.glBindRenderbuffer(org.lwjgl.opengl.GL30C.GL_RENDERBUFFER, previous);
+      return format;
+    }
+    if (objectType == org.lwjgl.opengl.GL11C.GL_TEXTURE) {
+      int activeTexture = glGetInteger(GL_ACTIVE_TEXTURE);
+      glActiveTexture(GL_TEXTURE0 + NEAR_DEPTH_UNIT);
+      int previous = glGetInteger(GL_TEXTURE_BINDING_2D);
+      glBindTexture(GL_TEXTURE_2D, objectName);
+      int format =
+          org.lwjgl.opengl.GL11C.glGetTexLevelParameteri(
+              GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11C.GL_TEXTURE_INTERNAL_FORMAT);
+      glBindTexture(GL_TEXTURE_2D, previous);
+      glActiveTexture(activeTexture);
+      return format;
+    }
+    return 0;
+  }
+
+  private static boolean isDepthStencilFormat(int format) {
+    return format == org.lwjgl.opengl.GL30C.GL_DEPTH24_STENCIL8
+        || format == org.lwjgl.opengl.GL30C.GL_DEPTH32F_STENCIL8;
+  }
+
+  private static int depthStencilPixelType(int format) {
+    return format == org.lwjgl.opengl.GL30C.GL_DEPTH32F_STENCIL8
+        ? org.lwjgl.opengl.GL30C.GL_FLOAT_32_UNSIGNED_INT_24_8_REV
+        : org.lwjgl.opengl.GL30C.GL_UNSIGNED_INT_24_8;
   }
 
   private void logNearDepthFallback() {
@@ -2072,6 +2139,10 @@ final class DrawlistOpaqueRenderer
     final int modelColourUniform;
     final int quadSectionIdsUniform;
     final int useVoxyDepthUniform;
+    final int nearDepthUniform;
+    final int nearDepthSizeUniform;
+    final int targetSizeUniform;
+    final int reverseDepthUniform;
 
     DirectIrisProgram(int shaderKey, Shader shader) {
       this.shaderKey = shaderKey;
@@ -2088,10 +2159,15 @@ final class DrawlistOpaqueRenderer
       this.modelColourUniform = glGetUniformLocation(id, "uModelColours");
       this.quadSectionIdsUniform = glGetUniformLocation(id, "uQuadSectionIds");
       this.useVoxyDepthUniform = glGetUniformLocation(id, "uUseVoxyDepth");
+      this.nearDepthUniform = glGetUniformLocation(id, "uNearDepthTex");
+      this.nearDepthSizeUniform = glGetUniformLocation(id, "uNearDepthSize");
+      this.targetSizeUniform = glGetUniformLocation(id, "uTargetSize");
+      this.reverseDepthUniform = glGetUniformLocation(id, "uReverseDepth");
     }
 
     boolean hasRequiredUniforms() {
       return this.voxyMvpUniform >= 0
+          && this.vanillaMvpUniform >= 0
           && this.earthRadiusUniform >= 0
           && this.blockAtlasUniform >= 0
           && this.baseSectionFrameUniform >= 0
@@ -2100,6 +2176,13 @@ final class DrawlistOpaqueRenderer
           && this.modelBufferUniform >= 0
           && this.modelColourUniform >= 0
           && this.quadSectionIdsUniform >= 0;
+    }
+
+    boolean hasOpaqueDepthUniforms() {
+      return this.nearDepthUniform >= 0
+          && this.nearDepthSizeUniform >= 0
+          && this.targetSizeUniform >= 0
+          && this.reverseDepthUniform >= 0;
     }
   }
 
