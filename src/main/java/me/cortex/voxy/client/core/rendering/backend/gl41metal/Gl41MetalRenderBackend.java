@@ -29,7 +29,6 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   private final SlotScheduler slotScheduler;
   private final DistantTerrainBridge bridge = new DistantTerrainBridge();
   private final DrawlistOpaqueRenderer drawlistRenderer;
-  private final FrameProfiler profiler = new FrameProfiler();
   private final DistantChunkBoundRenderer boundRenderer = new DistantChunkBoundRenderer();
   private final TerrainResources terrainResources;
   private final FrameSlotContext slots;
@@ -116,21 +115,9 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   }
 
   private RenderFrame submitMetalFrame(RenderFrameContext context) {
-    this.profiler.endFrame();
     this.releaseHeldTranslucentSlot();
 
-    long tTick = this.profiler.begin();
     this.terrainResources.tick(context, this.slots.nativeHandle());
-    this.profiler.recordTick(tTick);
-
-    if (this.profiler.enabled()) {
-      double metalGpuMs = NativeBindings.getLastMetalGpuTimeMs(this.slots.nativeHandle());
-      if (metalGpuMs > 0) {
-        this.profiler.recordMetalGpuMs(metalGpuMs);
-      }
-      this.profiler.recordPerPassGpuMs(
-          NativeBindings.getPerPassGpuTimesMs(this.slots.nativeHandle()));
-    }
 
     if (context.matrices() == null) {
       this.lastFrameMatrices = RenderFrameMatrices.identity();
@@ -147,15 +134,12 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
             matrices.traversalMvp(), context.matrices().modelView(), matrices.projection());
     long frameId = this.nextFrameId++;
     int writeSlot = this.slotScheduler.acquireWriteSlot(this.slots);
-    long tSubmit = this.profiler.begin();
     if (writeSlot >= 0) {
       this.metalRenderer.submitTraversal(
           this.slots, writeSlot, frameId, context, matrices.traversalMvp(), matrices.drawMvp());
-      this.slotScheduler.recordSubmitted();
     } else {
       this.slotScheduler.recordNoFreeSlot();
     }
-    this.profiler.recordMetalSubmit(tSubmit);
     return new Frame(context, frameId, writeSlot, matrices.drawMvp(), matrices.vanillaDrawMvp());
   }
 
@@ -189,8 +173,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           renderContext,
           matrices.drawMvp(),
           matrices.vanillaDrawMvp(),
-          this.config.visibleComposite(),
-          this.profiler);
+          this.config.visibleComposite());
       if (hasTranslucent) {
         this.holdTranslucentSlot(sampleSlot, nativeFrame, renderContext);
         held = true;
@@ -231,8 +214,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
               matrices.vanillaDrawMvp(),
               payload,
               this.bridge,
-              this.config.visibleComposite(),
-              this.profiler);
+              this.config.visibleComposite());
       if (rendered) {
         this.holdTranslucentSlot(sampleSlot, nativeFrame, renderContext);
         held = true;
@@ -268,8 +250,7 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           this.currentBound,
           payload,
           this.bridge,
-          this.config.visibleComposite(),
-          this.profiler);
+          this.config.visibleComposite());
     } finally {
       this.releaseHeldTranslucentSlot();
     }
@@ -291,18 +272,14 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
           matrices.drawMvp(),
           matrices.vanillaDrawMvp(),
           this.currentBound,
-          this.config.visibleComposite(),
-          this.profiler);
+          this.config.visibleComposite());
     } finally {
       this.releaseHeldTranslucentSlot();
     }
   }
 
   private int waitForSlot(Frame frame) {
-    long tWait = this.profiler.begin();
-    int slot = this.slotScheduler.selectSlotForSampling(this.slots, frame.writeSlot());
-    this.profiler.recordSlotWait(tWait);
-    return slot;
+    return this.slotScheduler.selectSlotForSampling(this.slots, frame.writeSlot());
   }
 
   private void consumeWithoutDrawing(RenderFrame frame) {
@@ -334,7 +311,6 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
   }
 
   private LoadedVolumeBound renderCurrentBound(Matrix4fc drawMvp, RenderFrameContext context) {
-    long tBound = this.profiler.begin();
     int worldMinY = -64;
     int worldMaxY = 320;
     var level = Minecraft.getInstance().level;
@@ -343,19 +319,16 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
       worldMaxY = level.getMaxSection() << 4;
     }
     int verticalRadiusBlocks = Minecraft.getInstance().options.getEffectiveRenderDistance() * 16;
-    LoadedVolumeBound bound =
-        this.boundRenderer.render(
-            drawMvp,
-            context.cameraX(),
-            context.cameraY(),
-            context.cameraZ(),
-            worldMinY,
-            worldMaxY,
-            verticalRadiusBlocks,
-            context.viewportWidth(),
-            context.viewportHeight());
-    this.profiler.recordBoundRender(tBound);
-    return bound;
+    return this.boundRenderer.render(
+        drawMvp,
+        context.cameraX(),
+        context.cameraY(),
+        context.cameraZ(),
+        worldMinY,
+        worldMaxY,
+        verticalRadiusBlocks,
+        context.viewportWidth(),
+        context.viewportHeight());
   }
 
   private void releaseHeldTranslucentSlot() {
@@ -392,7 +365,6 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     debug.add("Voxy GL41Metal native: " + this.slots.description());
     this.slotScheduler.addDebugInfo(debug);
     this.terrainResources.addDebugInfo(debug);
-    this.profiler.addDebugInfo(debug);
   }
 
   @Override
@@ -435,7 +407,6 @@ public final class Gl41MetalRenderBackend implements VoxyRenderBackend {
     this.bridge.close();
     this.boundRenderer.close();
     this.slotScheduler.closeRetiringSlots(this.slots);
-    Logger.info("Voxy GL41Metal slot stats: " + this.slotScheduler.summary());
     this.slots.close();
   }
 }

@@ -7,9 +7,10 @@ import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.VoxyFlags;
 
 public abstract class TrackedObject {
-  // TODO: maybe make this false? for performance overhead?
+  // Leak tracking registers a Cleaner for every tracked allocation, which is unsuitable for normal
+  // gameplay. Enable it explicitly only while diagnosing lifetime bugs.
   public static final boolean TRACK_OBJECT_ALLOCATIONS =
-      VoxyFlags.isVerificationFlagOn("ensureTrackedObjectsAreFreed", true);
+      VoxyFlags.isVerificationFlagOn("ensureTrackedObjectsAreFreed");
   public static final boolean TRACK_OBJECT_ALLOCATION_STACKS =
       VoxyFlags.isVerificationFlagOn("trackObjectAllocationStacks");
 

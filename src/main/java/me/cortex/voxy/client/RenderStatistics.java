@@ -6,7 +6,8 @@ import java.util.stream.Collectors;
 import me.cortex.voxy.common.world.WorldEngine;
 
 public class RenderStatistics {
-  public static boolean enabled = false;
+  // Release artifacts do not compile or collect per-frame render statistics.
+  public static final boolean enabled = false;
 
   public static final int[] hierarchicalTraversalCounts = new int[WorldEngine.MAX_LOD_LAYER + 1];
   public static final int[] hierarchicalRenderSections = new int[WorldEngine.MAX_LOD_LAYER + 1];

@@ -10,6 +10,7 @@ constexpr size_t NODE_BYTES = 16;
 constexpr size_t SECTION_METADATA_BYTES = 32;
 constexpr size_t WORKLIST_ITEM_BYTES = 16;
 constexpr size_t SCENE_UNIFORM_BYTES = 224;
+constexpr uint32_t MAX_QUADS_PER_RANGE = 16380;
 // CPU range builder uses the same coarse far-to-near buckets as GL46 translucent sorting.
 constexpr int TRANSLUCENT_BUCKET_COUNT = 1024;
 

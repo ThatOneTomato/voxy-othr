@@ -31,6 +31,8 @@ public final class TerrainResources implements AutoCloseable {
       readInt("voxy.gl41metal.maxTraversalRequests", 16_384, 1, 200_000);
   private static final int MAX_WORKLIST_ITEMS =
       readInt("voxy.gl41metal.maxWorklistItems", 400_000, 1024, 2_000_000);
+  private static final int MAX_OPAQUE_RANGE_COMMANDS =
+      readInt("voxy.gl41metal.drawlistMaxRanges", 1_000_000, 1024, 4_000_000);
   // Render-thread budget for draining queued block model bakes each frame. The old 100ms value
   // effectively meant "bake everything immediately", which stalls whole frames while new chunks
   // stream in. ModelBakerySubsystem.tick still guarantees a minimum of 5 bakes per frame, so a
@@ -50,7 +52,6 @@ public final class TerrainResources implements AutoCloseable {
   private boolean nativeResourcesCreated;
   private boolean closed;
   private TerrainStats lastStats = TerrainStats.fromNative(new long[0]);
-  private int loggedCapacityFallbacks;
   private Object2IntMap<BlockState> irisBlockStateMapping;
 
   public TerrainResources(BackendContext context) {
@@ -97,7 +98,6 @@ public final class TerrainResources implements AutoCloseable {
     this.modelService.tick(MODEL_BAKE_BUDGET_NANOS);
     this.materialStore.drainUploads();
     this.nodeSyncHost.drain(NativeBindings.pollTraversalRequests(nativeHandle), this.nativeSink);
-    this.updateStats(nativeHandle);
   }
 
   public void onChunkTrackerReset() {
@@ -119,6 +119,9 @@ public final class TerrainResources implements AutoCloseable {
   }
 
   public void addDebugInfo(java.util.List<String> debug) {
+    if (this.nativeResourcesCreated) {
+      this.lastStats = TerrainStats.fromNative(NativeBindings.getTerrainStats(this.nativeHandle));
+    }
     debug.add("Voxy GL41Metal terrain residency: " + this.lastStats.compact());
     debug.add(
         "Voxy GL41Metal terrain queues: models="
@@ -152,6 +155,10 @@ public final class TerrainResources implements AutoCloseable {
     return GEOMETRY_CAPACITY_BYTES;
   }
 
+  public static int maxOpaqueRangeCommands() {
+    return MAX_OPAQUE_RANGE_COMMANDS;
+  }
+
   private void ensureNativeResources(long handle) {
     if (this.nativeResourcesCreated && this.nativeHandle == handle) {
       return;
@@ -170,7 +177,8 @@ public final class TerrainResources implements AutoCloseable {
         MAX_NODES,
         MAX_TRAVERSAL_QUEUE,
         MAX_TRAVERSAL_REQUESTS,
-        MAX_WORKLIST_ITEMS);
+        MAX_WORKLIST_ITEMS,
+        MAX_OPAQUE_RANGE_COMMANDS);
     this.nativeResourcesCreated = true;
     Logger.info(
         "GL41Metal terrain native resources initialized: maxSections="
@@ -184,26 +192,13 @@ public final class TerrainResources implements AutoCloseable {
             + ", traversalRequests="
             + MAX_TRAVERSAL_REQUESTS
             + ", worklistItems="
-            + MAX_WORKLIST_ITEMS);
+            + MAX_WORKLIST_ITEMS
+            + ", opaqueRangeCommands="
+            + MAX_OPAQUE_RANGE_COMMANDS);
   }
 
   private void resetJavaResidencyState() {
-    this.loggedCapacityFallbacks = 0;
     this.lastStats = TerrainStats.fromNative(new long[0]);
-  }
-
-  private void updateStats(long handle) {
-    this.lastStats = TerrainStats.fromNative(NativeBindings.getTerrainStats(handle));
-    int capacityFallbacks = this.lastStats.traversalCapacityFallbacks();
-    if (capacityFallbacks > this.loggedCapacityFallbacks) {
-      this.loggedCapacityFallbacks = capacityFallbacks;
-      Logger.warn(
-          "GL41Metal traversal hit bounded queue/request/worklist capacity and used "
-              + capacityFallbacks
-              + " coarse fallbacks this frame; raise voxy.gl41metal.maxTraversalQueue,"
-              + " voxy.gl41metal.maxTraversalRequests, or voxy.gl41metal.maxWorklistItems if"
-              + " distant chunks still flicker");
-    }
   }
 
   private void onWorldChanged(WorldSection section, int updateFlags, int neighborMask) {

@@ -62,6 +62,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
         [NSString stringWithFormat:@"Voxy Traversal F%ld S%d", (long)frameId, (int)slotIndex];
 
     clearTraversalScratch(frame, terrain);
+    frame->sectionGeneration = terrain->sectionGeneration.load(std::memory_order_relaxed);
     uint32_t* queueMeta = reinterpret_cast<uint32_t*>([frame->queueMeta contents]);
     queueMeta[0] = static_cast<uint32_t>((terrain->topNodeCount + 31) >> 5);
     queueMeta[1] = 1;
@@ -105,7 +106,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     scene->viewport[1] = static_cast<uint32_t>(std::max(0, viewportHeight));
     scene->viewport[2] = 0;
     scene->viewport[3] = 0;
-    scene->rasterLimits[0] = 0;
+    scene->rasterLimits[0] = static_cast<uint32_t>(terrain->maxOpaqueRangeCommands);
     scene->rasterLimits[1] = 0;
     scene->rasterLimits[2] = 0;
     // Direct GL consumes face-group ranges and must retain every opaque group.
@@ -126,11 +127,13 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
       [encoder setBuffer:frame->requestQueue offset:0 atIndex:5];
       [encoder setBuffer:frame->worklistCounter offset:0 atIndex:6];
       [encoder setBuffer:frame->worklist offset:0 atIndex:7];
-      [encoder setBuffer:frame->traversalStats offset:0 atIndex:8];
       [encoder setBuffer:frame->sceneUniform offset:0 atIndex:9];
       [encoder setBuffer:frame->requestQueue offset:sizeof(uint32_t) atIndex:11];
       [encoder setBuffer:frame->translucentWorklistCounter offset:0 atIndex:12];
       [encoder setBuffer:frame->translucentWorklist offset:0 atIndex:13];
+      [encoder setBuffer:frame->opaqueRangeCounter offset:0 atIndex:14];
+      [encoder setBuffer:frame->opaqueRangeCounts offset:0 atIndex:15];
+      [encoder setBuffer:frame->opaqueRangeBaseVertices offset:0 atIndex:16];
       MTLSize threadsPerGroup = MTLSizeMake(32, 1, 1);
       for (uint32_t queueIdx = 0; queueIdx < MAX_LOD_ITERATIONS; queueIdx++) {
         id<MTLBuffer> source;
@@ -167,22 +170,11 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
     [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> completed) {
       {
         std::lock_guard<std::mutex> lock(capturedContext->mutex);
-        double gpuMs =
-            completed.status == MTLCommandBufferStatusCompleted
-                ? (completed.GPUEndTime - completed.GPUStartTime) * 1000.0
-                : 0.0;
-        capturedContext->gpuTraversalMs = gpuMs;
-        capturedContext->lastMetalGpuTimeMs = gpuMs;
         if (completed.status == MTLCommandBufferStatusError && completed.error != nil) {
           capturedContext->asyncFailure = [[completed.error localizedDescription] UTF8String];
         }
         TerrainResources* completedTerrain = capturedContext->terrain.get();
         if (completedTerrain != nullptr) {
-          std::memcpy(completedTerrain->lastTraversal,
-                      [capturedFrame->traversalStats contents],
-                      sizeof(completedTerrain->lastTraversal));
-          uint32_t* worklistCounter =
-              reinterpret_cast<uint32_t*>([capturedFrame->worklistCounter contents]);
           uint32_t requestCount =
               reinterpret_cast<uint32_t*>([capturedFrame->requestQueue contents])[0];
           requestCount = std::min<uint32_t>(
@@ -195,10 +187,6 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_s
             completedTerrain->pendingRequests.push_back(
                 (static_cast<uint64_t>(requestData[i * 2]) << 32) | requestData[i * 2 + 1]);
           }
-          completedTerrain->lastTraversal[4] = static_cast<uint32_t>(
-              std::min<uint64_t>(completedTerrain->topNodeCount, UINT32_MAX));
-          completedTerrain->lastTraversal[5] = requestCount;
-          completedTerrain->lastTraversal[6] = worklistCounter[0];
         }
         Slot& completedSlot = capturedContext->slots[capturedSlot];
         uint32_t translucentCount = reinterpret_cast<uint32_t*>(

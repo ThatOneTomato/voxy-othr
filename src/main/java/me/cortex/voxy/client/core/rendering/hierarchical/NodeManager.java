@@ -17,6 +17,7 @@ import me.cortex.voxy.client.core.rendering.geometry.GeometryManager;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.client.core.util.ExpandingObjectAllocationList;
 import me.cortex.voxy.common.Logger;
+import me.cortex.voxy.common.VoxyFlags;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import me.cortex.voxy.common.world.WorldEngine;
 import org.lwjgl.system.MemoryUtil;
@@ -30,7 +31,7 @@ import org.lwjgl.system.MemoryUtil;
 
 public class NodeManager {
   private static final boolean VERIFY_NODE_MANAGER_OPERATIONS =
-      true; // VoxyFlags.isVerificationFlagOn("nodeManager");
+      VoxyFlags.isVerificationFlagOn("verifyNodeManagerOperations");
   // Assumptions:
   // all nodes have children (i.e. all nodes have at least one child existence bit set at all times)
   // leaf nodes always contain geometry (empty geometry counts as geometry (it just doesnt take any

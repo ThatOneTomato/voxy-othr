@@ -100,11 +100,6 @@ public final class NativeBindings {
 
   public static native String getDeviceName(long handle);
 
-  public static native double getLastMetalGpuTimeMs(long handle);
-
-  // Per-pass GPU timing (ms). Drawlist mode only populates traversal.
-  public static native double[] getPerPassGpuTimesMs(long handle);
-
   public static native int acquireFreeSlot(long handle);
 
   public static native void submitTraversal(
@@ -123,29 +118,22 @@ public final class NativeBindings {
       int viewportWidth,
       int viewportHeight);
 
-  // countersAddress points at nine uint64 values:
-  // [0]=written merged range count, [1]=overflow range count, [2]=range-covered quad count,
-  // [3]=max merged range quads, [4]=worklist item count, [5]=raw face-group range count,
-  // [6]=total merged range count before capacity clamp, [7]=visible work item count,
-  // [8]=work items whose traversal-time section snapshot no longer matches current metadata.
+  // countersAddress points at two uint64 values:
+  // [0]=overflow range count,
+  // [1]=work items whose traversal-time section snapshot no longer matches current metadata.
   public static native int buildOpaqueRanges(
       long handle,
       int slot,
       long countsAddress,
-      long indicesAddress,
       long baseVerticesAddress,
       int capacity,
       long countersAddress);
 
-  // countersAddress points at seven uint64 values:
-  // [0]=written range count, [1]=overflow range count, [2]=range-covered quad count,
-  // [3]=translucent worklist item count, [4]=sorted translucent ranges before capacity clamp,
-  // [5]=max range quads, [6]=visible work item count.
+  // countersAddress points at one uint64 value: [0]=overflow range count.
   public static native int buildTranslucentRanges(
       long handle,
       int slot,
       long countsAddress,
-      long indicesAddress,
       long baseVerticesAddress,
       int capacity,
       long countersAddress);
@@ -165,7 +153,8 @@ public final class NativeBindings {
       int maxNodes,
       int maxTraversalQueue,
       int maxTraversalRequests,
-      int maxWorklistItems);
+      int maxWorklistItems,
+      int maxOpaqueRangeCommands);
 
   public static native void clearTerrainResources(long handle);
 

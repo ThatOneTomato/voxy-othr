@@ -6,6 +6,7 @@
 #import <Metal/Metal.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -35,10 +36,13 @@ struct FrameResources {
   id<MTLBuffer> requestQueue = nil;
   id<MTLBuffer> worklistCounter = nil;
   id<MTLBuffer> worklist = nil;
-  id<MTLBuffer> traversalStats = nil;
   id<MTLBuffer> sceneUniform = nil;
   id<MTLBuffer> translucentWorklistCounter = nil;
   id<MTLBuffer> translucentWorklist = nil;
+  id<MTLBuffer> opaqueRangeCounter = nil;
+  id<MTLBuffer> opaqueRangeCounts = nil;
+  id<MTLBuffer> opaqueRangeBaseVertices = nil;
+  uint64_t sectionGeneration = 0;
 };
 
 struct Slot {
@@ -60,6 +64,7 @@ struct TerrainResources {
   int maxTraversalQueue = 0;
   int maxTraversalRequests = 0;
   int maxWorklistItems = 0;
+  int maxOpaqueRangeCommands = 0;
   uint64_t topNodeCount = 0;
   uint64_t residentSections = 0;
   uint64_t translucentQuadsResident = 0;
@@ -69,7 +74,7 @@ struct TerrainResources {
   uint64_t uploadedNodes = 0;
   uint64_t uploadedTopNodes = 0;
   uint64_t removedTopNodes = 0;
-  uint32_t lastTraversal[8] = {};
+  std::atomic<uint64_t> sectionGeneration{1};
   std::vector<TerrainSectionSlot> sections;
   std::vector<uint32_t> topNodes;
   std::vector<uint64_t> pendingRequests;
@@ -89,8 +94,6 @@ struct NativeContext {
   std::condition_variable condition;
   int pendingCommandBuffers = 0;
   std::string asyncFailure;
-  double lastMetalGpuTimeMs = 0.0;
-  double gpuTraversalMs = 0.0;
   std::unique_ptr<TerrainResources> terrain;
 };
 

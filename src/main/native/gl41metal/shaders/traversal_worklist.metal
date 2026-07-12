@@ -39,6 +39,7 @@ constant uint NULL_MESH = 0x00ffffffu;
 constant uint EMPTY_MESH = 0x00fffffeu;
 constant uint LOCAL_SIZE_BITS = 5u;
 constant uint LOCAL_SIZE = 1u << LOCAL_SIZE_BITS;
+constant uint MAX_QUADS_PER_RANGE = 16380u;
 static inline UnpackedNode unpackNode(device const Node* nodes, uint nodeId) {
   uint4 c = nodes[nodeId].raw;
   UnpackedNode n;
@@ -131,6 +132,49 @@ static inline uint visible_opaque_quad_count(SectionMeta meta, uint groupMask) {
     }
   }
   return count;
+}
+static inline void emit_opaque_ranges(
+    SectionMeta section, uint groupMask, constant SceneUniform& scene,
+    device atomic_uint* rangeCounter, device uint* rangeCounts,
+    device uint* rangeBaseVertices) {
+  uint2 spans[7];
+  uint spanCount = 0u;
+  uint sourceOffset = section.a.w;
+  for (uint group = 0u; group < 8u; group++) {
+    uint count = group_count(section, group);
+    if (count != 0u && (groupMask & (1u << group)) != 0u) {
+      if (spanCount != 0u && spans[spanCount - 1u].y == sourceOffset) {
+        spans[spanCount - 1u].y += count;
+      } else {
+        spans[spanCount++] = uint2(sourceOffset, sourceOffset + count);
+      }
+    }
+    sourceOffset += count;
+  }
+  if (spanCount == 0u) return;
+
+  uint commandCount = 0u;
+  for (uint i = 0u; i < spanCount; i++) {
+    uint spanQuads = spans[i].y - spans[i].x;
+    commandCount += (spanQuads + MAX_QUADS_PER_RANGE - 1u) /
+                    MAX_QUADS_PER_RANGE;
+  }
+
+  uint commandBase = atomic_fetch_add_explicit(
+      &rangeCounter[0], commandCount, memory_order_relaxed);
+
+  uint commandOffset = 0u;
+  uint capacity = scene.rasterLimits.x;
+  for (uint i = 0u; i < spanCount; i++) {
+    for (uint chunkStart = spans[i].x; chunkStart < spans[i].y;
+         chunkStart += MAX_QUADS_PER_RANGE) {
+      uint outputIndex = commandBase + commandOffset++;
+      if (outputIndex >= capacity) continue;
+      uint quadCount = min(MAX_QUADS_PER_RANGE, spans[i].y - chunkStart);
+      rangeCounts[outputIndex] = quadCount * 6u;
+      rangeBaseVertices[outputIndex] = chunkStart * 4u;
+    }
+  }
 }
 static inline uint section_fingerprint(SectionMeta meta) {
   return (meta.a.x ^ (meta.a.y * 0x9e3779b9u)) & 0x00ffffffu;
@@ -323,13 +367,15 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
                      device atomic_uint* requestCounter [[buffer(5)]],
                      device atomic_uint* worklistCounter [[buffer(6)]],
                      device WorkItem* worklist [[buffer(7)]],
-                     device atomic_uint* stats [[buffer(8)]],
                      constant SceneUniform& scene [[buffer(9)]],
                      constant uint& queueIdx [[buffer(10)]],
                      device uint* requestData [[buffer(11)]],
                      device atomic_uint* translucentWorklistCounter
                      [[buffer(12)]],
                      device WorkItem* translucentWorklist [[buffer(13)]],
+                     device atomic_uint* opaqueRangeCounter [[buffer(14)]],
+                     device uint* opaqueRangeCounts [[buffer(15)]],
+                     device uint* opaqueRangeBaseVertices [[buffer(16)]],
                      uint gid [[thread_position_in_grid]]) {
   uint queueCount = queueIdx == 0u
                         ? scene.queueSizes.w
@@ -340,7 +386,6 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
   uint nodeId = sourceQueue[gid];
   if (nodeId == EMPTY_QUEUE_ENTRY) return;
   UnpackedNode n = unpackNode(nodes, nodeId);
-  atomic_fetch_add_explicit(&stats[0], 1u, memory_order_relaxed);
   uint visibility = classifyNode(n, scene);
   if (visibility == 0u) return;
   if (visibility == 3u) return;
@@ -360,7 +405,6 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
           sinkQueue[index + i] = n.childPtr + i;
       } else {
         childQueueOverflow = true;
-        atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
       }
     } else if (!hasRequested(n)) {
       uint r = atomic_fetch_add_explicit(&requestCounter[0], 1u,
@@ -369,9 +413,6 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
         requestData[r * 2u] = n.rawPos.x;
         requestData[r * 2u + 1u] = n.rawPos.y;
         nodes[n.nodeId].raw.z |= 1u << 24;
-        atomic_fetch_add_explicit(&stats[2], 1u, memory_order_relaxed);
-      } else {
-        atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
       }
     }
   }
@@ -444,53 +485,29 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
         uint w = atomic_fetch_add_explicit(&worklistCounter[0], 1u,
                                            memory_order_relaxed);
         if (w < scene.queueSizes.x) {
-          uint quadBase = atomic_fetch_add_explicit(&worklistCounter[1], qc,
-                                                    memory_order_relaxed);
-          bool drawlistOutput = scene.rasterLimits.w != 0u;
-          uint accepted = drawlistOutput
-                              ? qc
-                              : (quadBase < scene.rasterLimits.x
-                                     ? min(qc, scene.rasterLimits.x - quadBase)
-                                     : 0u);
-          // Every claimed slot MUST be written even when the raster-quad
-          // capacity is exhausted (accepted == 0): the per-frame scratch clear
-          // no longer wipes the worklist data buffer, so an unwritten slot
-          // would replay a stale item from an earlier frame. A zero quad count
-          // makes the object shader skip the item. Drawlist mode does not
-          // consume the raster-quad scratch buffer, so it keeps the full count.
           WorkItem item;
           item.meshId = n.meshPtr;
-          // Metal mesh raster derives its source offsets from section metadata
-          // and ignores these two fields. Always preserve the traversal
-          // snapshot so direct GL opaque/translucent draws can use the same
-          // worklist for the direct GL range builder.
+          // Preserve the traversal snapshot so the CPU correctness fallback can
+          // detect a section mutation between traversal and direct GL sampling.
           item.quadBase = section.a.w;
           item.reserved =
               opaqueGroupMask | (section_fingerprint(section) << 8u);
           item.lodAndQuadCount =
-              (n.lodLevel << 24) | min(accepted, 0x00ffffffu);
+              (n.lodLevel << 24) | min(qc, 0x00ffffffu);
           worklist[w] = item;
-          if (!drawlistOutput && accepted == 0u) return;
-          atomic_fetch_add_explicit(&stats[1], 1u, memory_order_relaxed);
-          atomic_fetch_add_explicit(&stats[3], accepted, memory_order_relaxed);
-        } else {
-          atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
+          emit_opaque_ranges(section, opaqueGroupMask, scene,
+                             opaqueRangeCounter, opaqueRangeCounts,
+                             opaqueRangeBaseVertices);
         }
       }
       // Translucent (group 0) emission. Independent of the opaque worklist: the
-      // sort kernel (prepare_translucent_sort/scatter) assigns final positions
-      // by section distance, so we do NOT allocate a contiguous quad cursor
-      // here. translucentWorklistCounter[1] just accumulates the total
-      // translucent quad count for drawArgs sizing. group 0 is never
-      // face-culled (water and glass are viewed from both sides), so it is
-      // always emitted when present.
+      // The CPU range builder sorts these items by section distance. Group 0 is
+      // never face-culled (water and glass are viewed from both sides).
       uint tqc = blockSelfRender ? 0u : group_count(sections[n.meshPtr], 0u);
       if (tqc != 0u) {
         uint tw = atomic_fetch_add_explicit(&translucentWorklistCounter[0], 1u,
                                             memory_order_relaxed);
         if (tw < scene.queueSizes.x) {
-          atomic_fetch_add_explicit(&translucentWorklistCounter[1], tqc,
-                                    memory_order_relaxed);
           WorkItem titem;
           titem.meshId = n.meshPtr;
           titem.quadBase = 0u;  // assigned by scatter_translucent_draw
@@ -498,8 +515,6 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
               0u;  // distance bucket cached by prepare_translucent_sort
           titem.lodAndQuadCount = (n.lodLevel << 24) | min(tqc, 0x00ffffffu);
           translucentWorklist[tw] = titem;
-        } else {
-          atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
         }
       }
     } else if (!hasRequested(n) && n.lodLevel != 0u) {
@@ -509,9 +524,6 @@ kernel void traverse(device Node* nodes [[buffer(0)]],
         requestData[r * 2u] = n.rawPos.x;
         requestData[r * 2u + 1u] = n.rawPos.y;
         nodes[n.nodeId].raw.z |= 1u << 24;
-        atomic_fetch_add_explicit(&stats[2], 1u, memory_order_relaxed);
-      } else {
-        atomic_fetch_add_explicit(&stats[7], 1u, memory_order_relaxed);
       }
     }
   }

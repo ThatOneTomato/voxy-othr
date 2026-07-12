@@ -132,27 +132,4 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_g
   return context == nullptr ? nullptr : env->NewStringUTF(context->deviceName.c_str());
 }
 
-JNIEXPORT jdouble JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getLastMetalGpuTimeMs(
-    JNIEnv* env, jclass, jlong handle) {
-  NativeContext* context = requireContext(env, handle);
-  if (context == nullptr) return 0.0;
-  std::lock_guard<std::mutex> lock(context->mutex);
-  return context->lastMetalGpuTimeMs;
-}
-
-JNIEXPORT jdoubleArray JNICALL
-Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_getPerPassGpuTimesMs(
-    JNIEnv* env, jclass, jlong handle) {
-  NativeContext* context = requireContext(env, handle);
-  jdouble values[4] = {};
-  if (context != nullptr) {
-    std::lock_guard<std::mutex> lock(context->mutex);
-    values[0] = context->gpuTraversalMs;
-  }
-  jdoubleArray result = env->NewDoubleArray(4);
-  if (result != nullptr) env->SetDoubleArrayRegion(result, 0, 4, values);
-  return result;
-}
-
 }  // extern "C"

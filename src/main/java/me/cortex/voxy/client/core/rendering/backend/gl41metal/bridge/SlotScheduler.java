@@ -18,12 +18,6 @@ import me.cortex.voxy.common.Logger;
 public final class SlotScheduler {
   private final int waitTimeoutMs;
   private final Map<Integer, Long> retiringFences = new HashMap<>();
-  private int submitted;
-  private int sampledCurrent;
-  private int skippedCurrent;
-  private int noFreeSlot;
-  private int timeouts;
-  private double maxWaitMs;
   private boolean loggedNoFreeSlot;
   private boolean loggedCurrentTimeout;
 
@@ -36,12 +30,7 @@ public final class SlotScheduler {
     return NativeBindings.acquireFreeSlot(slots.nativeHandle());
   }
 
-  public void recordSubmitted() {
-    this.submitted++;
-  }
-
   public void recordNoFreeSlot() {
-    this.noFreeSlot++;
     if (!this.loggedNoFreeSlot) {
       this.loggedNoFreeSlot = true;
       Logger.warn("Voxy GL41Metal had no free traversal slot for Metal submission");
@@ -50,16 +39,10 @@ public final class SlotScheduler {
 
   public int selectSlotForSampling(FrameSlotContext slots, int currentSlot) {
     this.retireCompletedSlots(slots);
-    long waitStart = System.nanoTime();
     int selected =
         NativeBindings.waitCurrent(slots.nativeHandle(), currentSlot, this.waitTimeoutMs);
-    this.maxWaitMs = Math.max(this.maxWaitMs, (System.nanoTime() - waitStart) / 1_000_000.0);
-    if (currentSlot >= 0 && selected == currentSlot) {
-      this.sampledCurrent++;
-    } else {
-      this.skippedCurrent++;
+    if (currentSlot < 0 || selected != currentSlot) {
       if (currentSlot >= 0) {
-        this.timeouts++;
         NativeBindings.discardCurrentSlot(slots.nativeHandle(), currentSlot);
       }
       if (currentSlot >= 0 && !this.loggedCurrentTimeout) {
@@ -92,40 +75,13 @@ public final class SlotScheduler {
     this.retiringFences.clear();
   }
 
-  public void reset() {
-    for (long fence : this.retiringFences.values()) {
-      glDeleteSync(fence);
-    }
-    this.retiringFences.clear();
-    this.submitted = 0;
-    this.sampledCurrent = 0;
-    this.skippedCurrent = 0;
-    this.noFreeSlot = 0;
-    this.timeouts = 0;
-    this.maxWaitMs = 0.0;
-    this.loggedNoFreeSlot = false;
-    this.loggedCurrentTimeout = false;
-  }
-
   public void addDebugInfo(List<String> debug) {
     debug.add("Voxy GL41Metal slots: " + this.summary());
   }
 
   public String summary() {
-    return "submitted="
-        + this.submitted
-        + ", sampledCurrent="
-        + this.sampledCurrent
-        + ", skippedCurrent="
-        + this.skippedCurrent
-        + ", noFreeSlot="
-        + this.noFreeSlot
-        + ", timeouts="
-        + this.timeouts
-        + ", retiring="
+    return "retiring="
         + this.retiringFences.size()
-        + ", maxWaitMs="
-        + String.format(java.util.Locale.ROOT, "%.3f", this.maxWaitMs)
         + ", waitTimeoutMs="
         + this.waitTimeoutMs
         + ", waitMode="

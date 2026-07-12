@@ -6,8 +6,6 @@ namespace gl41metal {
 
 namespace {
 
-constexpr uint64_t MAX_QUADS_PER_RANGE = 16380;
-
 struct WorkItemHost {
   uint32_t meshId;
   uint32_t quadBase;
@@ -70,14 +68,6 @@ uint32_t sectionFingerprint(const SectionMetaHost& section) {
 }
 
 struct RangeBuildStats {
-  uint64_t workItemCount = 0;
-  uint64_t rawRanges = 0;
-  uint64_t mergedRanges = 0;
-  uint64_t rangeQuads = 0;
-  uint64_t acceptedQuadHint = 0;
-  uint64_t maxRawRangeQuads = 0;
-  uint64_t maxMergedRangeQuads = 0;
-  uint64_t visibleWorkItems = 0;
   uint64_t writtenRanges = 0;
   uint64_t overflowRanges = 0;
   uint64_t snapshotMismatchItems = 0;
@@ -95,44 +85,37 @@ struct TranslucentRangeRecord {
   uint32_t detail;
 };
 
-void emitMergedRange(uint64_t start, uint64_t end, int32_t* counts, uintptr_t* indices,
-                     int32_t* baseVertices, uint64_t capacity, RangeBuildStats* stats) {
+void emitMergedRange(uint64_t start, uint64_t end, int32_t* counts, int32_t* baseVertices,
+                     uint64_t capacity, RangeBuildStats* stats) {
   if (start == UINT64_MAX || end <= start) {
     return;
   }
   for (uint64_t chunkStart = start; chunkStart < end; chunkStart += MAX_QUADS_PER_RANGE) {
     uint64_t quadCount = std::min<uint64_t>(MAX_QUADS_PER_RANGE, end - chunkStart);
-    stats->mergedRanges++;
-    stats->maxMergedRangeQuads = std::max<uint64_t>(stats->maxMergedRangeQuads, quadCount);
-    if (counts == nullptr || indices == nullptr || baseVertices == nullptr) {
-      continue;
-    }
     uint64_t outputIndex = stats->writtenRanges;
     if (outputIndex >= capacity) {
       stats->overflowRanges++;
       continue;
     }
     counts[outputIndex] = static_cast<int32_t>(quadCount * 6u);
-    indices[outputIndex] = 0;
     baseVertices[outputIndex] = static_cast<int32_t>(chunkStart * 4u);
     stats->writtenRanges++;
   }
 }
 
 RangeBuildStats buildOpaqueRangesFromWorklist(TerrainResources* terrain, FrameResources* frame,
-                                              int32_t* counts, uintptr_t* indices,
-                                              int32_t* baseVertices, uint64_t capacity) {
+                                              int32_t* counts, int32_t* baseVertices,
+                                              uint64_t capacity) {
   RangeBuildStats stats;
   const uint32_t* worklistCounter =
       reinterpret_cast<const uint32_t*>([frame->worklistCounter contents]);
   const WorkItemHost* worklist = reinterpret_cast<const WorkItemHost*>([frame->worklist contents]);
   const SectionMetaHost* sections =
       reinterpret_cast<const SectionMetaHost*>([terrain->sectionMetadata contents]);
-  stats.workItemCount =
+  uint64_t workItemCount =
       std::min<uint32_t>(worklistCounter[0], static_cast<uint32_t>(terrain->maxWorklistItems));
-  stats.acceptedQuadHint = worklistCounter[1];
 
-  for (uint64_t i = 0; i < stats.workItemCount; i++) {
+  for (uint64_t i = 0; i < workItemCount; i++) {
     const WorkItemHost& item = worklist[i];
     if ((item.lodAndQuadCount & 0x00ffffffu) == 0 ||
         item.meshId >= static_cast<uint32_t>(terrain->maxSections)) {
@@ -150,15 +133,10 @@ RangeBuildStats buildOpaqueRangesFromWorklist(TerrainResources* terrain, FrameRe
     }
     uint64_t mergedStart = UINT64_MAX;
     uint64_t mergedEnd = UINT64_MAX;
-    bool itemVisible = false;
     for (uint32_t group = 0; group < 8; group++) {
       uint32_t count = groupCount(section, group);
       bool visible = count > 0 && (groupMask & (1u << group)) != 0u;
       if (visible) {
-        itemVisible = true;
-        stats.rawRanges++;
-        stats.rangeQuads += count;
-        stats.maxRawRangeQuads = std::max<uint64_t>(stats.maxRawRangeQuads, count);
         uint64_t start = sourceOffset;
         uint64_t end = start + count;
         if (mergedStart == UINT64_MAX) {
@@ -167,27 +145,21 @@ RangeBuildStats buildOpaqueRangesFromWorklist(TerrainResources* terrain, FrameRe
         } else if (start == mergedEnd) {
           mergedEnd = end;
         } else {
-          emitMergedRange(mergedStart, mergedEnd, counts, indices, baseVertices, capacity, &stats);
+          emitMergedRange(mergedStart, mergedEnd, counts, baseVertices, capacity, &stats);
           mergedStart = start;
           mergedEnd = end;
         }
       }
       sourceOffset += count;
     }
-    emitMergedRange(mergedStart, mergedEnd, counts, indices, baseVertices, capacity, &stats);
-    if (itemVisible) {
-      stats.visibleWorkItems++;
-    }
-  }
-  if (counts == nullptr || indices == nullptr || baseVertices == nullptr) {
-    stats.writtenRanges = stats.mergedRanges;
+    emitMergedRange(mergedStart, mergedEnd, counts, baseVertices, capacity, &stats);
   }
   return stats;
 }
 
 RangeBuildStats buildTranslucentRangesFromWorklist(TerrainResources* terrain, FrameResources* frame,
-                                                   int32_t* counts, uintptr_t* indices,
-                                                   int32_t* baseVertices, uint64_t capacity) {
+                                                   int32_t* counts, int32_t* baseVertices,
+                                                   uint64_t capacity) {
   RangeBuildStats stats;
   const uint32_t* worklistCounter =
       reinterpret_cast<const uint32_t*>([frame->translucentWorklistCounter contents]);
@@ -197,16 +169,15 @@ RangeBuildStats buildTranslucentRangesFromWorklist(TerrainResources* terrain, Fr
       reinterpret_cast<const SectionMetaHost*>([terrain->sectionMetadata contents]);
   const SceneUniformHost* scene =
       reinterpret_cast<const SceneUniformHost*>([frame->sceneUniform contents]);
-  stats.workItemCount =
+  uint64_t workItemCount =
       std::min<uint32_t>(worklistCounter[0], static_cast<uint32_t>(terrain->maxWorklistItems));
-  stats.acceptedQuadHint = worklistCounter[1];
-  if (stats.workItemCount == 0) {
+  if (workItemCount == 0) {
     return stats;
   }
 
   std::vector<TranslucentRangeRecord> records;
-  records.reserve(stats.workItemCount);
-  for (uint64_t i = 0; i < stats.workItemCount; i++) {
+  records.reserve(workItemCount);
+  for (uint64_t i = 0; i < workItemCount; i++) {
     const WorkItemHost& item = worklist[i];
     uint32_t quadCount = item.lodAndQuadCount & 0x00ffffffu;
     if (quadCount == 0 || item.meshId >= static_cast<uint32_t>(terrain->maxSections)) {
@@ -230,11 +201,7 @@ RangeBuildStats buildTranslucentRangesFromWorklist(TerrainResources* terrain, Fr
                           dist, static_cast<uint64_t>(TRANSLUCENT_BUCKET_COUNT - 1)));
     records.push_back(
         {sourceOffset, quadCount, bucket, item.meshId, dist, sectionX, sectionY, sectionZ, detail});
-    stats.rangeQuads += quadCount;
-    stats.maxRawRangeQuads = std::max<uint64_t>(stats.maxRawRangeQuads, quadCount);
   }
-  stats.rawRanges = records.size();
-  stats.visibleWorkItems = records.size();
   if (records.empty()) {
     return stats;
   }
@@ -255,11 +222,8 @@ RangeBuildStats buildTranslucentRangesFromWorklist(TerrainResources* terrain, Fr
 
   for (const TranslucentRangeRecord& record : records) {
     emitMergedRange(record.sourceOffset,
-                    static_cast<uint64_t>(record.sourceOffset) + record.quadCount, counts, indices,
+                    static_cast<uint64_t>(record.sourceOffset) + record.quadCount, counts,
                     baseVertices, capacity, &stats);
-  }
-  if (counts == nullptr || indices == nullptr || baseVertices == nullptr) {
-    stats.writtenRanges = stats.mergedRanges;
   }
   return stats;
 }
@@ -272,7 +236,7 @@ extern "C" {
 
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_buildOpaqueRanges(
-    JNIEnv* env, jclass, jlong handle, jint slotIndex, jlong countsAddress, jlong indicesAddress,
+    JNIEnv* env, jclass, jlong handle, jint slotIndex, jlong countsAddress,
     jlong baseVerticesAddress, jint capacity, jlong countersAddress) {
   NativeContext* context = requireContext(env, handle);
   if (context == nullptr) {
@@ -282,8 +246,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_b
     throwJava(env, "GL41Metal range builder received an invalid slot index");
     return 0;
   }
-  if (capacity <= 0 || countsAddress == 0 || indicesAddress == 0 || baseVerticesAddress == 0 ||
-      countersAddress == 0) {
+  if (capacity <= 0 || countsAddress == 0 || baseVerticesAddress == 0 || countersAddress == 0) {
     throwJava(env, "GL41Metal range builder received invalid output arguments");
     return 0;
   }
@@ -295,26 +258,39 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_b
     return 0;
   }
 
-  RangeBuildStats stats = buildOpaqueRangesFromWorklist(
-      terrain, frame, reinterpret_cast<int32_t*>(countsAddress),
-      reinterpret_cast<uintptr_t*>(indicesAddress), reinterpret_cast<int32_t*>(baseVerticesAddress),
-      static_cast<uint64_t>(capacity));
+  RangeBuildStats stats;
+  uint64_t generatedRanges =
+      reinterpret_cast<const uint32_t*>([frame->opaqueRangeCounter contents])[0];
+  bool generationMatches =
+      frame->sectionGeneration == terrain->sectionGeneration.load(std::memory_order_relaxed);
+  bool useMetalRanges =
+      generationMatches &&
+      generatedRanges <= static_cast<uint64_t>(terrain->maxOpaqueRangeCommands);
+  if (useMetalRanges) {
+    stats.writtenRanges =
+        std::min<uint64_t>(generatedRanges, static_cast<uint64_t>(capacity));
+    stats.overflowRanges = generatedRanges - stats.writtenRanges;
+    size_t copyBytes = static_cast<size_t>(stats.writtenRanges) * sizeof(uint32_t);
+    if (copyBytes != 0) {
+      std::memcpy(reinterpret_cast<void*>(countsAddress), [frame->opaqueRangeCounts contents],
+                  copyBytes);
+      std::memcpy(reinterpret_cast<void*>(baseVerticesAddress),
+                  [frame->opaqueRangeBaseVertices contents], copyBytes);
+    }
+  } else {
+    stats = buildOpaqueRangesFromWorklist(
+        terrain, frame, reinterpret_cast<int32_t*>(countsAddress),
+        reinterpret_cast<int32_t*>(baseVerticesAddress), static_cast<uint64_t>(capacity));
+  }
   uint64_t* counters = reinterpret_cast<uint64_t*>(countersAddress);
-  counters[0] = stats.writtenRanges;
-  counters[1] = stats.overflowRanges;
-  counters[2] = stats.rangeQuads;
-  counters[3] = stats.maxMergedRangeQuads;
-  counters[4] = stats.workItemCount;
-  counters[5] = stats.rawRanges;
-  counters[6] = stats.mergedRanges;
-  counters[7] = stats.visibleWorkItems;
-  counters[8] = stats.snapshotMismatchItems;
+  counters[0] = stats.overflowRanges;
+  counters[1] = stats.snapshotMismatchItems;
   return static_cast<jint>(std::min<uint64_t>(stats.writtenRanges, static_cast<uint64_t>(INT_MAX)));
 }
 
 JNIEXPORT jint JNICALL
 Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_buildTranslucentRanges(
-    JNIEnv* env, jclass, jlong handle, jint slotIndex, jlong countsAddress, jlong indicesAddress,
+    JNIEnv* env, jclass, jlong handle, jint slotIndex, jlong countsAddress,
     jlong baseVerticesAddress, jint capacity, jlong countersAddress) {
   NativeContext* context = requireContext(env, handle);
   if (context == nullptr) {
@@ -324,8 +300,7 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_b
     throwJava(env, "GL41Metal translucent range builder received an invalid slot index");
     return 0;
   }
-  if (capacity <= 0 || countsAddress == 0 || indicesAddress == 0 || baseVerticesAddress == 0 ||
-      countersAddress == 0) {
+  if (capacity <= 0 || countsAddress == 0 || baseVerticesAddress == 0 || countersAddress == 0) {
     throwJava(env, "GL41Metal translucent range builder received invalid output arguments");
     return 0;
   }
@@ -340,16 +315,9 @@ Java_me_cortex_voxy_client_core_rendering_backend_gl41metal_jni_NativeBindings_b
 
   RangeBuildStats stats = buildTranslucentRangesFromWorklist(
       terrain, frame, reinterpret_cast<int32_t*>(countsAddress),
-      reinterpret_cast<uintptr_t*>(indicesAddress), reinterpret_cast<int32_t*>(baseVerticesAddress),
-      static_cast<uint64_t>(capacity));
+      reinterpret_cast<int32_t*>(baseVerticesAddress), static_cast<uint64_t>(capacity));
   uint64_t* counters = reinterpret_cast<uint64_t*>(countersAddress);
-  counters[0] = stats.writtenRanges;
-  counters[1] = stats.overflowRanges;
-  counters[2] = stats.rangeQuads;
-  counters[3] = stats.workItemCount;
-  counters[4] = stats.mergedRanges;
-  counters[5] = stats.maxMergedRangeQuads;
-  counters[6] = stats.visibleWorkItems;
+  counters[0] = stats.overflowRanges;
   return static_cast<jint>(std::min<uint64_t>(stats.writtenRanges, static_cast<uint64_t>(INT_MAX)));
 }
 

@@ -79,6 +79,8 @@ tasks.register('compileGl41MetalNative', Exec) {
                  '-std=c++17',
                  '-ObjC++',
                  '-fobjc-arc',
+                 '-O3',
+                 '-DNDEBUG',
                  '-Wall',
                  '-Wextra',
                  '-Werror',
@@ -114,8 +116,15 @@ tasks.register('compileGl41MetalShaders', Exec) {
         if (sources.isEmpty()) {
             throw new GradleException('No GL41Metal shader sources found')
         }
-        commandLine(['xcrun', 'metal', '-std=metal3.0'] + sources + ['-o', outputLibrary.absolutePath])
+        commandLine(['xcrun', 'metal', '-std=metal3.0', '-O'] + sources + ['-o', outputLibrary.absolutePath])
     }
+}
+
+// Produces the distributable loader jars with optimized macOS native and Metal code.
+tasks.register('release') {
+    description = 'Builds the release artifacts for Fabric and NeoForge'
+    group = 'build'
+    dependsOn ':fabric:build', ':neoforge:build'
 }
 
 // Shared JVM system properties for dev runs (render backend selection + gl41metal tunables,
@@ -139,9 +148,6 @@ ext.voxyRunProperties = {
         'voxy.gl41metal.boundHorizontalMargin': '0',
         'voxy.gl41metal.boundAddDelayFrames'  : '1',
         'voxy.gl41metal.modelBakeBudgetMs'    : '4',
-        'voxy.gl41metal.profile'              : 'false',
-        'voxy.gl41metal.drawGpuTimer'         : 'false',
-        'voxy.gl41metal.drawGpuTimerInterval' : '16',
         'voxy.fluidBridgeWalls'               : 'true',
     ].each { key, defaultValue ->
         props[key] = System.getProperty(key, defaultValue)
