@@ -89,8 +89,11 @@ For Iris 1.21.1:
 - GL46 uses the later `RenderStage.VIEWPORT_SETUP` point.
 - The strict shader-pack bridge runs at `IrisRenderingPipeline.beginHand()`
   `RETURN`, after Iris copies current opaque depth into `depthtex2` / `noHand`.
-- Distant translucent composition runs at `IrisRenderingPipeline.beginTranslucents()`
-  `RETURN`, before near Sodium translucent geometry draws.
+- Distant translucent composition runs immediately after
+  `IrisRenderingPipeline.beginTranslucents()` copies `depthtex1` / `noTranslucents`, before Iris
+  deferred passes and before near Sodium translucent geometry. Its draw targets use the
+  `flippedAfterPrepare` snapshot, matching the GL46 Voxy pipeline for both intermediate targets such
+  as BSL `colortex16` and Complementary `colortex0`.
 - Strict bridge output is skipped when the shader-pack bridge payload is
   unavailable.
 

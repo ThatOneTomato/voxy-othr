@@ -1108,12 +1108,27 @@ final class DrawlistOpaqueRenderer
     program.base.shader.bind();
     this.uploadDirectIrisUniforms(
         program.base, context, drawMvp, vanillaDrawMvp, stack, BLOCK_ATLAS_UNIT);
-    glUniform1i(program.boundDepthUniform, LIGHTMAP_UNIT);
+    // Pack fragment samplers occupy units [1, 14] on Apple GL 4.1. Keep the bound depth on the
+    // separately reserved last fragment unit so this pass cannot overwrite (for example) BSL's
+    // gaux1 binding before the following translucent colour pass.
+    int boundDepthUnit = glGetInteger(GL_MAX_TEXTURE_IMAGE_UNITS) - 1;
+    glUniform1i(program.boundDepthUniform, boundDepthUnit);
     glUniform2f(program.boundSizeUniform, bound.width(), bound.height());
     glUniform2f(program.targetSizeUniform, targetWidth, targetHeight);
     glUniform1i(program.boundEnabledUniform, 1);
-    this.bindDirectIrisGeometryTextures(bound.texture());
-    this.drawRangeCommands(rangeCount);
+    this.bindDirectIrisGeometryTextures(0);
+    glActiveTexture(GL_TEXTURE0 + boundDepthUnit);
+    int previousBoundTexture = glGetInteger(GL_TEXTURE_BINDING_2D);
+    int previousBoundSampler = glGetInteger(GL_SAMPLER_BINDING);
+    glBindTexture(GL_TEXTURE_2D, bound.texture());
+    glBindSampler(boundDepthUnit, 0);
+    try {
+      this.drawRangeCommands(rangeCount);
+    } finally {
+      glActiveTexture(GL_TEXTURE0 + boundDepthUnit);
+      glBindTexture(GL_TEXTURE_2D, previousBoundTexture);
+      glBindSampler(boundDepthUnit, previousBoundSampler);
+    }
   }
 
   private void drawIrisTranslucentRanges(
@@ -1233,7 +1248,7 @@ final class DrawlistOpaqueRenderer
               .name("Voxy GL41Metal Direct Iris Opaque");
       payload.programSetup().accept(shader.id());
       DirectIrisProgram program = new DirectIrisProgram(shaderKey, shader);
-      if (!program.hasRequiredUniforms() || !program.hasOpaqueDepthUniforms()) {
+      if (!program.hasRequiredUniforms(true) || !program.hasOpaqueDepthUniforms()) {
         shader.free();
         throw new IllegalStateException("direct Iris opaque shader is missing required uniforms");
       }
@@ -1287,7 +1302,7 @@ final class DrawlistOpaqueRenderer
               .name("Voxy GL41Metal Direct Iris Translucent");
       payload.programSetup().accept(colorShader.id());
       DirectIrisProgram color = new DirectIrisProgram(shaderKey, colorShader);
-      if (!color.hasRequiredUniforms()) {
+      if (!color.hasRequiredUniforms(false)) {
         throw new IllegalStateException(
             "direct Iris translucent shader is missing required uniforms");
       }
@@ -2165,9 +2180,9 @@ final class DrawlistOpaqueRenderer
       this.reverseDepthUniform = glGetUniformLocation(id, "uReverseDepth");
     }
 
-    boolean hasRequiredUniforms() {
+    boolean hasRequiredUniforms(boolean requireVanillaMvp) {
       return this.voxyMvpUniform >= 0
-          && this.vanillaMvpUniform >= 0
+          && (!requireVanillaMvp || this.vanillaMvpUniform >= 0)
           && this.earthRadiusUniform >= 0
           && this.blockAtlasUniform >= 0
           && this.baseSectionFrameUniform >= 0
@@ -2203,7 +2218,7 @@ final class DrawlistOpaqueRenderer
     }
 
     boolean hasRequiredUniforms() {
-      return this.base.hasRequiredUniforms()
+      return this.base.hasRequiredUniforms(false)
           && this.boundDepthUniform >= 0
           && this.boundSizeUniform >= 0
           && this.targetSizeUniform >= 0

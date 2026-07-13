@@ -149,14 +149,22 @@ public class MixinIrisRenderingPipeline implements VoxyPatchDataAccess, IrisVoxy
     }
   }
 
-  // Distant translucent (water) composite. beginTranslucents() copies depthtex1/noTranslucents (the
-  // opaque scene depth) and runs the pack's deferred passes at its START, so at RETURN: the opaque
-  // scene is lit into the colour targets, depthtex1 is current-frame fresh, blend is enabled, and
-  // the near translucent geometry (Sodium water/glass) has NOT drawn yet. Compositing the distant
-  // water here blends it over the lit opaque scene and lets near translucents blend over it after.
+  // Distant translucent (water) follows the GL46 pipeline contract: draw after Iris has copied the
+  // current opaque scene into depthtex1/noTranslucents, but before deferred passes consume the
+  // after-prepare gbuffer targets. This supports both intermediate targets (BSL colortex16) and
+  // colortex0 packs (Complementary) without guessing the stage from target ids. Near translucent
+  // geometry (Sodium water/glass) still draws after beginTranslucents() returns.
   // The backend reuses the same shared slot it sampled for the opaque pass at beginHand RETURN (it
   // was held, not retired) and retires it after this stage; see Gl41MetalRenderBackend Plan A.
-  @Inject(method = "beginTranslucents", at = @At("RETURN"), remap = false)
+  @Inject(
+      method = "beginTranslucents",
+      at =
+          @At(
+              value = "INVOKE",
+              target =
+                  "Lnet/irisshaders/iris/targets/RenderTargets;copyPreTranslucentDepth()V",
+              shift = At.Shift.AFTER),
+      remap = false)
   private void voxy$injectTranslucentBridge(CallbackInfo ci) {
     var parameters = IrisUtil.getCapturedOrFallbackViewportParameters();
     if (parameters != null) {

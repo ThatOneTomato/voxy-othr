@@ -134,7 +134,7 @@ public class IrisUtil {
     }
     RenderTargets renderTargets = ((IrisRenderingPipelineAccessor) pipeline).getRenderTargets();
     int[] drawTargets = patch.getOpqaueTargets();
-    int[] targetTextures = resolveTargetTextures(pipeline, renderTargets, drawTargets, false);
+    int[] targetTextures = resolveTargetTextures(pipeline, renderTargets, drawTargets);
     if (targetTextures == null) {
       return ShaderPatchBridgePayload.unavailable("shader pack Voxy draw targets are empty");
     }
@@ -171,11 +171,13 @@ public class IrisUtil {
 
   /**
    * Distant translucent (water) variant of {@link #captureShaderPatchBridgePayload}, captured at
-   * Iris {@code beginTranslucents()} RETURN. It carries the pack's TRANSLUCENT patch + translucent
-   * draw targets and the fresh {@code depthtex1}/noTranslucents (opaque scene) depth for near/far
-   * masking. The shader-resource bindings are identical to the opaque payload (same pipeline +
-   * patch), so they reuse the same per-pipeline cache. If the pack has no translucent Voxy patch we
-   * report unavailable so the backend skips distant water rather than degrading to vanilla water.
+   * Iris {@code beginTranslucents()} immediately after its pre-translucent depth copy and before
+   * deferred passes. It carries the pack's TRANSLUCENT patch + translucent draw targets resolved
+   * against the same after-prepare flip snapshot used by GL46, plus the fresh {@code
+   * depthtex1}/noTranslucents (opaque scene) depth for near/far masking. The shader-resource
+   * bindings are identical to the opaque payload (same pipeline + patch), so they reuse the same
+   * per-pipeline cache. If the pack has no translucent Voxy patch we report unavailable so the
+   * backend skips distant water rather than degrading to vanilla water.
    */
   public static ShaderPatchBridgePayload captureTranslucentShaderPatchBridgePayload(
       IrisRenderingPipeline pipeline) {
@@ -196,7 +198,7 @@ public class IrisUtil {
     }
     RenderTargets renderTargets = ((IrisRenderingPipelineAccessor) pipeline).getRenderTargets();
     int[] drawTargets = patch.getTranslucentTargets();
-    int[] targetTextures = resolveTargetTextures(pipeline, renderTargets, drawTargets, true);
+    int[] targetTextures = resolveTargetTextures(pipeline, renderTargets, drawTargets);
     if (targetTextures == null) {
       return ShaderPatchBridgePayload.unavailable("shader pack translucent draw targets are empty");
     }
@@ -211,9 +213,9 @@ public class IrisUtil {
         drawTargets,
         targetTextures,
         renderTargets.getDepthTexture(),
-        // beginTranslucents() copies depthtex1/noTranslucents (the opaque scene depth, no
-        // translucents) at its start, so at RETURN it is current-frame fresh - exactly the near
-        // opaque depth the distant water must be occluded against.
+        // The injection runs immediately after beginTranslucents() copies
+        // depthtex1/noTranslucents, so it is current-frame fresh - exactly the near opaque depth the
+        // distant water must be occluded against.
         renderTargets.getDepthTextureNoTranslucents().getTextureId(),
         renderTargets.getCurrentWidth(),
         renderTargets.getCurrentHeight(),
@@ -239,26 +241,16 @@ public class IrisUtil {
   private static int targetTextureMaxHeight;
 
   private static int[] resolveTargetTextures(
-      IrisRenderingPipeline pipeline,
-      RenderTargets renderTargets,
-      int[] drawTargets,
-      boolean afterTranslucent) {
+      IrisRenderingPipeline pipeline, RenderTargets renderTargets, int[] drawTargets) {
     if (drawTargets == null || drawTargets.length == 0) {
       return null;
     }
-    // colortex targets ping-pong (main/alt) between Iris passes. The OPAQUE bridge runs before the
-    // deferred passes flip them, so it must read the after-prepare flip snapshot; the TRANSLUCENT
-    // (gbuffers_water) bridge runs at beginTranslucents RETURN, AFTER the deferred passes flipped
-    // colortex, so it must read the after-translucent snapshot - exactly as Iris selects the
-    // gbuffer framebuffer (isBeforeTranslucent ? flippedAfterPrepare : flippedAfterTranslucent) and
-    // SodiumPrograms (pass == TRANSLUCENT ? getFlippedAfterTranslucent() :
-    // getFlippedAfterPrepare()).
-    // Using the after-prepare set for the translucent stage wrote distant water into the wrong
-    // physical texture of colortex0, so it never reached the presented image.
-    var flipped =
-        afterTranslucent
-            ? pipeline.getFlippedAfterTranslucent()
-            : pipeline.getFlippedAfterPrepare();
+    // Voxy's shader-pack opaque and translucent gbuffer outputs both use the after-prepare physical
+    // targets. This mirrors IrisVoxyRenderPipelineData/GL46: distant translucent is produced before
+    // Iris deferred passes, which then consume those targets. Using flippedAfterTranslucent here
+    // writes ping-ponged targets such as Complementary's colortex0 to the side deferred does not
+    // read. Targets without a flip (for example BSL colortex16) can hide that bug.
+    var flipped = pipeline.getFlippedAfterPrepare();
     int[] targetTextures = new int[drawTargets.length];
     int width = 0;
     int height = 0;
