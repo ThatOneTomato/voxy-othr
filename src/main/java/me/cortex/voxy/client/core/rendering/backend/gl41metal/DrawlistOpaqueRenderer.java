@@ -2249,9 +2249,7 @@ final class DrawlistOpaqueRenderer
       int activeTexture,
       int[] packTargets,
       int[] packTextures,
-      int[] packSamplers,
-      int[] vertexBuffers,
-      int[] vertexSamplers) {
+      int[] packSamplers) {
     static IrisTextureState capture(int[] samplerTargets) {
       int activeTexture = glGetInteger(GL_ACTIVE_TEXTURE);
       int[] packTargets = samplerTargets == null ? new int[0] : samplerTargets;
@@ -2264,17 +2262,12 @@ final class DrawlistOpaqueRenderer
         packTextures[i] = glGetInteger(textureBindingForTarget(packTargets[i]));
         packSamplers[i] = glGetInteger(GL_SAMPLER_BINDING);
       }
-      int[] vertexBuffers = new int[IRIS_VERTEX_SAMPLER_COUNT];
-      int[] vertexSamplers = new int[IRIS_VERTEX_SAMPLER_COUNT];
-      for (int i = 0; i < IRIS_VERTEX_SAMPLER_COUNT; i++) {
-        int unit = IRIS_VERTEX_BUFFER_UNIT_BASE + i;
-        glActiveTexture(GL_TEXTURE0 + unit);
-        vertexBuffers[i] = glGetInteger(GL_TEXTURE_BINDING_BUFFER);
-        vertexSamplers[i] = glGetInteger(GL_SAMPLER_BINDING);
-      }
+      // Units [IRIS_VERTEX_BUFFER_UNIT_BASE, + IRIS_VERTEX_SAMPLER_COUNT) are owned by the
+      // GL41Metal direct drawlist path for vertex-stage samplerBuffer inputs. Iris bridge pack
+      // samplers live in fragment units 1..14, so preserving these private units only adds ten
+      // synchronous driver queries plus ten restore binds per pass without protecting host state.
       glActiveTexture(activeTexture);
-      return new IrisTextureState(
-          activeTexture, packTargets, packTextures, packSamplers, vertexBuffers, vertexSamplers);
+      return new IrisTextureState(activeTexture, packTargets, packTextures, packSamplers);
     }
 
     private static int textureBindingForTarget(int target) {
@@ -2294,12 +2287,6 @@ final class DrawlistOpaqueRenderer
         glActiveTexture(GL_TEXTURE0 + unit);
         glBindTexture(this.packTargets[i], this.packTextures[i]);
         glBindSampler(unit, this.packSamplers[i]);
-      }
-      for (int i = 0; i < IRIS_VERTEX_SAMPLER_COUNT; i++) {
-        int unit = IRIS_VERTEX_BUFFER_UNIT_BASE + i;
-        glActiveTexture(GL_TEXTURE0 + unit);
-        glBindTexture(GL_TEXTURE_BUFFER, this.vertexBuffers[i]);
-        glBindSampler(unit, this.vertexSamplers[i]);
       }
       glActiveTexture(this.activeTexture);
     }
