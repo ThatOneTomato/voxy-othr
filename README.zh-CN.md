@@ -1,5 +1,7 @@
 # Voxy 1.21.1 多加载器分支
 
+![voxy-on-m4-max](assets/voxy-on-m4-max.png)
+
 [English](README.md)
 
 这是 [MCRcortex/Voxy](https://github.com/MCRcortex/voxy) 的非官方 Minecraft

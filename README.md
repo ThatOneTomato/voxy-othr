@@ -1,5 +1,7 @@
 # Voxy 1.21.1 Multi-loader Fork
 
+![voxy-on-m4-max](assets/voxy-on-m4-max.png)
+
 [中文](README.zh-CN.md)
 
 An experimental Minecraft 1.21.1 fork of
