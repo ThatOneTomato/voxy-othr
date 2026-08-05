@@ -214,7 +214,8 @@ public class IrisUtil {
         targetTextures,
         renderTargets.getDepthTexture(),
         // The injection runs immediately after beginTranslucents() copies
-        // depthtex1/noTranslucents, so it is current-frame fresh - exactly the near opaque depth the
+        // depthtex1/noTranslucents, so it is current-frame fresh - exactly the near opaque depth
+        // the
         // distant water must be occluded against.
         renderTargets.getDepthTextureNoTranslucents().getTextureId(),
         renderTargets.getCurrentWidth(),

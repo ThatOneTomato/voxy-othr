@@ -2246,10 +2246,7 @@ final class DrawlistOpaqueRenderer
   }
 
   private record IrisTextureState(
-      int activeTexture,
-      int[] packTargets,
-      int[] packTextures,
-      int[] packSamplers) {
+      int activeTexture, int[] packTargets, int[] packTextures, int[] packSamplers) {
     static IrisTextureState capture(int[] samplerTargets) {
       int activeTexture = glGetInteger(GL_ACTIVE_TEXTURE);
       int[] packTargets = samplerTargets == null ? new int[0] : samplerTargets;

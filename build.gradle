@@ -127,6 +127,24 @@ tasks.register('release') {
     dependsOn ':fabric:build', ':neoforge:build'
 }
 
+// Convenient default for local renderer validation. Loader-specific runs remain available as
+// :fabric:runClient and :neoforge:runClient.
+tasks.register('runClient') {
+    description = 'Runs the Fabric client from the shared run directory'
+    group = 'application'
+    dependsOn ':fabric:runClient'
+}
+
+// Gradle expands an unqualified task name to matching tasks in every subproject. Keep the bare
+// `runClient` convenience command Fabric-only; the explicit `:neoforge:runClient` path is unchanged.
+gradle.projectsEvaluated {
+    if (gradle.startParameter.taskNames == ['runClient']) {
+        def neoForgeRunClient = project(':neoforge').tasks.named('runClient').get()
+        neoForgeRunClient.enabled = false
+        neoForgeRunClient.setDependsOn([])
+    }
+}
+
 // Shared JVM system properties for dev runs (render backend selection + gl41metal tunables,
 // see Gl41MetalConfig). Consumed by both loader subprojects' run configurations.
 ext.voxyRunProperties = {

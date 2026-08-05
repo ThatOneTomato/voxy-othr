@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import java.util.function.DoubleSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
@@ -33,6 +34,7 @@ import java.util.stream.Collectors;
 import kroppeb.stareval.function.FunctionReturn;
 import kroppeb.stareval.function.Type;
 import me.cortex.voxy.client.mixin.iris.CustomUniformsAccessor;
+import me.cortex.voxy.client.mixin.iris.IrisRenderingPipelineAccessor;
 import me.cortex.voxy.common.Logger;
 import net.irisshaders.iris.gl.buffer.ShaderStorageBufferHolder;
 import net.irisshaders.iris.gl.image.ImageHolder;
@@ -66,6 +68,7 @@ import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.joml.Vector2f;
 import org.joml.Vector2i;
+import org.joml.Vector3d;
 import org.joml.Vector3f;
 import org.joml.Vector3i;
 import org.joml.Vector4f;
@@ -182,7 +185,8 @@ public final class IrisBridgeShaderBindings {
       ShaderStorageBufferHolder ssboHolder) {
     StructLayout uniforms = null;
     if (customUniforms != null) {
-      uniforms = createUniformLayoutStructAndUpdater(createUniformSet(customUniforms, patch));
+      uniforms =
+          createUniformLayoutStructAndUpdater(createUniformSet(pipeline, customUniforms, patch));
     } else if (patch.getUniformList().length != 0) {
       throw new IllegalStateException(
           "shader pack declares Voxy uniforms but Iris custom uniforms are unavailable");
@@ -441,7 +445,7 @@ public final class IrisBridgeShaderBindings {
       String name, UniformType type, Long2ObjectFunction<LongConsumer> writingFactory) {}
 
   private static List<UniformWritingHolder> createUniformSet(
-      CustomUniforms customUniforms, IrisShaderPatch patch) {
+      IrisRenderingPipeline pipeline, CustomUniforms customUniforms, IrisShaderPatch patch) {
     List<UniformWritingHolder> uniforms = new ArrayList<>();
     Set<String> seenUniforms = new HashSet<>();
     DynamicLocationalUniformHolder uniformBuilder =
@@ -477,9 +481,71 @@ public final class IrisBridgeShaderBindings {
           }
 
           @Override
+          public DynamicLocationalUniformHolder uniform1b(
+              UniformUpdateFrequency updateFrequency, String name, BooleanSupplier value) {
+            this.injectDynamicUniformType(
+                name,
+                UniformType.INT,
+                offset -> ptr -> MemoryUtil.memPutInt(ptr + offset, value.getAsBoolean() ? 1 : 0));
+            return this;
+          }
+
+          @Override
+          public DynamicLocationalUniformHolder uniform2f(
+              UniformUpdateFrequency updateFrequency, String name, Supplier<Vector2f> value) {
+            return this.uniform2f(name, value, null);
+          }
+
+          @Override
+          public DynamicLocationalUniformHolder uniform2i(
+              UniformUpdateFrequency updateFrequency, String name, Supplier<Vector2i> value) {
+            return this.uniform2i(name, value, null);
+          }
+
+          @Override
           public DynamicLocationalUniformHolder uniform3f(
               UniformUpdateFrequency updateFrequency, String name, Supplier<Vector3f> value) {
             return this.uniform3f(name, value, null);
+          }
+
+          @Override
+          public DynamicLocationalUniformHolder uniform3i(
+              UniformUpdateFrequency updateFrequency, String name, Supplier<Vector3i> value) {
+            this.injectDynamicUniformType(
+                name, UniformType.VEC3I, offset -> ptr -> putVec3i(ptr + offset, value.get()));
+            return this;
+          }
+
+          @Override
+          public DynamicLocationalUniformHolder uniformTruncated3f(
+              UniformUpdateFrequency updateFrequency, String name, Supplier<Vector4f> value) {
+            this.injectDynamicUniformType(
+                name,
+                UniformType.VEC3,
+                offset ->
+                    ptr -> {
+                      Vector4f vector = value.get();
+                      MemoryUtil.memPutFloat(ptr + offset, vector.x);
+                      MemoryUtil.memPutFloat(ptr + offset + 4, vector.y);
+                      MemoryUtil.memPutFloat(ptr + offset + 8, vector.z);
+                    });
+            return this;
+          }
+
+          @Override
+          public DynamicLocationalUniformHolder uniform3d(
+              UniformUpdateFrequency updateFrequency, String name, Supplier<Vector3d> value) {
+            this.injectDynamicUniformType(
+                name,
+                UniformType.VEC3,
+                offset ->
+                    ptr -> {
+                      Vector3d vector = value.get();
+                      MemoryUtil.memPutFloat(ptr + offset, (float) vector.x);
+                      MemoryUtil.memPutFloat(ptr + offset + 4, (float) vector.y);
+                      MemoryUtil.memPutFloat(ptr + offset + 8, (float) vector.z);
+                    });
+            return this;
           }
 
           @Override
@@ -489,9 +555,32 @@ public final class IrisBridgeShaderBindings {
           }
 
           @Override
+          public DynamicLocationalUniformHolder uniform4fArray(
+              UniformUpdateFrequency updateFrequency, String name, Supplier<float[]> value) {
+            return this.uniform4fArray(name, value, null);
+          }
+
+          @Override
           public DynamicLocationalUniformHolder uniformMatrix(
               UniformUpdateFrequency updateFrequency, String name, Supplier<Matrix4fc> value) {
             return this.uniformMatrix(name, value, null);
+          }
+
+          @Override
+          public DynamicLocationalUniformHolder uniformMatrixFromArray(
+              UniformUpdateFrequency updateFrequency, String name, Supplier<float[]> value) {
+            this.injectDynamicUniformType(
+                name,
+                UniformType.MAT4,
+                offset ->
+                    ptr -> {
+                      float[] matrix = value.get();
+                      for (int i = 0; i < 16; i++) {
+                        MemoryUtil.memPutFloat(
+                            ptr + offset + i * Float.BYTES, i < matrix.length ? matrix[i] : 0.0f);
+                      }
+                    });
+            return this;
           }
 
           @Override
@@ -641,18 +730,17 @@ public final class IrisBridgeShaderBindings {
           }
         };
 
+    IrisRenderingPipelineAccessor pipelineAccessor = (IrisRenderingPipelineAccessor) pipeline;
+    // Replay Iris's complete built-in uniform registration, not only its dynamic subset. Camera
+    // uniforms such as previousCameraPosition live in addNonDynamicUniforms; relying on the
+    // optimized CustomUniforms graph silently dropped them when no ordinary shader-pack pass used
+    // them, leaving the standalone Voxy translucent patch with undeclared identifiers.
+    CommonUniforms.addNonDynamicUniforms(
+        uniformBuilder,
+        pipelineAccessor.getPack().getIdMap(),
+        pipelineAccessor.getPackDirectives(),
+        pipeline.getFrameUpdateNotifier());
     CommonUniforms.addDynamicUniforms(uniformBuilder, FogMode.PER_FRAGMENT);
-    // Register the Voxy-owned vx* matrices directly on the bridge builder. We cannot rely on the
-    // CustomUniforms replay (assignTo/mapholderToPass) below for all of them: Iris's
-    // CustomUniforms.optimise() prunes any input uniform that no shader-pack PASS references, and
-    // Complementary only references vxViewProj*/vxProj*/vxRenderDistance in its passes, so
-    // vxModelView/vxModelViewInv/vxModelViewPrev are already pruned by the time this self-contained
-    // bridge builds (otherwise: "uniforms could not be found: [vxModelView,...]").
-    // MixinMatrixUniforms
-    // still feeds the exact same suppliers globally for the composite/deferred fog math; the
-    // CustomUniforms loop below skips any vx* already registered here, so the intentional overlap
-    // never double-registers (which previously threw "Already added uniform: vxProjInv").
-    VoxyUniforms.addUniforms(uniformBuilder);
     customUniforms.assignTo(uniformBuilder);
     customUniforms.mapholderToPass(uniformBuilder, patch);
 

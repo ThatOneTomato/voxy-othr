@@ -161,8 +161,7 @@ public class MixinIrisRenderingPipeline implements VoxyPatchDataAccess, IrisVoxy
       at =
           @At(
               value = "INVOKE",
-              target =
-                  "Lnet/irisshaders/iris/targets/RenderTargets;copyPreTranslucentDepth()V",
+              target = "Lnet/irisshaders/iris/targets/RenderTargets;copyPreTranslucentDepth()V",
               shift = At.Shift.AFTER),
       remap = false)
   private void voxy$injectTranslucentBridge(CallbackInfo ci) {
