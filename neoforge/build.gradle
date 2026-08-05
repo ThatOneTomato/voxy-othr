@@ -178,14 +178,15 @@ dependencies {
     implementation 'redis.clients:jedis:5.1.0'
     implementation 'org.rocksdb:rocksdbjni:10.2.1'
     implementation 'org.apache.commons:commons-pool2:2.12.0'
-    implementation 'org.lz4:lz4-java:1.8.0'
+    // NeoForge's Minecraft runtime already provides lz4-java 1.8.0. Keep it compile-only here so
+    // the released mod does not JarJar a second copy of the same classes.
+    compileOnly 'org.lz4:lz4-java:1.8.0'
     implementation 'org.tukaani:xz:1.10'
     runtimeOnly 'org.xerial:sqlite-jdbc:3.49.1.0'
 
     jarJar 'redis.clients:jedis:5.1.0'
     jarJar 'org.rocksdb:rocksdbjni:10.2.1'
     jarJar 'org.apache.commons:commons-pool2:2.12.0'
-    jarJar 'org.lz4:lz4-java:1.8.0'
     jarJar 'org.tukaani:xz:1.10'
     jarJar 'org.xerial:sqlite-jdbc:3.49.1.0'
 
@@ -210,7 +211,6 @@ afterEvaluate {
         'redis.clients:jedis:5.1.0',
         'org.rocksdb:rocksdbjni:10.2.1',
         'org.apache.commons:commons-pool2:2.12.0',
-        'org.lz4:lz4-java:1.8.0',
         'org.tukaani:xz:1.10',
         'org.xerial:sqlite-jdbc:3.49.1.0',
         "org.lwjgl:lwjgl-lmdb:$lwjglVersion",
